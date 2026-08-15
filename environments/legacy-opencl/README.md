@@ -1,7 +1,6 @@
 # Legacy OpenCL trajectory environment
 
-This optional environment exists only to reproduce the recorded CellModeller
-reference trajectories. It is not a CellModeller2 runtime dependency.
+This optional environment exists only to reproduce the recorded CellModeller reference trajectories. It is not a CellModeller2 runtime dependency.
 
 On an Apple machine that still exposes an OpenCL device:
 
@@ -16,6 +15,4 @@ uv pip install \
 cmp compatibility/legacy-trajectories-v1.json /tmp/legacy-trajectories-v1.json
 ```
 
-The checkout supplied with `--legacy-root` must be at the commit pinned by
-`compatibility/legacy-examples-v1.json`. The recorder verifies the commit and
-all five source digests before executing model code.
+The checkout supplied with `--legacy-root` must be at the commit pinned by `compatibility/legacy-examples-v1.json`. The recorder verifies the commit and all five source digests before executing model code.

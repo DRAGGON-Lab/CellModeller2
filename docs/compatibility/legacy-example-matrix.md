@@ -1,13 +1,9 @@
 # Legacy example compatibility matrix
 
-The executable matrix pins all 25 Python examples from CellModeller commit
-`4896f543c6250f053eea2312e628cc3a96bf7408`. Every legacy source and every
-migrated implementation is SHA-256 authenticated before model code executes.
-The runner exercises each runnable row on every device exposed by each requested
-backend and writes a complete JSON report, including failures.
+The executable matrix pins all 25 Python examples from CellModeller commit `4896f543c6250f053eea2312e628cc3a96bf7408`. Every legacy source and every migrated implementation is SHA-256 authenticated before model code executes. The runner exercises each runnable row on every device exposed by each requested backend and writes a complete JSON report, including failures.
 
 | Legacy example | Classification | Execution path |
-|---|---|---|
+| --- | --- | --- |
 | `ACS2012/EdgeDetectorChamber.py` | migrated | typed native model |
 | `Conjugation.py` | runnable | callback adapter |
 | `TimRudgeThesis/Meristem.py` | runnable | callback adapter |
@@ -34,14 +30,9 @@ backend and writes a complete JSON report, including failures.
 | `load.py` | migration-only | `cm2 import-legacy-pickle` |
 | `sphere_constraints.py` | runnable | callback adapter |
 
-No example is silently omitted or presently classified as deliberately retired.
-The 15 runnable sources are executed unchanged through the adapter, the 9
-OpenCL equation models execute their typed CellModeller2 migrations, and
-`load.py` is represented by the separately tested one-way trusted-pickle
-migration workflow.
+No example is silently omitted or presently classified as deliberately retired. The 15 runnable sources are executed unchanged through the adapter, the 9 OpenCL equation models execute their typed CellModeller2 migrations, and `load.py` is represented by the separately tested one-way trusted-pickle migration workflow.
 
-From a built development environment, run CPU and all enumerated Metal devices
-with:
+From a built development environment, run CPU and all enumerated Metal devices with:
 
 ```console
 python scripts/run_legacy_example_matrix.py \
@@ -51,8 +42,4 @@ python scripts/run_legacy_example_matrix.py \
   --output build/legacy-example-matrix.json
 ```
 
-The command fails if a requested backend has no devices, a pinned source has
-drifted, a migrated implementation has drifted, or any scenario fails to build,
-advance three steps, or validate its native state. `migration_only` and
-`deliberately_retired` are non-executing classifications and must carry a
-reason in the manifest.
+The command fails if a requested backend has no devices, a pinned source has drifted, a migrated implementation has drifted, or any scenario fails to build, advance three steps, or validate its native state. `migration_only` and `deliberately_retired` are non-executing classifications and must carry a reason in the manifest.

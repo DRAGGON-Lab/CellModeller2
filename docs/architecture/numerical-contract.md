@@ -17,21 +17,14 @@ CellModeller2 separates exact state semantics from floating-point agreement.
 - Operator applications and solver residuals.
 - Species and signal levels and rates.
 
-Every conformance scenario records absolute and relative tolerances per field.
-Tolerances may not be widened solely to make a backend pass.
+Every conformance scenario records absolute and relative tolerances per field. Tolerances may not be widened solely to make a backend pass.
 
 ## Reproducibility modes
 
-`deterministic` uses counter-based random numbers, stable event ordering, and
-reproducible reduction policies where the backend permits them. It promises
-repeatability on the same device and toolchain, not bitwise identity across
-different GPU architectures.
+`deterministic` uses counter-based random numbers, stable event ordering, and reproducible reduction policies where the backend permits them. It promises repeatability on the same device and toolchain, not bitwise identity across different GPU architectures.
 
-`fast` permits backend-specific ordering and algebraic fusion. Long-running
-chaotic simulations are compared through declared ensemble statistics.
+`fast` permits backend-specific ordering and algebraic fusion. Long-running chaotic simulations are compared through declared ensemble statistics.
 
 ## Precision
 
-The portable production contract is IEEE 754 binary32. The CPU backend also
-supports a binary64 diagnostic implementation where useful. Backend-specific
-binary64 support is not part of the portable contract.
+The portable production contract is IEEE 754 binary32. The CPU backend also supports a binary64 diagnostic implementation where useful. Backend-specific binary64 support is not part of the portable contract.

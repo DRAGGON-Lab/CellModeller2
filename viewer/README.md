@@ -1,10 +1,6 @@
 # CellModeller2 scene viewer
 
-This package is a TypeScript and Three.js consumer of `cellmodeller2-scene`
-documents. It has no Python bridge, model loader, simulation clock, checkpoint
-writer, CUDA context, or Metal device access. Standalone mode reads scene
-files; live mode sends a closed control vocabulary to the Python-owned engine
-session and verifies every returned scene document.
+This package is a TypeScript and Three.js consumer of `cellmodeller2-scene` documents. It has no Python bridge, model loader, simulation clock, checkpoint writer, CUDA context, or Metal device access. Standalone mode reads scene files; live mode sends a closed control vocabulary to the Python-owned engine session and verifies every returned scene document.
 
 ## Run locally
 
@@ -16,8 +12,7 @@ pnpm --dir viewer install
 pnpm --dir viewer dev
 ```
 
-Open the local URL printed by Vite and load `viewer-demo.cm2.scene.json`. The
-viewer also accepts a scene by drag and drop.
+Open the local URL printed by Vite and load `viewer-demo.cm2.scene.json`. The viewer also accepts a scene by drag and drop.
 
 ## Run a live session
 
@@ -33,10 +28,7 @@ uv run cm2 view \
   --open
 ```
 
-Without `--open`, open the tokenized loopback URL printed by `cm2`. The live
-transport can play, pause, advance one step, rebuild the original model, and
-write to the configured checkpoint destination. Camera position, display
-mapping, grid slice, and selected-cell identity survive frame updates.
+Without `--open`, open the tokenized loopback URL printed by `cm2`. The live transport can play, pause, advance one step, rebuild the original model, and write to the configured checkpoint destination. Camera position, display mapping, grid slice, and selected-cell identity survive frame updates.
 
 ## Capabilities
 
@@ -51,8 +43,7 @@ mapping, grid slice, and selected-cell identity survive frame updates.
 - authenticated same-origin live frames and typed transport controls; and
 - stable camera, display, slice, and selection state during playback.
 
-Cell IDs remain decimal strings throughout the browser because their unsigned
-64-bit range exceeds JavaScript's exact integer range.
+Cell IDs remain decimal strings throughout the browser because their unsigned 64-bit range exceeds JavaScript's exact integer range.
 
 ## Validate
 
@@ -63,6 +54,4 @@ pnpm --dir viewer test
 pnpm --dir viewer build
 ```
 
-The unit suite includes a Python-authored scene fixture whose digest contains
-floating-point values that ordinary Python and JavaScript JSON serializers
-spell differently. Passing that test is the cross-language integrity gate.
+The unit suite includes a Python-authored scene fixture whose digest contains floating-point values that ordinary Python and JavaScript JSON serializers spell differently. Passing that test is the cross-language integrity gate.
