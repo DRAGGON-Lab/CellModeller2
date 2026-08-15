@@ -237,6 +237,7 @@ class LegacyModelAdapter:
         mechanics: bool = True,
         compute_neighbors: bool = False,
         division_jitter_z: bool | None = None,
+        alternate_divisions: bool = False,
         rng: random.Random | None = None,
         mechanics_parameters: MechanicsParameters | None = None,
     ) -> None:
@@ -250,6 +251,7 @@ class LegacyModelAdapter:
             mechanics=mechanics,
             compute_neighbors=compute_neighbors,
             division_jitter_z=division_jitter_z,
+            alternate_divisions=alternate_divisions,
             rng=rng,
             mechanics_parameters=mechanics_parameters,
         )
@@ -266,6 +268,7 @@ class LegacyModelAdapter:
         mechanics: bool,
         compute_neighbors: bool,
         division_jitter_z: bool | None,
+        alternate_divisions: bool,
         rng: random.Random | None,
         mechanics_parameters: MechanicsParameters | None,
     ) -> None:
@@ -277,6 +280,10 @@ class LegacyModelAdapter:
             raise LegacyCompatibilityError(
                 "legacy division jitter requires an explicit random stream"
             )
+        if division_jitter_z is not None and alternate_divisions:
+            raise LegacyCompatibilityError(
+                "legacy random jitter and alternating division axes are mutually exclusive"
+            )
         self.simulation = simulation
         self._init = init
         self._update = update
@@ -284,6 +291,7 @@ class LegacyModelAdapter:
         self._mechanics = mechanics
         self._compute_neighbors = compute_neighbors
         self._division_jitter_z = division_jitter_z
+        self._alternate_divisions = alternate_divisions
         self._rng = rng
         self._mechanics_parameters = mechanics_parameters or MechanicsParameters()
 
@@ -304,11 +312,12 @@ class LegacyModelAdapter:
         parameters = self._mechanics_parameters
         return {
             "kind": "cellmodeller2-legacy-python",
-            "version": 2,
+            "version": 3,
             "options": {
                 "mechanics": self._mechanics,
                 "compute_neighbors": self._compute_neighbors,
                 "division_jitter_z": self._division_jitter_z,
+                "alternate_divisions": self._alternate_divisions,
                 "mechanics_parameters": {
                     "mu_a": parameters.mu_a,
                     "gamma": parameters.gamma,
@@ -346,23 +355,35 @@ class LegacyModelAdapter:
             "cells",
         }:
             raise LegacyCompatibilityError("legacy controller has unexpected fields")
-        if data["kind"] != "cellmodeller2-legacy-python" or data["version"] != 2:
+        version = data["version"]
+        if (
+            data["kind"] != "cellmodeller2-legacy-python"
+            or not isinstance(version, int)
+            or isinstance(version, bool)
+            or version not in (2, 3)
+        ):
             raise LegacyCompatibilityError("legacy controller kind or version is unsupported")
         options = cls._controller_object(data["options"], "controller.options")
-        if set(options) != {
+        expected_options = {
             "mechanics",
             "compute_neighbors",
             "division_jitter_z",
             "mechanics_parameters",
-        }:
+        }
+        if version == 3:
+            expected_options.add("alternate_divisions")
+        if set(options) != expected_options:
             raise LegacyCompatibilityError("legacy controller options are invalid")
         mechanics = options["mechanics"]
         compute_neighbors = options["compute_neighbors"]
         division_jitter_z = options["division_jitter_z"]
+        alternate_divisions = options["alternate_divisions"] if version == 3 else False
         if not isinstance(mechanics, bool) or not isinstance(compute_neighbors, bool):
             raise LegacyCompatibilityError("legacy controller Boolean options are invalid")
         if division_jitter_z is not None and not isinstance(division_jitter_z, bool):
             raise LegacyCompatibilityError("legacy division jitter option is invalid")
+        if not isinstance(alternate_divisions, bool):
+            raise LegacyCompatibilityError("legacy alternating division option is invalid")
         mechanics_data = cls._controller_object(
             options["mechanics_parameters"], "controller.options.mechanics_parameters"
         )
@@ -405,6 +426,7 @@ class LegacyModelAdapter:
             mechanics=mechanics,
             compute_neighbors=compute_neighbors,
             division_jitter_z=division_jitter_z,
+            alternate_divisions=alternate_divisions,
             rng=restored_rng,
             mechanics_parameters=parameters,
         )
@@ -515,8 +537,8 @@ class LegacyModelAdapter:
         first_fraction = _division_fraction(parent.asymm)
         parent.divideFlag = False
         first_id, second_id = self.simulation.divide(parent_id, first_fraction)
-        self._apply_division_jitter(first_id)
-        self._apply_division_jitter(second_id)
+        self._apply_division_orientation(first_id)
+        self._apply_division_orientation(second_id)
         first = copy.deepcopy(parent)
         second = copy.deepcopy(parent)
         first.cellAge = 0
@@ -535,12 +557,22 @@ class LegacyModelAdapter:
         self._cells[first_id] = first
         self._cells[second_id] = second
 
-    def _apply_division_jitter(self, cell_id: int) -> None:
+    def _apply_division_orientation(self, cell_id: int) -> None:
+        snapshot = self.simulation.cell(cell_id)
+        if self._alternate_divisions:
+            direction = Vec3(
+                -snapshot.direction.y,
+                snapshot.direction.x,
+                snapshot.direction.z,
+            )
+            self.simulation.set_cell_geometry(
+                cell_id, snapshot.position, direction, snapshot.length
+            )
+            return
         if self._division_jitter_z is None:
             return
         if self._rng is None:
             raise AssertionError("division jitter random stream is missing")
-        snapshot = self.simulation.cell(cell_id)
         jitter = [self._rng.uniform(-0.001, 0.001) for _ in range(3)]
         if not self._division_jitter_z:
             jitter[2] = 0.0

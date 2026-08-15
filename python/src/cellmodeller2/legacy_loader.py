@@ -89,10 +89,9 @@ class _LegacyCLBacterium:
         del max_sqs, grid_spacing, printing
         if dt is not None:
             raise LegacyCompatibilityError("a CLBacterium-specific time step is not supported")
-        if alternate_divisions:
-            raise LegacyCompatibilityError("alternating legacy division axes are not implemented")
         self._setup = simulator
         self.jitter_z = bool(jitter_z)
+        self.alternate_divisions = bool(alternate_divisions)
         self.compute_neighbors = bool(compNeighbours)
         self.mechanics_parameters = MechanicsParameters()
         self.mechanics_parameters.mu_a = float(muA)
@@ -210,7 +209,10 @@ class _LegacySetupFacade:
                 divide=divide,
                 mechanics=True,
                 compute_neighbors=biophysics.compute_neighbors,
-                division_jitter_z=biophysics.jitter_z,
+                division_jitter_z=(
+                    None if biophysics.alternate_divisions else biophysics.jitter_z
+                ),
+                alternate_divisions=biophysics.alternate_divisions,
                 rng=self._context.rng,
                 mechanics_parameters=biophysics.mechanics_parameters,
             )

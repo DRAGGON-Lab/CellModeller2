@@ -46,7 +46,10 @@ compatibility policy for the legacy per-daughter direction jitter. The adapter
 normalizes the two positive `cell.asymm` weights into the native daughter
 fraction. This implements the legacy API's dormant intent; the old
 `CLBacterium` accepted `f1` and `f2` but discarded them before geometry was
-updated.
+updated. `alternate_divisions=True` preserves the legacy 90-degree xy-plane
+axis rotation as a backend-neutral topology operation. Controller v3 records
+the selected orientation policy; controller v2 migrates to non-alternating
+division.
 
 OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not accepted or
 translated. Those models must express equations as `SpeciesRatePlan` or

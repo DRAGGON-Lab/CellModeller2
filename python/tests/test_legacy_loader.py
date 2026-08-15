@@ -107,7 +107,7 @@ def test_legacy_batch_checkpoint_resumes_exactly_and_checks_source(tmp_path: Pat
     expected = load_checkpoint_bundle(uninterrupted_path)
     actual = load_checkpoint_bundle(resumed_path)
     assert actual.controller == expected.controller
-    assert cast(dict[str, JSONValue], actual.controller)["version"] == 2
+    assert cast(dict[str, JSONValue], actual.controller)["version"] == 3
     for left, right in zip(
         actual.simulation.cells(), expected.simulation.cells(), strict=True
     ):
@@ -160,3 +160,14 @@ def test_legacy_batch_stops_when_division_reaches_cell_threshold(tmp_path: Path)
     assert run["completed_steps"] == 2
     assert run["requested_steps"] == 100
     assert run["stop_reason"] == "cell_count"
+
+
+def test_legacy_loader_accepts_alternating_division_axes() -> None:
+    context = ModelContext(BackendKind.CPU, 0, seed=7)
+    model, _ = build_legacy_model(_FIXTURES / "legacy_alternating.py", context)
+
+    controller = model.controller_state()
+    options = cast(dict[str, JSONValue], controller["options"])
+    assert controller["version"] == 3
+    assert options["alternate_divisions"] is True
+    assert options["division_jitter_z"] is None

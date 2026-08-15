@@ -145,6 +145,70 @@ def test_legacy_division_jitter_is_explicit_and_seeded() -> None:
     assert directions[1][2] == 0.0
 
 
+def test_legacy_alternating_division_rotates_daughter_axes() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.divideFlag = False
+
+    def divide_immediately(cells: dict[int, LegacyCell]) -> None:
+        next(iter(cells.values())).divideFlag = True
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=divide_immediately,
+        mechanics=False,
+        alternate_divisions=True,
+    )
+    initial = CellInit()
+    initial.direction.x = 0.6
+    initial.direction.y = 0.8
+    initial.length = 5.0
+    adapter.add_cell(initial)
+    adapter.step(0.0)
+
+    daughters = simulation.cells()
+    for daughter in daughters:
+        assert math.isclose(daughter.direction.x, -0.8, abs_tol=1.0e-7)
+        assert math.isclose(daughter.direction.y, 0.6, abs_tol=1.0e-7)
+        assert daughter.direction.z == 0.0
+    assert daughters[0].position.x < 0.0
+    assert daughters[0].position.y < 0.0
+    assert daughters[1].position.x > 0.0
+    assert daughters[1].position.y > 0.0
+
+
+def test_legacy_controller_v2_migrates_without_alternating_divisions() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.divideFlag = False
+
+    def update(cells: dict[int, LegacyCell]) -> None:
+        del cells
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=update,
+        mechanics=False,
+    )
+    adapter.add_cell(CellInit())
+    controller = adapter.controller_state()
+    controller["version"] = 2
+    options = cast(dict[str, object], controller["options"])
+    del options["alternate_divisions"]
+
+    restored = LegacyModelAdapter.from_controller_state(
+        simulation,
+        controller,
+        init=initialize,
+        update=update,
+    )
+
+    restored_options = cast(dict[str, object], restored.controller_state()["options"])
+    assert restored_options["alternate_divisions"] is False
+
+
 def test_legacy_controller_state_resumes_attributes_and_random_stream(tmp_path: Path) -> None:
     def initialize(cell: LegacyCell) -> None:
         cell.metadata = {"line": (1, 2), "weights": [0.25, 0.75]}
