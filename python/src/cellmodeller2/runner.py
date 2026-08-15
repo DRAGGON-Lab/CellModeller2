@@ -85,11 +85,15 @@ type ProgressCallback = Callable[[RunProgress], None]
 type RunnableModel = Simulation | LegacyModelAdapter
 
 
-def _native_simulation(model: RunnableModel) -> Simulation:
+def native_simulation(model: RunnableModel) -> Simulation:
+    """Return the native state owner behind any supported runnable model."""
+
     return model.simulation if isinstance(model, LegacyModelAdapter) else model
 
 
-def _controller_state(model: RunnableModel) -> JSONValue:
+def controller_state(model: RunnableModel) -> JSONValue:
+    """Capture optional data-only controller state for a runnable model."""
+
     return model.controller_state() if isinstance(model, LegacyModelAdapter) else None
 
 
@@ -132,7 +136,7 @@ def run_simulation(
         raise BatchError("time step must be finite and non-negative")
     if checkpoint_every < 0:
         raise BatchError("checkpoint interval must be non-negative")
-    native = _native_simulation(simulation)
+    native = native_simulation(simulation)
     native.validate()
 
     destination = Path(output)
@@ -173,7 +177,7 @@ def run_simulation(
                     steps=steps,
                     dt=dt,
                 ),
-                controller=_controller_state(simulation),
+                controller=controller_state(simulation),
             )
 
     save_checkpoint(
@@ -186,7 +190,7 @@ def run_simulation(
             steps=steps,
             dt=dt,
         ),
-        controller=_controller_state(simulation),
+        controller=controller_state(simulation),
     )
     return RunSummary(
         completed_steps=steps,

@@ -27,12 +27,16 @@ dependencies = [
 sbml = [
   "python-libsbml>=5.21.1,<6",
 ]
+viewer = [
+  "aiohttp>=3.14.3,<4",
+]
 
 [project.scripts]
 cm2 = "cellmodeller2.cli:main"
 
 [dependency-groups]
 dev = [
+  "aiohttp>=3.14.3,<4",
   "pytest>=8.3,<9",
   "pyright>=1.1.390,<2",
   "python-libsbml>=5.21.1,<6",
