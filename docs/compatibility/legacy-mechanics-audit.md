@@ -115,7 +115,7 @@ CellModeller2 must not reproduce these behaviors:
 6. The documented finite-radius cylinder inertia differs from the slender-rod
    tensor used by the kernel, whose axial rotational penalty is zero.
 7. Contact history is retained during a substep search but cleared at the start
-   of each outer step, making the intended hysteresis unclear.
+   of each outer step.
 8. `ct_overlap` is written but never consumed by mechanics.
 9. Solver parameters named `dt` and `alpha` are passed through but unused.
 
@@ -131,9 +131,28 @@ before mutating geometry, neither of which the legacy path enforced.
 These differences require explicit fixtures before any claim of legacy parity.
 They are not grounds for silently adopting an accidental result.
 
+## Outer relaxation decision
+
+The running legacy scheduler increments `sub_tick_i` before its continuation
+test. It therefore performs at most `max_substeps - 1` solves, and continues
+only when prediction has added a contact not already retained in the current
+outer step. The default `max_substeps=8` does not mean eight unconditional
+relaxations. In the recorded representative colonies, completed steps normally
+reported two discovery ticks (one solve), with occasional three-tick steps.
+
+The adapter now implements a typed replacement for this behavior. After growth,
+it discovers stable cell and constraint contact identities, solves once when a
+new identity exists, integrates that correction, and repeats discovery until no
+new identity appears or `max_substeps - 1` solves have run. Each solve uses the
+current typed contact graph rather than retaining stale constraint rows. This
+preserves the bounded contact-frontier purpose while rejecting the legacy
+hysteresis ambiguity. The configured limit is controller-v4 checkpoint state;
+v2 and v3 adapter checkpoints migrate to `max_substeps=2`, which preserves their
+former one-relaxation behavior.
+
 ## Required compatibility fixtures
 
-The mechanics implementation needs source-controlled fixtures for:
+The mechanics implementation has source-controlled fixtures for:
 
 - separated, end-on, skew, parallel, anti-parallel, and collinear capsule pairs;
 - exact coincident centerlines with a deterministic finite normal;
@@ -145,6 +164,7 @@ The mechanics implementation needs source-controlled fixtures for:
 - a small growing colony compared with a recorded legacy trajectory where the
   legacy result is numerically defined.
 
-The legacy trajectory is evidence for compatibility. Analytic geometry and
-operator invariants remain the authority when the legacy implementation is
-undefined.
+The five recorded legacy comparisons are described in
+`docs/compatibility/legacy-trajectory-evidence.md`. The trajectory is evidence
+for compatibility. Analytic geometry and operator invariants remain the
+authority when the legacy implementation is undefined.

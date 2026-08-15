@@ -176,6 +176,15 @@ a fresh configure and clean rebuild before testing, and their standard
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.
 
+The application-level legacy gate pins all 25 example sources at CellModeller
+commit `4896f543c6250f053eea2312e628cc3a96bf7408`. The matrix runner authenticates
+the 15 unchanged callback models and 9 typed migrations, then advances all 24
+runnable scenarios on CPU and every requested Metal device; `load.py` is the
+one explicit migration-only row. The recorded trajectory suite independently
+checks growing 2D, constrained 3D, neighbor-dependent, species, and coupled
+signaling behavior against values produced by the original Apple OpenCL
+runtime. Set `CM2_LEGACY_ROOT` to the pinned checkout to enable those tests.
+
 Fixed-cell fixtures verify stable-ID mutation, division inheritance,
 checkpoint v6 persistence, migration of v1-through-v5 cells to movable state,
 the projected mechanics operator and right-hand side, and integration that

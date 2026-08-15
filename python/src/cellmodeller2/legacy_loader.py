@@ -85,13 +85,22 @@ class _LegacyCLBacterium:
         printing: bool = True,
         compNeighbours: bool = False,  # noqa: N803 - legacy keyword
     ) -> None:
-        del max_substeps, max_cells, max_contacts, max_planes, max_spheres
+        del max_cells, max_contacts, max_planes, max_spheres
         del max_sqs, grid_spacing, printing
         if dt is not None:
             raise LegacyCompatibilityError("a CLBacterium-specific time step is not supported")
         self._setup = simulator
         self.jitter_z = bool(jitter_z)
         self.alternate_divisions = bool(alternate_divisions)
+        max_substeps_value = cast(object, max_substeps)
+        if (
+            not isinstance(max_substeps_value, int)
+            or isinstance(max_substeps_value, bool)
+            or max_substeps_value < 0
+            or max_substeps_value > (1 << 32) - 1
+        ):
+            raise LegacyCompatibilityError("legacy max_substeps must be an unsigned 32-bit integer")
+        self.max_substeps = max_substeps_value
         self.compute_neighbors = bool(compNeighbours)
         self.mechanics_parameters = MechanicsParameters()
         self.mechanics_parameters.mu_a = float(muA)
@@ -213,6 +222,7 @@ class _LegacySetupFacade:
                     None if biophysics.alternate_divisions else biophysics.jitter_z
                 ),
                 alternate_divisions=biophysics.alternate_divisions,
+                max_substeps=biophysics.max_substeps,
                 rng=self._context.rng,
                 mechanics_parameters=biophysics.mechanics_parameters,
             )

@@ -54,8 +54,9 @@ fraction. This implements the legacy API's dormant intent; the old
 `CLBacterium` accepted `f1` and `f2` but discarded them before geometry was
 updated. `alternate_divisions=True` preserves the legacy 90-degree xy-plane
 axis rotation as a backend-neutral topology operation. Controller v3 records
-the selected orientation policy; controller v2 migrates to non-alternating
-division.
+the selected orientation policy. Controller v4 also records the legacy
+`max_substeps` limit used by bounded new-contact frontier relaxation; v2 and v3
+checkpoints migrate to the adapter's former one-relaxation behavior.
 
 OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not accepted or
 translated. Those models must express equations as `SpeciesRatePlan` or

@@ -14,6 +14,7 @@ from cellmodeller2 import (
     LegacyCompatibilityError,
     LegacyModelAdapter,
     Simulation,
+    Vec3,
     backend_available,
     load_checkpoint_bundle,
     save_checkpoint,
@@ -225,6 +226,7 @@ def test_legacy_controller_v2_migrates_without_alternating_divisions() -> None:
     controller["version"] = 2
     options = cast(dict[str, object], controller["options"])
     del options["alternate_divisions"]
+    del options["max_substeps"]
 
     restored = LegacyModelAdapter.from_controller_state(
         simulation,
@@ -235,6 +237,80 @@ def test_legacy_controller_v2_migrates_without_alternating_divisions() -> None:
 
     restored_options = cast(dict[str, object], restored.controller_state()["options"])
     assert restored_options["alternate_divisions"] is False
+    assert restored_options["max_substeps"] == 2
+
+
+def test_legacy_controller_v3_migrates_to_one_relaxation() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.divideFlag = False
+
+    def update(cells: dict[int, LegacyCell]) -> None:
+        del cells
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=update,
+        mechanics=False,
+    )
+    adapter.add_cell(CellInit())
+    controller = adapter.controller_state()
+    controller["version"] = 3
+    options = cast(dict[str, object], controller["options"])
+    del options["max_substeps"]
+
+    restored = LegacyModelAdapter.from_controller_state(
+        simulation,
+        controller,
+        init=initialize,
+        update=update,
+    )
+
+    restored_options = cast(dict[str, object], restored.controller_state()["options"])
+    assert restored_options["max_substeps"] == 2
+
+
+def test_legacy_max_substeps_bounds_contact_frontier_relaxation() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.growthRate = 0.0
+
+    def update(cells: dict[int, LegacyCell]) -> None:
+        del cells
+
+    def make_adapter(max_substeps: int) -> LegacyModelAdapter:
+        simulation = Simulation()
+        adapter = LegacyModelAdapter(
+            simulation,
+            init=initialize,
+            update=update,
+            max_substeps=max_substeps,
+        )
+        first = CellInit()
+        first.position = Vec3(-0.25, 0.0, 0.0)
+        first.length = 2.0
+        adapter.add_cell(first)
+        second = CellInit()
+        second.position = Vec3(0.25, 0.0, 0.0)
+        second.length = 2.0
+        adapter.add_cell(second)
+        return adapter
+
+    disabled = make_adapter(1)
+    disabled.step(0.0)
+    assert disabled.last_mechanics_reports == ()
+
+    bounded = make_adapter(8)
+    bounded.step(0.0)
+    assert len(bounded.last_mechanics_reports) == 1
+
+    with pytest.raises(LegacyCompatibilityError, match="max_substeps"):
+        LegacyModelAdapter(
+            Simulation(),
+            init=initialize,
+            update=update,
+            max_substeps=-1,
+        )
 
 
 def test_legacy_controller_state_resumes_attributes_and_random_stream(tmp_path: Path) -> None:

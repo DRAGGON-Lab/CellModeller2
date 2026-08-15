@@ -107,7 +107,7 @@ def test_legacy_batch_checkpoint_resumes_exactly_and_checks_source(tmp_path: Pat
     expected = load_checkpoint_bundle(uninterrupted_path)
     actual = load_checkpoint_bundle(resumed_path)
     assert actual.controller == expected.controller
-    assert cast(dict[str, JSONValue], actual.controller)["version"] == 3
+    assert cast(dict[str, JSONValue], actual.controller)["version"] == 4
     for left, right in zip(
         actual.simulation.cells(), expected.simulation.cells(), strict=True
     ):
@@ -168,6 +168,7 @@ def test_legacy_loader_accepts_alternating_division_axes() -> None:
 
     controller = model.controller_state()
     options = cast(dict[str, JSONValue], controller["options"])
-    assert controller["version"] == 3
+    assert controller["version"] == 4
     assert options["alternate_divisions"] is True
     assert options["division_jitter_z"] is None
+    assert options["max_substeps"] == 8

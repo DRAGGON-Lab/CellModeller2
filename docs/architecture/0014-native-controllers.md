@@ -64,9 +64,12 @@ The standard payload records a stable model ID and version, completed-step
 counter, model JSON state, random stream, and every mechanics parameter.
 `NativeController.from_checkpoint` validates and restores that payload while
 the checkpoint's native state retains rate plans, signal grids, geometry, and
-lineage. Exact mechanics passes are a new explicit controller contract; how the
-legacy `max_substeps` option maps onto it remains a separate compatibility
-decision requiring trajectory evidence.
+lineage. Exact mechanics passes are a new explicit native-controller contract.
+The legacy adapter separately preserves the intent of `max_substeps` as a
+bounded new-contact frontier: it performs at most `max_substeps - 1` solves and
+stops when rediscovery produces no contact identity not seen earlier in the
+biological step. This distinction is checkpointed and supported by recorded
+colony trajectories; native models never inherit the legacy heuristic silently.
 
 ## Consequences
 

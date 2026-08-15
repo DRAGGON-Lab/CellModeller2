@@ -16,6 +16,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     CellInit,
     CellSnapshot,
     MechanicsParameters,
+    MechanicsSolveResult,
     Simulation,
     Vec3,
 )
@@ -238,6 +239,7 @@ class LegacyModelAdapter:
         compute_neighbors: bool = False,
         division_jitter_z: bool | None = None,
         alternate_divisions: bool = False,
+        max_substeps: int = 8,
         rng: random.Random | None = None,
         mechanics_parameters: MechanicsParameters | None = None,
     ) -> None:
@@ -252,6 +254,7 @@ class LegacyModelAdapter:
             compute_neighbors=compute_neighbors,
             division_jitter_z=division_jitter_z,
             alternate_divisions=alternate_divisions,
+            max_substeps=max_substeps,
             rng=rng,
             mechanics_parameters=mechanics_parameters,
         )
@@ -269,6 +272,7 @@ class LegacyModelAdapter:
         compute_neighbors: bool,
         division_jitter_z: bool | None,
         alternate_divisions: bool,
+        max_substeps: int,
         rng: random.Random | None,
         mechanics_parameters: MechanicsParameters | None,
     ) -> None:
@@ -284,6 +288,14 @@ class LegacyModelAdapter:
             raise LegacyCompatibilityError(
                 "legacy random jitter and alternating division axes are mutually exclusive"
             )
+        max_substeps_value = cast(object, max_substeps)
+        if (
+            not isinstance(max_substeps_value, int)
+            or isinstance(max_substeps_value, bool)
+            or max_substeps_value < 0
+            or max_substeps_value > (1 << 32) - 1
+        ):
+            raise LegacyCompatibilityError("legacy max_substeps must be an unsigned 32-bit integer")
         self.simulation = simulation
         self._init = init
         self._update = update
@@ -292,8 +304,16 @@ class LegacyModelAdapter:
         self._compute_neighbors = compute_neighbors
         self._division_jitter_z = division_jitter_z
         self._alternate_divisions = alternate_divisions
+        self._max_substeps = max_substeps_value
         self._rng = rng
         self._mechanics_parameters = mechanics_parameters or MechanicsParameters()
+        self._last_mechanics_reports: tuple[MechanicsSolveResult, ...] = ()
+
+    @property
+    def last_mechanics_reports(self) -> tuple[MechanicsSolveResult, ...]:
+        """Return reports from the most recent contact-frontier relaxation."""
+
+        return self._last_mechanics_reports
 
     def controller_state(self) -> dict[str, JSONValue]:
         """Return complete data-only callback and random-stream state."""
@@ -312,12 +332,13 @@ class LegacyModelAdapter:
         parameters = self._mechanics_parameters
         return {
             "kind": "cellmodeller2-legacy-python",
-            "version": 3,
+            "version": 4,
             "options": {
                 "mechanics": self._mechanics,
                 "compute_neighbors": self._compute_neighbors,
                 "division_jitter_z": self._division_jitter_z,
                 "alternate_divisions": self._alternate_divisions,
+                "max_substeps": self._max_substeps,
                 "mechanics_parameters": {
                     "mu_a": parameters.mu_a,
                     "gamma": parameters.gamma,
@@ -360,7 +381,7 @@ class LegacyModelAdapter:
             data["kind"] != "cellmodeller2-legacy-python"
             or not isinstance(version, int)
             or isinstance(version, bool)
-            or version not in (2, 3)
+            or version not in (2, 3, 4)
         ):
             raise LegacyCompatibilityError("legacy controller kind or version is unsupported")
         options = cls._controller_object(data["options"], "controller.options")
@@ -370,20 +391,30 @@ class LegacyModelAdapter:
             "division_jitter_z",
             "mechanics_parameters",
         }
-        if version == 3:
+        if version >= 3:
             expected_options.add("alternate_divisions")
+        if version >= 4:
+            expected_options.add("max_substeps")
         if set(options) != expected_options:
             raise LegacyCompatibilityError("legacy controller options are invalid")
         mechanics = options["mechanics"]
         compute_neighbors = options["compute_neighbors"]
         division_jitter_z = options["division_jitter_z"]
-        alternate_divisions = options["alternate_divisions"] if version == 3 else False
+        alternate_divisions = options["alternate_divisions"] if version >= 3 else False
+        max_substeps = options["max_substeps"] if version >= 4 else 2
         if not isinstance(mechanics, bool) or not isinstance(compute_neighbors, bool):
             raise LegacyCompatibilityError("legacy controller Boolean options are invalid")
         if division_jitter_z is not None and not isinstance(division_jitter_z, bool):
             raise LegacyCompatibilityError("legacy division jitter option is invalid")
         if not isinstance(alternate_divisions, bool):
             raise LegacyCompatibilityError("legacy alternating division option is invalid")
+        if (
+            not isinstance(max_substeps, int)
+            or isinstance(max_substeps, bool)
+            or max_substeps < 0
+            or max_substeps > (1 << 32) - 1
+        ):
+            raise LegacyCompatibilityError("legacy max_substeps option is invalid")
         mechanics_data = cls._controller_object(
             options["mechanics_parameters"], "controller.options.mechanics_parameters"
         )
@@ -427,6 +458,7 @@ class LegacyModelAdapter:
             compute_neighbors=compute_neighbors,
             division_jitter_z=division_jitter_z,
             alternate_divisions=alternate_divisions,
+            max_substeps=max_substeps,
             rng=restored_rng,
             mechanics_parameters=parameters,
         )
@@ -531,9 +563,36 @@ class LegacyModelAdapter:
             self._divide_cell(parent_id)
 
         self.simulation.step(dt)
+        self._last_mechanics_reports = ()
         if self._mechanics and self.simulation.cell_count != 0:
-            self.simulation.relax_cell_mechanics(self._mechanics_parameters)
+            self._last_mechanics_reports = self._relax_new_contact_frontier()
         self._refresh_cells()
+
+    def _relax_new_contact_frontier(self) -> tuple[MechanicsSolveResult, ...]:
+        seen: set[tuple[object, ...]] = set()
+        reports: list[MechanicsSolveResult] = []
+        for _ in range(max(0, self._max_substeps - 1)):
+            cell_contacts = self.simulation.find_cell_contacts().contacts
+            external_contacts = self.simulation.find_external_contacts().contacts
+            current: set[tuple[object, ...]] = {
+                ("cell", contact.first_id, contact.second_id, contact.ordinal)
+                for contact in cell_contacts
+            }
+            current.update(
+                (
+                    "constraint",
+                    contact.cell_id,
+                    contact.constraint_id,
+                    contact.constraint_kind,
+                    contact.endpoint,
+                )
+                for contact in external_contacts
+            )
+            if not current.difference(seen):
+                break
+            seen.update(current)
+            reports.append(self.simulation.relax_cell_mechanics(self._mechanics_parameters))
+        return tuple(reports)
 
     def _divide_cell(self, parent_id: int) -> None:
         parent = self._cells[parent_id]
