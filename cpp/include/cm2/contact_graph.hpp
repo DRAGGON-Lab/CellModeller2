@@ -42,12 +42,16 @@ class ContactGraph {
   [[nodiscard]] std::span<const CellContact> contacts() && = delete;
   [[nodiscard]] std::span<const std::size_t> incident_contact_indices(Slot slot) const&;
   [[nodiscard]] std::span<const std::size_t> incident_contact_indices(Slot slot) && = delete;
+  [[nodiscard]] std::span<const CellId> neighbor_ids(Slot slot) const&;
+  [[nodiscard]] std::span<const CellId> neighbor_ids(Slot slot) && = delete;
 
  private:
   std::size_t cell_count_{0};
   std::vector<CellContact> contacts_;
   std::vector<std::size_t> incidence_offsets_{0};
   std::vector<std::size_t> incidence_contact_indices_;
+  std::vector<std::size_t> neighbor_offsets_{0};
+  std::vector<CellId> neighbor_ids_;
 };
 
 [[nodiscard]] ContactGraph find_cell_contacts_cpu(

@@ -20,7 +20,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P1 | Legacy Python model adapter | module regulator | adapter for maintained `setup/init/update/divide` models | audit needed |
 | P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | audit needed |
 | P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | semantic audit needed |
-| P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | specified |
+| P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | implemented as deterministic backend-neutral graph views |
 | P2 | Fixed-position cells | `CLFixedPosition` | reference and native growth-only state | audit needed |
 | P2 | Neighbor diffusion | `NeighbourDiffusion` | retain only after model and attribute audit | dormant/ambiguous |
 | P2 | SBML import | `SBMLImport` | libSBML to typed reaction model; no generated Python source | redesign needed |

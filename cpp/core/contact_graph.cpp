@@ -1,5 +1,6 @@
 #include "cm2/contact_graph.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -60,7 +61,8 @@ void validate_contact_parameters(const ContactParameters& parameters) {
 ContactGraph::ContactGraph(std::size_t cell_count, std::vector<CellContact> contacts)
     : cell_count_(cell_count),
       contacts_(std::move(contacts)),
-      incidence_offsets_(checked_offset_count(cell_count)) {
+      incidence_offsets_(checked_offset_count(cell_count)),
+      neighbor_offsets_(checked_offset_count(cell_count)) {
   if (contacts_.size() > std::numeric_limits<std::size_t>::max() / 2) {
     throw std::overflow_error("contact incidence index size overflow");
   }
@@ -81,6 +83,20 @@ ContactGraph::ContactGraph(std::size_t cell_count, std::vector<CellContact> cont
     incidence_contact_indices_[cursors[contact.first_slot]++] = index;
     incidence_contact_indices_[cursors[contact.second_slot]++] = index;
   }
+
+  std::vector<std::vector<CellId>> neighbors(cell_count_);
+  for (const auto& contact : contacts_) {
+    neighbors[contact.first_slot].push_back(contact.second_id);
+    neighbors[contact.second_slot].push_back(contact.first_id);
+  }
+  for (std::size_t slot = 0; slot < cell_count_; ++slot) {
+    auto& ids = neighbors[slot];
+    std::ranges::sort(ids);
+    const auto unique_end = std::ranges::unique(ids).begin();
+    ids.erase(unique_end, ids.end());
+    neighbor_offsets_[slot + 1] = neighbor_offsets_[slot] + ids.size();
+    neighbor_ids_.insert(neighbor_ids_.end(), ids.begin(), ids.end());
+  }
 }
 
 std::size_t ContactGraph::cell_count() const noexcept { return cell_count_; }
@@ -99,6 +115,16 @@ std::span<const std::size_t> ContactGraph::incident_contact_indices(Slot slot) c
   const auto begin = incidence_offsets_[index];
   const auto end = incidence_offsets_[index + 1];
   return std::span<const std::size_t>(incidence_contact_indices_).subspan(begin, end - begin);
+}
+
+std::span<const CellId> ContactGraph::neighbor_ids(Slot slot) const& {
+  const auto index = static_cast<std::size_t>(slot);
+  if (index >= cell_count_) {
+    throw std::out_of_range("contact neighbor slot is out of range");
+  }
+  const auto begin = neighbor_offsets_[index];
+  const auto end = neighbor_offsets_[index + 1];
+  return std::span<const CellId>(neighbor_ids_).subspan(begin, end - begin);
 }
 
 }  // namespace cm2

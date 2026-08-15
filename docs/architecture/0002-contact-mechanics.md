@@ -106,6 +106,15 @@ CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal
 compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
 
+### Neighbor reporting
+
+`ContactGraph::neighbor_ids(slot)` derives the legacy neighbor view from the
+current graph. It returns ascending, unique stable cell IDs. Multiple geometric
+rows for the same capsule pair therefore contribute one neighbor, and external
+constraint contacts never appear. The view has the same lifetime as the graph:
+after growth, division, or mechanical integration, callers compute a new graph
+rather than treating neighbors as persistent cell state.
+
 ## Initial delivery order
 
 1. Robust capsule geometry and exhaustive CPU contact generation.

@@ -72,6 +72,42 @@ void test_parallel_overlap_uses_two_weighted_contacts() {
   }
   assert(graph.incident_contact_indices(0).size() == 2);
   assert(graph.incident_contact_indices(1).size() == 2);
+  assert(graph.neighbor_ids(0).size() == 1);
+  assert(graph.neighbor_ids(0).front() == 2);
+  assert(graph.neighbor_ids(1).size() == 1);
+  assert(graph.neighbor_ids(1).front() == 1);
+}
+
+void test_neighbors_use_sorted_stable_ids_after_division() {
+  cm2::WorldState state;
+  const auto parent = add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
+  const auto neighbor =
+      add_capsule(state, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
+  const auto [first_daughter, second_daughter] = state.divide_equal(parent);
+
+  const auto graph = cm2::find_cell_contacts_cpu(state);
+  assert(state.cell(first_daughter).slot == 0);
+  assert(first_daughter > neighbor);
+  assert(second_daughter > first_daughter);
+  assert(graph.neighbor_ids(0).size() == 2);
+  assert(graph.neighbor_ids(0)[0] == neighbor);
+  assert(graph.neighbor_ids(0)[1] == second_daughter);
+
+  const auto neighbor_slot = state.cell(neighbor).slot;
+  assert(graph.neighbor_ids(neighbor_slot).size() == 2);
+  assert(graph.neighbor_ids(neighbor_slot)[0] == first_daughter);
+  assert(graph.neighbor_ids(neighbor_slot)[1] == second_daughter);
+}
+
+void test_neighbor_lookup_checks_slot_bounds() {
+  const cm2::ContactGraph graph(0, {});
+  bool rejected = false;
+  try {
+    static_cast<void>(graph.neighbor_ids(0));
+  } catch (const std::out_of_range&) {
+    rejected = true;
+  }
+  assert(rejected);
 }
 
 void test_skew_and_coincident_contacts_have_finite_normals() {
@@ -185,6 +221,8 @@ int main() {
   test_separated_capsules_have_no_contact();
   test_end_on_contact_has_signed_separation();
   test_parallel_overlap_uses_two_weighted_contacts();
+  test_neighbors_use_sorted_stable_ids_after_division();
+  test_neighbor_lookup_checks_slot_bounds();
   test_skew_and_coincident_contacts_have_finite_normals();
   test_contact_graph_has_no_per_cell_limit();
   test_contacts_are_sorted_by_stable_identity();

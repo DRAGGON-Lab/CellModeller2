@@ -179,6 +179,8 @@ def test_contact_graph_is_available_through_the_public_api(backend: BackendKind)
     assert not graph.empty
     assert len(graph) == 2
     assert graph.incident_contact_indices(0) == [0, 1]
+    assert graph.neighbor_ids(0) == [2]
+    assert graph.neighbor_ids(1) == [1]
     assert [contact.ordinal for contact in graph.contacts] == [0, 1]
     assert all(
         math.isclose(contact.signed_separation, -0.2, abs_tol=1.0e-6) for contact in graph.contacts

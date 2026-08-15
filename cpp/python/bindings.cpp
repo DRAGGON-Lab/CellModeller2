@@ -253,6 +253,13 @@ NB_MODULE(_core, module) {
             const auto indices = graph.incident_contact_indices(slot);
             return std::vector<std::size_t>(indices.begin(), indices.end());
           },
+          "slot"_a)
+      .def(
+          "neighbor_ids",
+          [](const cm2::ContactGraph& graph, cm2::Slot slot) {
+            const auto ids = graph.neighbor_ids(slot);
+            return std::vector<cm2::CellId>(ids.begin(), ids.end());
+          },
           "slot"_a);
 
   nb::class_<cm2::PlaneConstraintInit>(module, "PlaneConstraintInit")
