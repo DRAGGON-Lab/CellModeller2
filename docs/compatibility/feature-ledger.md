@@ -26,7 +26,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | Retired | Neighbor diffusion | `NeighbourDiffusion` | do not port dead, dimensionally unspecified graph loop; require a new typed contact-flux proposal | audited and explicitly retired; no backend parity requirement |
 | P2 | SBML import | `SBMLImport` | bounded libSBML Core subset compiled to typed species-rate IR; no generated source | optional libSBML importer is CPU and native Metal conformant; CUDA uses the existing typed-plan hardware gate, with NVIDIA hardware validation pending |
 | P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | scene v1, independent Three.js rendering, and authenticated loopback controller implemented; rod and grid renderers replaced, and all unused sphere-cell, plant, periodic-image, collision-mesh, and static-mesh families explicitly retired |
-| P2 | Analysis scripts | `Scripts` | replace with documented Parquet/Zarr workflows | compatibility workflow implemented: deterministic typed Parquet/Zarr export, verified lazy dataframe recipes, and named signal access; CUDA-derived contacts retain the NVIDIA hardware gate |
+| P2 | Analysis scripts | `Scripts` | replace with documented Parquet/Zarr workflows | deterministic typed Parquet/Zarr export, verified lazy dataframe recipes, and named signal access implemented; CPU and Metal application-conformant, with native CUDA derived-contact execution wired into the NVIDIA hardware gate |
 
 Each row advances through: `audit` -> `specified` -> `CPU reference` ->
 `Metal conformance` and `CUDA conformance` -> `backend-complete`.

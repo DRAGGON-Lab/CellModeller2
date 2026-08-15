@@ -625,10 +625,6 @@ def export_dataset(
 
     if device_index < 0:
         raise AnalysisError("device index must be non-negative")
-    if backend == BackendKind.CUDA and (include_contacts or include_external_contacts):
-        raise AnalysisError(
-            "CUDA contact export is unavailable until NVIDIA hardware conformance passes"
-        )
     destination = Path(output)
     if destination.exists() and not replace:
         raise AnalysisError(f"output already exists: {destination}")

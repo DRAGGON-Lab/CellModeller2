@@ -21,6 +21,7 @@ from cellmodeller2 import (
     SignalGridSpec,
     Simulation,
     Vec3,
+    backend_device_count,
     save_checkpoint,
 )
 from cellmodeller2.analysis import (
@@ -264,18 +265,25 @@ def test_signal_geometry_changes_start_a_new_epoch(tmp_path: Path) -> None:
     assert signals["epoch-0001"]["levels"].shape == (1, 1, 3, 1, 1)
 
 
-def test_cuda_contact_derivation_stays_gated(tmp_path: Path) -> None:
+@pytest.mark.parametrize("device_index", range(backend_device_count(BackendKind.CUDA)))
+def test_cuda_contact_derivation_runs_on_hardware(tmp_path: Path, device_index: int) -> None:
     simulation, _ = _simulation()
     checkpoint = tmp_path / "frame.cm2.json"
     save_checkpoint(simulation, checkpoint)
 
-    with pytest.raises(AnalysisError, match="NVIDIA hardware conformance"):
-        export_dataset(
-            [checkpoint],
-            tmp_path / "cuda.cm2.dataset",
-            backend=BackendKind.CUDA,
-            include_contacts=True,
-        )
+    output = tmp_path / "cuda.cm2.dataset"
+    summary = export_dataset(
+        [checkpoint],
+        output,
+        backend=BackendKind.CUDA,
+        device_index=device_index,
+        include_contacts=True,
+        include_external_contacts=True,
+    )
+
+    assert summary.contact_rows > 0
+    assert summary.external_contact_rows > 0
+    assert _manifest(output)["options"]["contact_conformance"] == "hardware_conformant"
 
 
 def test_cli_exports_an_analysis_dataset(

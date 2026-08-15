@@ -25,11 +25,33 @@ jobs:
       - name: Run native CUDA conformance
         run: scripts/run_cuda_conformance.sh build/cuda-conformance-report
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Check out pinned CellModeller
+        uses: actions/checkout@v6
+        with:
+          repository: CellModeller/CellModeller
+          ref: 4896f543c6250f053eea2312e628cc3a96bf7408
+          path: build/legacy-cellmodeller
+          clean: true
+          persist-credentials: false
+
+      - name: Run CUDA application conformance
+        run: >-
+          scripts/run_cuda_application_conformance.sh
+          build/cuda-application-report
+          build/legacy-cellmodeller
+
       - name: Upload conformance evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: cuda-conformance-${{ github.sha }}
-          path: build/cuda-conformance-report
+          path: |
+            build/cuda-conformance-report
+            build/cuda-application-report
           if-no-files-found: error
           retention-days: 90

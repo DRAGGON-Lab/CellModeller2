@@ -32,7 +32,7 @@ _PARAMETERS: dict[str, JSONValue] = {
 def _targets() -> tuple[tuple[BackendKind, int], ...]:
     return tuple(
         (backend, device_index)
-        for backend in (BackendKind.CPU, BackendKind.METAL)
+        for backend in BackendKind
         for device_index in range(backend_device_count(backend))
     )
 
@@ -77,7 +77,7 @@ _APPLICATION_TARGETS = _targets()
         f"{backend.name.lower()}-{device_index}" for backend, device_index in _APPLICATION_TARGETS
     ],
 )
-def test_cpu_metal_application_workflow(
+def test_application_workflow(
     backend: BackendKind,
     device_index: int,
     tmp_path: Path,
@@ -148,7 +148,7 @@ def test_cpu_metal_application_workflow(
     assert reset_scene["frame"] == initial_scene["frame"]
     assert load_checkpoint_bundle(live_checkpoint).controller is not None
 
-    dataset_path = tmp_path / "metal-application.cm2.dataset"
+    dataset_path = tmp_path / "application.cm2.dataset"
     summary = export_dataset(
         [midpoint, resumed],
         dataset_path,

@@ -100,9 +100,10 @@ Checkpoint state exports are backend-neutral because loading reconstructs the
 same authenticated state. Contact exports are derived computations: their
 manifest records backend, device, `ContactParameters`, and conformance status.
 CPU is the default geometry oracle. Metal may be selected after its contact
-fixture passes on Apple hardware. CUDA is not advertised for derived-contact
-export until the same fixture passes on NVIDIA hardware. No exporter silently
-falls back to CPU.
+fixture passes on Apple hardware. CUDA selection executes the native CUDA
+geometry implementation; its hardware workflow must pass both the shared C++
+fixture and application-level derived-contact export before CUDA conformance is
+claimed. No exporter silently falls back to CPU.
 
 ## Experiment manifests
 

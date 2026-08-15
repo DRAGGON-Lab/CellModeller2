@@ -69,8 +69,8 @@ ordered checkpoint series into versioned Parquet cell/contact tables and Zarr
 signal arrays, and the documented dataframe recipes reproduce the meaningful
 legacy quantities above. CPU, Metal, and CUDA checkpoints use the same storage
 schema. Derived contact rows record the backend and contact parameters used;
-CUDA contact exports remain hardware-gated until the native contact fixture has
-run on NVIDIA hardware.
+the CUDA hardware workflow exercises both the native contact fixture and a
+derived-contact export before CUDA analysis conformance is claimed.
 
 Offline publication rendering and video export are separately useful, but are
 not prerequisites for scientific analysis-table compatibility.

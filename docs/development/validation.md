@@ -42,8 +42,8 @@ against the pinned legacy checkout. It also runs all 24 executable rows of the
 25-example matrix on CPU and every enumerated Metal device. The application
 workflow test independently composes native-controller batch execution, exact
 checkpoint/resume, live scene generation and reset, and analysis export with
-derived cell and constraint contacts on CPU and each Metal device. Both stages
-publish separate checksummed evidence directories.
+derived cell and constraint contacts on CPU and each requested hardware device.
+Both stages publish separate checksummed evidence directories.
 
 External constraint geometry begins with focused CPU fixtures covering plane
 normal normalization, one- and two-endpoint weighting, inside/outside sphere
@@ -183,13 +183,23 @@ be an explicit action by a repository maintainer. Both hardware runners force
 a fresh configure and clean rebuild before testing, and their standard
 `SHA256SUMS` files cover every other evidence artifact.
 
+The CUDA workflow then runs `scripts/run_cuda_application_conformance.sh`. It
+builds the Python extension with native CUDA explicitly enabled, requires a
+runtime device, runs the complete Python and recorded-trajectory suites, and
+executes all 24 runnable legacy-example rows on CPU and every enumerated CUDA
+device. The shared application test adds exact controller resume, live scene
+semantics, and analysis export with native derived cell and constraint
+contacts. CUDA application support is implemented but remains evidence-pending
+until this workflow passes on the NVIDIA runner.
+
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.
 
 The application-level legacy gate pins all 25 example sources at CellModeller
 commit `4896f543c6250f053eea2312e628cc3a96bf7408`. The matrix runner authenticates
 the 15 unchanged callback models and 9 typed migrations, then advances all 24
-runnable scenarios on CPU and every requested Metal device; `load.py` is the
+runnable scenarios on every requested backend device; the Metal and CUDA
+application workflows pair their native backend with CPU, and `load.py` is the
 one explicit migration-only row. The recorded trajectory suite independently
 checks growing 2D, constrained 3D, neighbor-dependent, species, and coupled
 signaling behavior against values produced by the original Apple OpenCL
@@ -213,9 +223,9 @@ stable and parent identities, cylinder versus full-capsule length, long-form
 species rows, complete typed cell and constraint contacts, source and
 reconstruction backend provenance, five-dimensional signal order, signal
 epoch boundaries, source-path privacy, time ordering, and non-destructive
-output collision handling. CUDA contact derivation stays rejected until the
-NVIDIA hardware conformance gate passes; ordinary CUDA checkpoint state can
-still be exported without a contact derivation.
+output collision handling. CPU and native Metal contact derivation pass the
+application workflow. Native CUDA derivation is selected without a CPU fallback
+and is included in the NVIDIA application gate.
 
 Recipe fixtures reopen a digest-verified dataset and evaluate the lazy Polars
 plans. They cover exact radial and length bin boundaries, retained empty bins,

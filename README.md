@@ -223,10 +223,11 @@ counts, derivations, and output digests without embedding absolute input paths
 unless `--path-provenance` is passed. Existing datasets require the explicit
 `--overwrite` flag.
 
-Contact reconstruction defaults to the CPU reference. Metal is selectable on
-conformant Apple hardware. CUDA state export is available, while CUDA contact
-export remains gated until the shared contact fixture passes on NVIDIA
-hardware.
+Contact reconstruction defaults to the CPU reference. Metal and CUDA are
+selectable explicitly and execute their native geometry implementations with
+no CPU fallback. Their application conformance workflows exercise cell and
+constraint contact export on real Apple and NVIDIA hardware before the
+corresponding backend is described as conformant.
 
 Verified lazy Polars recipes cover radial counts and species means, cylinder
 or full-capsule length histograms, the legacy length-weighted XY line-density
