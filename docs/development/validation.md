@@ -1,10 +1,10 @@
-# Validation workflow
+# Testing and validation
 
-CellModeller2 validates scientific behavior in vertical slices. CPU is the readable numerical reference, Metal is the feature-complete Apple GPU backend, and CUDA is the native NVIDIA backend under active development. A backend is accepted only when its own implementation passes the same observable contracts without silently falling back to another backend.
+CellModeller2 tests observable scientific behavior at several levels, from individual numerical operations to complete application workflows. CPU is the readable numerical reference, Metal is the supported Apple GPU backend, and CUDA is the native NVIDIA backend under active development. A backend is supported only when its own implementation passes the same contracts without silently falling back to another backend.
 
 ## Validation layers
 
-Each feature progresses through the same sequence:
+Backend-affecting work is checked in the following order:
 
 1. State the governing equation and discrete algorithm.
 2. Classify legacy behavior as authoritative, informative, or defective.
@@ -23,9 +23,9 @@ Every test-enabled build runs the shared scenarios against every enumerated devi
 
 `trajectory_conformance` composes coupled rates and transport, contact and constraint geometry, fixed-cell mechanics, integration, and division over three steps. It catches cross-feature errors that isolated one-step tests cannot expose. The exact scenarios, problem sizes, and numerical tolerances are maintained in the [conformance test reference](../../tests/conformance/README.md).
 
-## CPU and Metal release baseline
+## CPU and Metal
 
-The CPU and Metal backends form the current feature-complete baseline. Release evidence comprises both the native C++ gate and the application gate.
+CPU and Metal use both a native C++ test run and an application-level test run.
 
 ```console
 scripts/run_metal_conformance.sh
@@ -45,9 +45,9 @@ Together, these gates cover:
 - Parquet/Zarr analysis export, native contact derivation, and verified Polars recipes; and
 - all 24 runnable rows of the pinned 25-example CellModeller compatibility matrix.
 
-Each runner requires a clean source tree and writes a checksummed evidence directory containing the exact commit, device and toolchain inventory, configure/build logs, JUnit results, and final status. The manual `Metal conformance` workflow runs the same commands on a self-hosted macOS runner carrying the `metal` label.
+Each runner requires a clean source tree and writes a checksummed test record containing the exact commit, device and toolchain inventory, configure/build logs, JUnit results, and final status. The manual `Metal conformance` workflow runs the same commands on a self-hosted macOS runner carrying the `metal` label.
 
-## Legacy compatibility evidence
+## Comparing with CellModeller
 
 The application gate pins the original example sources at CellModeller commit `4896f543c6250f053eea2312e628cc3a96bf7408`. It authenticates 15 unchanged callback models and 9 typed equation migrations, advances all 24 runnable scenarios, and records `load.py` as the one migration-only row. Set `CM_LEGACY_ROOT` to that checkout to enable the suite.
 
@@ -59,11 +59,11 @@ Recorded trajectories independently compare five representative workflows with v
 - a species model; and
 - a coupled signaling model.
 
-This evidence prevents a semantic change shared by CPU and Metal from masquerading as compatibility. The [legacy example matrix](../compatibility/legacy-example-matrix.md) and [trajectory evidence](../compatibility/legacy-trajectory-evidence.md) record the exact coverage.
+These comparisons can reveal a semantic change shared by CPU and Metal that ordinary cross-backend tests would miss. The [legacy example matrix](../compatibility/legacy-example-matrix.md) and [recorded trajectories](../compatibility/legacy-trajectory-evidence.md) describe the coverage.
 
-## CUDA development gates
+## CUDA
 
-CUDA development uses three distinct gates:
+CUDA uses three distinct checks:
 
 ```console
 scripts/run_cuda_compile_check.sh
@@ -71,15 +71,15 @@ scripts/run_cuda_conformance.sh
 CM_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
 ```
 
-The compile check mounts the source read-only in an ephemeral CUDA 12.8.1 development container, builds every native target, lists the registered tests, and records the image and compiler evidence. It is a source/link portability check and does not require an NVIDIA driver or device.
+The compile check mounts the source read-only in an ephemeral CUDA 12.8.1 development container, builds every native target, lists the registered tests, and records the image and compiler versions. It is a source/link portability check and does not require an NVIDIA driver or device.
 
 The native conformance runner requires an NVIDIA GPU. `cuda_runtime_gate` prevents a CUDA-enabled build from succeeding through CPU-only execution, and the runner records the GPU inventory, compute capability, driver, toolkit, clean-build logs, JUnit output, result, and checksums.
 
 The application runner builds the Python extension with CUDA enabled, requires a runtime device, runs the Python and recorded-trajectory suites, and executes the legacy-example matrix on CPU and every enumerated CUDA device. It also covers exact controller resume, live scene semantics, and analysis export with native cell and constraint contact derivation.
 
-The hosted `CUDA compile check` workflow runs for pull requests and `main`. Hardware and application conformance are manually dispatched to a self-hosted Linux x64 runner carrying the `gpu` label so untrusted pull-request code is not executed automatically on a persistent GPU host. CUDA graduates from active development when these gates pass on the supported NVIDIA architecture matrix and their evidence is attached to the exact release commit.
+The hosted `CUDA compile check` workflow runs for pull requests and `main`. Hardware and application checks are manually dispatched to a self-hosted Linux x64 runner carrying the `gpu` label so untrusted pull-request code is not executed automatically on a persistent GPU host. CUDA support across an NVIDIA architecture requires all three checks on the release commit.
 
-## Focused fixture coverage
+## What the tests cover
 
 The Python and C++ suites exercise more than numerical parity:
 
@@ -93,6 +93,6 @@ The Python and C++ suites exercise more than numerical parity:
 - Scene and viewer fixtures cover strict cross-language decoding, RFC 8785 digests, browser-safe identities, coloring, signal slicing, token and origin checks, WebSocket messages, reset, and checkpointing.
 - Analysis fixtures read generated Parquet and Zarr artifacts back, verify schemas and provenance, and test geometry, species, contact, lineage, and signal recipes at boundary cases.
 
-## Evidence policy
+## Backend support policy
 
 Pull requests must not claim backend support when an implementation invokes the CPU reference or transfers full state to the host to complete a device operation. Every hardware runner must use a clean build and retain its machine-readable results. A backend-affecting change invalidates evidence from an earlier commit and requires the corresponding gate to run again.

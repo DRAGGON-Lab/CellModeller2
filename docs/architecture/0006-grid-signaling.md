@@ -5,7 +5,7 @@
 
 ## Context
 
-Diffusible signals connect the intracellular rate model to a spatial transport model. This is one numerical system: independently updating a host grid and a device cell model would change sampling time, conservation, and reproducibility. The legacy behavior also contains ambiguous coefficient scaling and unit conventions documented in the legacy signaling audit.
+Diffusible signals connect the intracellular rate model to a spatial transport model. This is one numerical system: independently updating a host grid and a device cell model would change sampling time, conservation, and reproducibility. The CellModeller comparison documents ambiguous historical coefficient scaling and unit conventions.
 
 CellModeller2 needs a portable state model and one stage contract that can be implemented independently with native CPU, Metal, and CUDA APIs.
 
@@ -26,16 +26,13 @@ Each signal declares a non-negative diffusion coefficient and a finite 3D advect
 
 Periodic faces must occur in opposing pairs on an axis. For diffusion, a no-flux exterior stencil value equals the boundary lattice value. Fixed values are defined at the exterior stencil location one grid spacing beyond the boundary, which removes half-cell ambiguity.
 
-The grid may also carry an immutable affine reaction field with non-negative
-finite source `b[i]` and first-order loss `lambda[i]` for every flattened level:
+The grid may also carry an immutable affine reaction field with non-negative finite source `b[i]` and first-order loss `lambda[i]` for every flattened level:
 
 ```text
 R(c)[i] = b[i] - lambda[i] * c[i].
 ```
 
-Both arrays use the level ordering above and must match the complete level
-count. Region and coordinate masks are authoring conveniences that materialize
-these arrays before validation; no runtime predicate is part of the grid.
+Both arrays use the level ordering above and must match the complete level count. Region and coordinate masks are authoring conveniences that materialize these arrays before validation; no runtime predicate is part of the grid.
 
 ## Transport discretization
 
@@ -82,7 +79,7 @@ The native backend operation encompasses transport, sample, rate evaluation, sca
 
 Grid specification, affine reaction coefficients, levels, and the complete coupled rate plan are exact checkpoint state. Derived weights, indices, rates, and device buffers are reconstructed caches. Division inherits intracellular species as before and does not copy a sampled signal cache; the next coupled stage samples both daughters at their new positions.
 
-Changing grid geometry after cells exist is intentionally absent from the initial API. A future remeshing operation must name its interpolation and mass conservation behavior explicitly.
+Changing grid geometry after cells exist is outside the current API. Any remeshing operation must define its interpolation and mass-conservation behavior explicitly.
 
 ## Consequences
 

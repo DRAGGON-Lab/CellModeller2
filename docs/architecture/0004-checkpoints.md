@@ -31,7 +31,7 @@ Device buffers, command queues, streams, compiled pipelines, contact graphs, and
 
 Immediately after restore, all persisted integers and IEEE-754 cell and time values match the saved host state exactly. Subsequent CPU execution is tested for exact continuation. Native GPU continuation is compared to the same CPU reference under each operation's declared numerical tolerance; cross-device bitwise equality is not promised.
 
-The digest detects accidental corruption but is not an authenticity signature. Untrusted provenance remains untrusted data and must be escaped by downstream renderers. Compatibility migrations will be explicit version-to-version data transforms; a reader never guesses the meaning of an unknown schema.
+The digest detects accidental corruption but is not an authenticity signature. Untrusted provenance remains untrusted data and must be escaped by downstream renderers. Schema migrations are explicit version-to-version data transforms; a reader never guesses the meaning of an unknown schema.
 
 ## Consequences
 

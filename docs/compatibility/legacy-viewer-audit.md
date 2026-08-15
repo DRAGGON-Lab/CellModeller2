@@ -1,8 +1,8 @@
-# Legacy interactive viewer audit
+# Migrating from the CellModeller viewer
 
-## Scope
+## CellModeller components
 
-This audit covers the CellModeller 4 desktop entry point and its rendering layer:
+The CellModeller 4 desktop entry point and rendering layer comprise:
 
 - `Scripts/CellModellerGUI.py`;
 - `CellModeller/GUI/PyGLCMViewer.py`;
@@ -13,7 +13,7 @@ This audit covers the CellModeller 4 desktop entry point and its rendering layer
 
 The goal is to preserve useful interactive behavior without preserving the old ownership graph or graphics implementation.
 
-## What the legacy viewer owns
+## Simulation and presentation ownership
 
 `PyGLCMViewer` does more than display state. It enumerates OpenCL platforms and devices, constructs and destroys `Simulator` instances, imports and reloads model modules, advances the simulation from a zero-interval Qt timer, toggles pickle output, and restores executable pickle payloads. This makes the UI an owner of compute policy and model execution.
 
@@ -33,25 +33,25 @@ The maintained rod-cell workflows use a smaller set of capabilities:
 - draw a selected-cell outline and inspect its properties; and
 - display scalar signaling-grid slices.
 
-The renderer file also contains sphere, plant, periodic-image, static-mesh, and experimental mesh renderers. Their dispositions are now explicit rather than implicit future scope.
+The renderer file also contains sphere, plant, periodic-image, static-mesh, and experimental mesh renderers. They are listed below because they require different simulation state and are not supported by the rod-and-grid viewer.
 
-## Renderer-family dispositions
+## Renderer support
 
 The machine-readable contract is `compatibility/legacy-renderers-v1.json`. It authenticates `Renderers.py` at CellModeller commit `4896f543c6250f053eea2312e628cc3a96bf7408` and classifies all ten renderer classes. Repository-wide call-site search found that all 25 bundled examples select `GLBacteriumRenderer`, four also select `GLGridRenderer`, and none selects another renderer class.
 
-| Family | Source evidence | Disposition |
+| Family | CellModeller behavior | CellModeller2 support |
 | --- | --- | --- |
-| rod cells (`GLBacteriumRenderer`, `GLCelBacteriumRenderer`, `GL2DBacteriumRenderer`) | rods, stable cell IDs, selection, arbitrary color fields | replaced by scene-v1 rods, typed color mappings, and the independent viewer |
-| signal grid (`GLGridRenderer`) | direct reads from the signaling integrator | replaced by complete scene-v1 grids and viewer-owned channel/slice selection |
-| sphere cells (`GLSphereRenderer`) | a distinct spherical cell morphology; no bundled call site; picking references an undefined radius | deliberately retired; this does not retire typed inside/outside sphere constraints, whose bundled example uses the rod renderer |
-| plant cells (`GLPlantRenderer`, `GLPlantSignalRenderer`) | polygon `nodep`/`wallp` geometry and arbitrary signal attributes; no bundled call site or plant engine | deliberately retired |
-| periodic cell images (`GLBacteriumRendererWithPeriodicImages`) | four visual copies offset by mutable collision-grid bounds; no declared periodic cell topology or bundled call site | deliberately retired; typed periodic signal boundaries remain supported |
-| dynamic collision mesh (`GLWillsMeshRenderer`) | lines over mutable `CLBacterium` broad-phase bins; no bundled call site | deliberately retired as a debugging overlay, not scientific state |
-| static triangle mesh (`GLStaticMeshRenderer`) | external mesh/regulator object graphs; no bundled call site or checkpoint representation | deliberately retired |
+| rod cells (`GLBacteriumRenderer`, `GLCelBacteriumRenderer`, `GL2DBacteriumRenderer`) | rods, stable cell IDs, selection, arbitrary color fields | Supported through scene-v1 rods, typed color mappings, and the independent viewer. |
+| signal grid (`GLGridRenderer`) | direct reads from the signaling integrator | Supported through scene-v1 grids and viewer-owned channel and slice selection. |
+| sphere cells (`GLSphereRenderer`) | a distinct spherical cell morphology; no bundled call site; picking references an undefined radius | Not supported as a cell morphology. Typed inside/outside sphere constraints remain available for rod cells. |
+| plant cells (`GLPlantRenderer`, `GLPlantSignalRenderer`) | polygon `nodep`/`wallp` geometry and arbitrary signal attributes; no bundled call site or plant engine | Not supported; CellModeller2 has no corresponding plant-cell state model. |
+| periodic cell images (`GLBacteriumRendererWithPeriodicImages`) | four visual copies offset by mutable collision-grid bounds; no declared periodic cell topology or bundled call site | Not supported for cells. Typed periodic signal boundaries remain available. |
+| dynamic collision mesh (`GLWillsMeshRenderer`) | lines over mutable `CLBacterium` broad-phase bins; no bundled call site | Not part of scene data; it visualizes an implementation-specific debugging structure. |
+| static triangle mesh (`GLStaticMeshRenderer`) | external mesh/regulator object graphs; no bundled call site or checkpoint representation | Not supported because there is no corresponding checkpoint or scene representation. |
 
-These retirements close the CellModeller compatibility surface. A future spherical-cell, plant-tissue, periodic-cell-domain, or mesh simulation would be a new typed engine proposal with checkpoint and scene semantics, not a delayed port of renderer code.
+Spherical-cell, plant-tissue, periodic-cell-domain, and mesh simulations require their own typed engine state, checkpoint representation, and scene semantics; they are not implied by the old renderer classes alone.
 
-## Compatibility hazards
+## Migration considerations
 
 The old viewer cannot be used as a compatibility oracle for several reasons:
 
@@ -64,9 +64,9 @@ The old viewer cannot be used as a compatibility oracle for several reasons:
 
 Visual pixel equality is neither defined nor scientifically meaningful. The compatibility target is equality of the typed scene data presented to the viewer, followed by behavioral tests of selection and controls.
 
-## Migration boundary
+## CellModeller2 design
 
-CellModeller2 will not attach renderers to `Simulation`, expose backend memory to a UI, or let the UI choose CUDA or Metal devices by reaching into a runtime. Instead, the engine produces immutable scene frames in stable cell-ID order. A separate controller owns run policy and produces those frames after complete simulation steps.
+CellModeller2 does not attach renderers to `Simulation`, expose backend memory to a UI, or let the UI choose CUDA or Metal devices by reaching into a runtime. Instead, the engine produces immutable scene frames in stable cell-ID order. A separate controller owns run policy and produces those frames after complete simulation steps.
 
 The initial scene vocabulary contains rods and an optional scalar signal grid. Cell color is a presentation mapping over declared fields such as cell type, species level, growth rate, and fixed state; it is not a mutable engine field. Stable 64-bit cell IDs cross the JSON boundary as decimal strings so browser consumers cannot lose precision.
 

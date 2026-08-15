@@ -38,5 +38,5 @@ The standard payload records a stable model ID and version, completed-step count
 - Native models can compose runtime policy without coupling the engine to one modeling DSL or callback base class.
 - Exact controller resume has one path through batch execution, manifests, and the live viewer.
 - Checkpoints remain data-only and never grant authority to execute recorded source paths.
-- A model source change deliberately invalidates existing controller resumes unless a future explicit migration workflow is introduced.
+- A model source change invalidates existing controller resumes unless an explicit migration is provided.
 - Additional typed orchestration helpers can be built on this protocol without changing the runner or checkpoint format.

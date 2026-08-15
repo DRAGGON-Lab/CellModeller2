@@ -20,10 +20,7 @@ c_(n+1) - dt/2 (T + R)(c_(n+1))
 
 This deliberately implements the intended legacy equation instead of its ignored-return bug. The standard diffusion coefficient, three-dimensional upwind advection, boundary semantics, and source units remain those of ADR 0006; the historical extra factor of one sixth is not restored.
 
-Fixed reservoir boundaries make `T` affine, and a nonzero field source makes
-`R` affine. Applying both complete operators on both sides includes their
-constant contributions for the full time step. Spatial loss `-lambda*c` enters
-the implicit diagonal. Periodic and no-flux boundaries remain homogeneous.
+Fixed reservoir boundaries make `T` affine, and a nonzero field source makes `R` affine. Applying both complete operators on both sides includes their constant contributions for the full time step. Spatial loss `-lambda*c` enters the implicit diagonal. Periodic and no-flux boundaries remain homogeneous.
 
 ## Solver contract
 

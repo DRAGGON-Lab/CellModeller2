@@ -5,15 +5,15 @@
 
 ## Context
 
-Legacy CellModeller contains a single `NeighbourDiffusion.py` module that suggests cell-to-cell diffusion over a neighbor graph. It is not referenced by the bundled models and cannot execute in the maintained code path. The audit is recorded in `docs/compatibility/legacy-neighbor-diffusion-audit.md`.
+CellModeller contains a single `NeighbourDiffusion.py` module that suggests cell-to-cell diffusion over a neighbor graph. It is not referenced by the bundled models and cannot execute in the maintained code path. The source behavior is described in `docs/compatibility/legacy-neighbor-diffusion-audit.md`.
 
 The visible loop resembles an unweighted graph Laplacian, but its comment says the flux should be scaled by wall or contact area. The code therefore does not establish the physical quantity represented by a level, the units of its coefficient, the contact measure, or the intended behavior as a contact appears and disappears.
 
 ## Decision
 
-CellModeller2 will not port `NeighbourDiffusion` as a compatibility feature. No CPU, Metal, or CUDA backend advertises it, and its absence is not a gap in native backend parity.
+CellModeller2 does not provide `NeighbourDiffusion` as a compatibility feature. No CPU, Metal, or CUDA backend advertises it, and its absence is not a gap in native backend parity.
 
-A future cell-contact transport feature must be proposed independently. Its contract must define:
+A cell-contact transport model must independently define:
 
 - whether state is amount, concentration, surface density, or another typed quantity;
 - a symmetric pairwise flux and the contact area or conductance used to weight it;

@@ -1,6 +1,6 @@
-# Legacy grid-signaling audit
+# Grid signaling compatibility
 
-This audit separates observable CellModeller behavior from the numerical contract CellModeller2 should preserve. The sources inspected are `Signalling/GridDiffusion.py`, `Integration/CLEulerSigIntegrator.py`, `Integration/CLEulerSigIntegrator.cl`, and the signaling examples.
+This reference compares CellModeller's grid-signaling behavior with the numerical model used by CellModeller2. The relevant sources are `Signalling/GridDiffusion.py`, `Integration/CLEulerSigIntegrator.py`, `Integration/CLEulerSigIntegrator.cl`, and the signaling examples.
 
 ## State and geometry
 
@@ -40,8 +40,8 @@ Rate evaluation is parallel, but grid transport runs through SciPy on the host a
 
 The injected functions receive grid volume, cell surface area, effective cell volume, cell type, species, and sampled signals. Units are not enforced. The examples divide both intracellular and extracellular exchange expressions by grid volume inside user source. There is no typed guarantee that the species and grid exchange terms conserve amount.
 
-## CellModeller2 compatibility decision
+## CellModeller2 behavior
 
 CellModeller2 preserves the useful structure: signal-major fields, trilinear sample/scatter, pre-step signal sampling, post-growth species dilution, and a simultaneous Euler update. It does not preserve the extra one-sixth diffusion factor, x-only centered advection, implicit SciPy boundary strings, truncated edge weights, arbitrary OpenCL source injection, or host-side scatter.
 
-Legacy models will need an explicit adapter that translates their intended coefficients and units. Such translation cannot be automatic because the legacy API does not reveal whether a model compensated for the historical scaling choices.
+Models using these APIs need an explicit translation of their intended coefficients and units. This cannot be automatic because the CellModeller API does not reveal whether a model compensated for the historical scaling choices.

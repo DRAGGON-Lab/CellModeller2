@@ -1,10 +1,10 @@
-# Legacy fixed-position audit
+# Fixed cells in CellModeller and CellModeller2
 
-## Scope
+## CellModeller implementation
 
-The audited implementation is `CellModeller/Biophysics/GeneralModels/CLFixedPosition.py` in legacy CellModeller. Repository search found no bundled model that selects this module.
+The relevant implementation is `CellModeller/Biophysics/GeneralModels/CLFixedPosition.py`. No bundled CellModeller model selects this module.
 
-## Observed behavior
+## CellModeller behavior
 
 `CLFixedPosition` is a complete alternate biophysics implementation rather than a flag on the ordinary rod model. Its device arrays contain center coordinates, current and previous scalar volumes, and volume growth rates. Adding a cell copies `state.pos`, `state.volume`, and `state.growthRate` into those arrays. The step computes
 
@@ -15,7 +15,7 @@ volume_next = volume + dt * growth_rate
 
 and never updates a position. It has no direction, capsule length, radius, contact graph, or mechanical relaxation. Its host-state update copies volume and position back to the legacy cell object.
 
-## Compatibility judgment
+## CellModeller2 behavior
 
 The reusable semantic requirement is “biological state advances while the cell is mechanically immovable.” The scalar point-volume representation is not isomorphic to CellModeller2's rod length and radius: a conversion would need to choose a shape and specify whether radius, total capsule length, or cylindrical length remains fixed. Silently equating volume with rod length would change both growth and contact geometry.
 

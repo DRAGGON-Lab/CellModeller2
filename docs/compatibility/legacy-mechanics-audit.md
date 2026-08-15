@@ -1,8 +1,8 @@
-# Legacy rod-mechanics audit
+# Rod mechanics in CellModeller and CellModeller2
 
-This audit separates the biological and numerical behavior worth preserving from the OpenCL-era storage and scheduling choices that should not cross into CellModeller2.
+This reference describes the CellModeller rod-mechanics model, the parts retained by CellModeller2, and the numerical differences that matter when comparing results.
 
-## Sources and authority
+## Source model
 
 The legacy mechanics path is split across three sources:
 
@@ -12,7 +12,7 @@ The legacy mechanics path is split across three sources:
 
 For compatibility, defined behavior in the Python and OpenCL implementation is the baseline. The TeX document is explanatory evidence, not an executable specification. Undefined behavior, unchecked capacity, and internally inconsistent behavior are defects to repair rather than contracts to preserve.
 
-## Observed discrete model
+## CellModeller numerical model
 
 A cell is a capsule whose centerline is a segment with center `x`, unit axis `a`, cylindrical length `l`, and radius `r`. Growth supplies a desired length increment. Mechanics solves a seven-degree-of-freedom correction per cell:
 
@@ -53,7 +53,7 @@ with unpreconditioned conjugate gradient. `M` weights translation by `muA * (l +
 
 Despite names such as `CGSSolve`, `add_impulse`, and the collision language in the TeX document, the running code is best understood as a regularized position-and-growth correction, not a time-accurate momentum impulse. The `dt` and substep `alpha` arguments do not affect the assembled operator.
 
-## Legacy representation
+## OpenCL representation
 
 Contacts are stored in a fixed `cell_count * max_contacts` table, owned by the lower slot of a cell pair. A second fixed table collects reverse adjacency. Plane and sphere endpoints are encoded as negative integers. A two-dimensional uniform grid over `x` and `y` supplies cell candidates; the narrow phase still uses three-dimensional vectors.
 
@@ -67,7 +67,7 @@ The following are storage artifacts, not scientific semantics:
 
 ## Defects and ambiguities
 
-CellModeller2 must not reproduce these behaviors:
+CellModeller2 does not reproduce these behaviors:
 
 1. Contact insertion does not bounds-check `max_contacts`, so dense colonies can write past a cell's contact row.
 2. Plane and sphere contacts reuse the same negative endpoint encoding and can be mistaken for one another.
@@ -83,15 +83,15 @@ CellModeller2 resolves item 6 with a finite-radius, full-rank rotational inertia
 
 Correction integration retains the five-degree angular cap and the `max(0, desired elongation + length correction)` non-shortening rule. It makes solver convergence a checked precondition and validates the entire update before mutating geometry, neither of which the legacy path enforced.
 
-These differences require explicit fixtures before any claim of legacy parity. They are not grounds for silently adopting an accidental result.
+The comparison tests cover these differences explicitly rather than treating accidental or undefined output as a compatibility target.
 
-## Outer relaxation decision
+## Contact-frontier relaxation
 
 The running legacy scheduler increments `sub_tick_i` before its continuation test. It therefore performs at most `max_substeps - 1` solves, and continues only when prediction has added a contact not already retained in the current outer step. The default `max_substeps=8` does not mean eight unconditional relaxations. In the recorded representative colonies, completed steps normally reported two discovery ticks (one solve), with occasional three-tick steps.
 
-The adapter now implements a typed replacement for this behavior. After growth, it discovers stable cell and constraint contact identities, solves once when a new identity exists, integrates that correction, and repeats discovery until no new identity appears or `max_substeps - 1` solves have run. Each solve uses the current typed contact graph rather than retaining stale constraint rows. This preserves the bounded contact-frontier purpose while rejecting the legacy hysteresis ambiguity. The configured limit is controller-v4 checkpoint state; v2 and v3 adapter checkpoints migrate to `max_substeps=2`, which preserves their former one-relaxation behavior.
+The adapter implements a typed form of this behavior. After growth, it discovers stable cell and constraint contact identities, solves once when a new identity exists, integrates that correction, and repeats discovery until no new identity appears or `max_substeps - 1` solves have run. Each solve uses the current typed contact graph rather than retaining stale constraint rows. The configured limit is controller-v4 checkpoint state; v2 and v3 adapter checkpoints migrate to `max_substeps=2`, preserving their former one-relaxation behavior.
 
-## Required compatibility fixtures
+## Reference tests
 
 The mechanics implementation has source-controlled fixtures for:
 

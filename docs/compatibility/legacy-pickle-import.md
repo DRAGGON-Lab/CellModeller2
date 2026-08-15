@@ -1,4 +1,4 @@
-# Legacy pickle migration audit
+# Importing CellModeller pickle snapshots
 
 CellModeller 1 writes Python pickle snapshots in two families:
 
@@ -7,7 +7,7 @@ CellModeller 1 writes Python pickle snapshots in two families:
 
 Pickle is an executable serialization format. `cm import-legacy-pickle` therefore refuses to read a file unless `--trust-legacy-pickle` is present. A restricted unpickler admits the historical `CellState` representation, numeric NumPy arrays, and the small set of reconstruction globals those values need; all other globals fail before they are resolved. This reduces accidental exposure but is not a security boundary for adversarial files. Import snapshots only from a trusted simulation run.
 
-## One-way native-state boundary
+## What the importer preserves
 
 The importer requires `--native-state-only` because the old format cannot support exact continuation. It migrates:
 

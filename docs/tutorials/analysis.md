@@ -1,12 +1,10 @@
 # Checkpoints, contact graphs, and quantitative analysis
 
-The legacy analysis tutorial loads executable pickle files and reaches into
-private `cellStates`. CellModeller2 separates three artifacts:
+CellModeller2 separates simulation output into three artifacts:
 
 - a checkpoint is an exact, integrity-checked restart artifact;
 - a scene is an immutable presentation snapshot; and
-- an analysis dataset is an immutable Parquet/Zarr projection with schemas and
-  provenance.
+- an analysis dataset is an immutable Parquet/Zarr projection with schemas and provenance.
 
 Use checkpoints for resuming, scenes for viewing, and datasets for statistics.
 
@@ -23,8 +21,7 @@ uv run cm run \
   --output results/growth.cm2.json
 ```
 
-Periodic filenames contain their run-local completed step. Physical time is
-stored independently and is the appropriate axis when `dt` differs.
+Periodic filenames contain their run-local completed step. Physical time is stored independently and is the appropriate axis when `dt` differs.
 
 ## 2. Export typed tables
 
@@ -43,13 +40,11 @@ The dataset contains:
 - `contacts.parquet` when requested; and
 - `signals.zarr` when the source has a signal grid.
 
-The manifest authenticates every source and output. Existing datasets are not
-replaced unless replacement is explicitly requested.
+The manifest authenticates every source and output. Existing datasets are not replaced unless replacement is explicitly requested.
 
-## 3. Port of the legacy length/radius analysis
+## 3. Cell geometry distributions
 
-The old `LengthHistogram.py` computes radial XY position and full capsule
-length. The equivalent typed recipe is:
+Use the typed recipes to compute radial XY position and a full-capsule length histogram:
 
 ```python
 from cellmodeller2.analysis import open_dataset
@@ -66,10 +61,7 @@ histogram = length_histogram(
 ).collect()
 ```
 
-The source table keeps both `cylinder_length` and derived `capsule_length`.
-The recipe defaults to full capsule length, matching the legacy expression
-`length + 2 * radius`, without renaming engine state. Radial position is
-`sqrt(x^2 + y^2)` and is retained as a derived column.
+The source table keeps both `cylinder_length` and derived `capsule_length`. The recipe defaults to full capsule length, `length + 2 * radius`, without renaming engine state. Radial position is `sqrt(x^2 + y^2)` and is retained as a derived column.
 
 ## 4. Unique contact edges
 
@@ -81,38 +73,25 @@ dataset = open_dataset("results/growth.dataset")
 edges = unique_neighbor_edges(dataset).collect()
 ```
 
-The raw contact table preserves every mechanics row. The recipe groups an
-unordered stable-ID pair and reports geometric row count, minimum signed
-separation, maximum derived overlap, and total contact weight. Negative signed
-separation means penetration; `overlap = max(0, -signed_separation)` is a
-derivation and does not replace the signed quantity.
+The raw contact table preserves every mechanics row. The recipe groups an unordered stable-ID pair and reports geometric row count, minimum signed separation, maximum derived overlap, and total contact weight. Negative signed separation means penetration; `overlap = max(0, -signed_separation)` is a derivation and does not replace the signed quantity.
 
-This edge table can be passed to NetworkX or another graph library, but graph
-construction is a downstream choice. CellModeller2 does not pin an old
-NetworkX version or serialize live Python graph objects.
+This edge table can be passed to NetworkX or another graph library, but graph construction is a downstream choice. CellModeller2 does not serialize live Python graph objects.
 
 ## 5. Species and signals
 
-Use `radial_species_mean` for explicit radial bins. Empty bins have zero count
-and a null mean, not an invented concentration of zero. For a signal field,
-use `signal_slice` or `signal_time_course`; both require named axes and indices
-and materialize only the selected data.
+Use `radial_species_mean` for explicit radial bins. Empty bins have zero count and a null mean, not an invented concentration of zero. For a signal field, use `signal_slice` or `signal_time_course`; both require named axes and indices and materialize only the selected data.
 
-Signal arrays use dimension order `(frame, channel, x, y, z)`. Geometry changes
-start a new epoch instead of silently padding or resampling.
+Signal arrays use dimension order `(frame, channel, x, y, z)`. Geometry changes start a new epoch instead of silently padding or resampling.
 
 ## 6. Analysis claims checklist
 
-- Compare runs at the same physical time, cell count, or other declared
-  endpoint.
+- Compare runs at the same physical time, cell count, or other declared endpoint.
 - Use stable IDs for lineage and longitudinal tracking; never persist slots.
 - State whether “length” means cylinder or full capsule length.
 - State bin edges, inclusion convention, and handling of empty bins.
 - Distinguish configured growth rate from realized mechanical elongation.
 - Distinguish raw contact rows from unique biological neighbors.
 - Record the seed set and parameter map for stochastic comparisons.
-- Inspect numerical convergence and time-step sensitivity before interpreting
-  an apparent biological pattern.
+- Inspect numerical convergence and time-step sensitivity before interpreting an apparent biological pattern.
 
-The complete recipe API, schemas, and signal examples are documented in
-[`docs/analysis/recipes.md`](../analysis/recipes.md).
+The complete recipe API, schemas, and signal examples are documented in [`docs/analysis/recipes.md`](../analysis/recipes.md).

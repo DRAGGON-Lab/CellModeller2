@@ -1,16 +1,16 @@
-# Legacy SBML-import audit
+# SBML import behavior
 
-## Scope
+## CellModeller module
 
-The audit covers `CellModeller/Regulation/SBMLImport.py`. Repository search finds no bundled model or test that exercises it.
+CellModeller provides `CellModeller/Regulation/SBMLImport.py`, although no bundled model or test exercises it.
 
-## Observed translation
+## CellModeller behavior
 
 The module uses libSBML to read a document, walks reaction kinetic-law ASTs, and assembles a Python expression for each participating species derivative. It recognizes basic arithmetic and power, substitutes constant local or global parameter values, and treats species identifiers as Python variables. Reaction reactants subtract `stoichiometry * rate`; products add it. It also extracts an initial amount or concentration.
 
 The generated text defines `getRates(cells)` and is executed into a dynamically created Python module.
 
-## Defects and semantic gaps
+## Unsupported and ambiguous semantics
 
 The checked-in importer is not a reliable executable reference:
 
@@ -24,6 +24,6 @@ The checked-in importer is not a reliable executable reference:
 8. Species ordering is derived from reaction participation rather than the SBML species list. A species used only as a modifier can be referenced by a kinetic law without receiving a generated Python variable.
 9. Missing or non-positive initial values are collapsed to zero, so a declared negative concentration is silently changed.
 
-## Compatibility judgment
+## CellModeller2 behavior
 
-The reusable behavior is reaction-stoichiometry compilation, not source-code generation. CellModeller2 will use libSBML's document model and error log, then compile a declared subset directly into the typed rate-plan IR. Unsupported or ambiguous constructs fail with a path-specific import error. No legacy network channel, temporary-file workaround, generated source, or `exec` path is retained.
+The reusable behavior is reaction-stoichiometry compilation, not source-code generation. CellModeller2 uses libSBML's document model and error log, then compiles a declared subset directly into the typed rate-plan IR. Unsupported or ambiguous constructs fail with a path-specific import error. No legacy network channel, temporary-file workaround, generated source, or `exec` path is retained.

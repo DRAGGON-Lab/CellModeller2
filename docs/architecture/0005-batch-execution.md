@@ -5,7 +5,7 @@
 
 ## Context
 
-CellModeller2 needs one reproducible, non-interactive path for local runs, cluster jobs, backend conformance, and future workflow orchestration. Legacy batch scripts assemble simulator state through ambient module globals and mix model construction, output policy, and execution. They do not give every run an explicit backend, device, seed, or collision policy.
+CellModeller2 needs one reproducible, non-interactive path for local runs, cluster jobs, and backend tests. Legacy batch scripts assemble simulator state through ambient module globals and mix model construction, output policy, and execution. They do not give every run an explicit backend, device, seed, or collision policy.
 
 Checkpoint loading must also remain distinct from Python model execution. A checkpoint is portable data and safe to parse; a model file is trusted Python code chosen explicitly by the operator.
 

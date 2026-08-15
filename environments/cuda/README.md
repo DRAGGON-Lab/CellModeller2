@@ -1,8 +1,6 @@
-# CUDA development environment
+# CUDA environment
 
 CUDA is the NVIDIA backend under active development. It is implemented directly in CUDA C++ with the CUDA Runtime API: no portability layer, translated Metal source, or CPU computational fallback is used.
-
-The current implementation includes native growth, species-rate interpretation, contact geometry, constraints, mechanics, signaling, and coupled-rate stages. Contact generation uses count, inclusive-scan, and fill kernels over deterministic sweep-and-prune candidates. Mechanics uses native Jacobian assembly, matrix-free operators, vector updates, and reduction kernels with a host-orchestrated conjugate-gradient loop. Coupled rates keep sampling, interpretation, transport, and deterministic source gathering device-resident.
 
 `CM_ENABLE_CUDA` is off by default so ordinary CPU builds do not acquire a CUDA toolchain dependency.
 

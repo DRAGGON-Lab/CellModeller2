@@ -1,8 +1,8 @@
-# Legacy neighbor-diffusion audit
+# Neighbor diffusion
 
-## Scope
+## CellModeller module
 
-The audit covers `CellModeller/Signalling/NeighbourDiffusion.py` and its possible integration with the surviving legacy simulator, cell-state, biophysics, and signal-integrator code.
+CellModeller includes `CellModeller/Signalling/NeighbourDiffusion.py`, an experimental module intended to exchange signals across a cell-neighbor graph.
 
 Repository search finds no bundled model or test that constructs `NeighbourDiffusion`.
 
@@ -16,7 +16,7 @@ rate[i, s] += D[s] * (level[j, s] - level[i, s]).
 
 If the neighbor relation were symmetric and duplicate-free, this would be an unweighted conservative graph Laplacian. Production rates are then added to a cell's corresponding signal row.
 
-## Execution defects
+## Why the module is not supported
 
 The checked-in module is not a working reference implementation:
 
@@ -29,8 +29,8 @@ The checked-in module is not a working reference implementation:
 
 Division and deletion semantics, stability constraints, units, and checkpoint behavior are also unspecified.
 
-## Compatibility judgment
+## CellModeller2 behavior
 
 The file provides evidence of an experiment, not an operational CellModeller feature whose numerical behavior can be reproduced. Porting the visible loop would freeze known omissions and give an unweighted neighbor count a physical meaning it never established.
 
-CellModeller2 retires this compatibility item. Any future contact-mediated transport will be a new typed, conservative graph-flux model built on the current contact graph and validated independently across native backends.
+CellModeller2 does not expose this module as a compatibility feature. Contact-mediated transport requires a typed, conservative graph-flux model with declared units, division behavior, stability limits, and checkpoint semantics.

@@ -1,21 +1,41 @@
-# Legacy Python model audit
+# Running CellModeller Python models
 
-The legacy repository contains 25 example modules, and all 25 expose the same regulation lifecycle: `setup(sim)`, `init(cell)`, `update(cells)`, and `divide(parent, d1, d2)`. The callback layer is ordinary host Python even when the selected physics and integration implementations use OpenCL.
+Maintained CellModeller models commonly define four host-Python callbacks: `setup(sim)`, `init(cell)`, `update(cells)`, and `divide(parent, d1, d2)`. CellModeller2 can run models that use this callback lifecycle for growth, mechanics, regulation, constraints, neighbors, division, and host-side species state.
 
-The maintained examples divide into three migration groups:
+```console
+uv run cm run \
+  --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
+  --backend cpu \
+  --seed 42 \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/legacy.cm2.json
+```
 
-- growth and mechanics models whose callbacks set division flags, growth rate, cell type, display color, and arbitrary per-cell metadata;
-- species or signaling models that additionally return OpenCL source strings;
-- models that use optional constraints, neighbor reporting, asymmetric division, or GUI renderers.
+## Supported callback behavior
 
-## Adapter boundary
+`LegacyModelAdapter` presents mutable `LegacyCell` objects keyed by stable cell ID. It retains ordinary JSON-like Python attributes across equal division, propagates callback changes to growth rate, cell type, and host species, and refreshes geometry, effective growth, sampled signals, and optional neighbor IDs from native state.
 
-`LegacyModelAdapter` is the first compatibility boundary for the host callback lifecycle. It supplies mutable `LegacyCell` objects keyed by stable cell ID, retains arbitrary Python attributes across equal division, propagates callback changes to growth rate, cell type, and species, and refreshes geometry, effective growth, sampled signals, and optional neighbor IDs from native state. It preserves the legacy order: regulation, division, native integration, mechanics, then cell-state refresh.
+The step order is regulation, division, native integration, mechanics, then cell-state refresh. Geometry remains engine-owned: callbacks may read position, direction, length, and radius, but attempts to mutate them fail explicitly.
 
-The adapter is deliberately explicit rather than pretending the old OpenCL objects still exist. It requires construction around an empty native `Simulation`. `build_legacy_model` supplies an opt-in `setup(sim)` facade and temporary import shims for `CLBacterium`, `ModuleRegulator`, and renderer declarations; the shims are removed after construction and do not install a shadow `CellModeller` package. `controller_state` serializes arbitrary JSON-like attributes, tuples, numeric NumPy arrays, adapter options, and the exact random stream into the authenticated v5 controller payload; `from_controller_state` restores that data without executable content. `cm run --legacy-model` writes the controller payload in periodic and final checkpoints; combining `--legacy-model` with `--resume` reloads the callbacks only after verifying the source digest and reuses the recorded seed and parameters. Geometry remains engine-owned. Setup is replayed from the original seed on resume while the checkpointed random stream is restored only for subsequent callbacks, so randomized founder construction cannot consume future runtime draws. Mutable module globals other than this controlled random binding are not checkpointed; evolving model state must live on cells or in native arrays. Callback attempts to mutate position, direction, length, or radius fail explicitly. When a simulation has no native species integration, a legacy callback may use `cell.species` as ordinary host-side model state; it is checkpointed rather than overwritten by the empty native vector. This is required by the bundled `TimRudgeThesis/Meristem.py` model. Once a native species vector exists, its declared size and values remain authoritative.
+`build_legacy_model` provides an opt-in `setup(sim)` facade and temporary import shims for `CLBacterium`, `ModuleRegulator`, and renderer declarations. The shims are removed after model construction and do not install a shadow `CellModeller` package.
 
-Equal and asymmetric division are supported, including an explicitly seeded compatibility policy for the legacy per-daughter direction jitter. The adapter normalizes the two positive `cell.asymm` weights into the native daughter fraction. This implements the legacy API's dormant intent; the old `CLBacterium` accepted `f1` and `f2` but discarded them before geometry was updated. `alternate_divisions=True` preserves the legacy 90-degree xy-plane axis rotation as a backend-neutral topology operation. Controller v3 records the selected orientation policy. Controller v4 also records the legacy `max_substeps` limit used by bounded new-contact frontier relaxation; v2 and v3 checkpoints migrate to the adapter's former one-relaxation behavior.
+## State and resume
 
-OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not accepted or translated. Those models must express equations as `SpeciesRatePlan` or `CoupledRatePlan`, which lets CUDA and Metal compile their own native kernels without treating OpenCL C as an intermediate language. GUI renderers are also outside the adapter: a future viewer consumes snapshots without owning engine state.
+Periodic and final checkpoints store adapter options, JSON-like model attributes, tuples, numeric NumPy arrays, and the exact runtime random stream in the authenticated controller payload. Resume verifies the model source digest, reuses the recorded seed and parameters, reconstructs founder state from the original seed, and restores the checkpointed random stream for subsequent callbacks.
 
-The complete source-pinned classification and executable CPU/Metal acceptance contract is recorded in `compatibility/legacy-examples-v1.json` and `docs/compatibility/legacy-example-matrix.md`.
+Mutable module globals are not checkpointed. Evolving model state should live on cells or in supported native arrays. When no native species plan exists, `cell.species` may hold host-side model state and is checkpointed as such. Once a native species vector exists, its declared size and values are authoritative.
+
+## Division and mechanics
+
+Equal and asymmetric division are supported. The two positive `cell.asymm` weights are normalized into a native daughter fraction, and daughter-direction jitter uses the explicit seeded random stream. `alternate_divisions=True` preserves the 90-degree xy-plane axis rotation used by the CellModeller callback API.
+
+The adapter also maps `max_substeps` to bounded new-contact-frontier relaxation. This limit is checkpointed with the controller so resume preserves the same mechanics schedule.
+
+## Models that require translation
+
+OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not executed or translated automatically. Their equations must be expressed as a `SpeciesRatePlan` or `CoupledRatePlan`, allowing CPU, Metal, and CUDA to use independent native implementations. The bundled translations are listed in [typed translations of legacy equation models](legacy-example-migrations.md).
+
+GUI renderers are also outside the adapter. The independent viewer consumes scene snapshots and does not own model execution or backend state.
+
+The [example compatibility matrix](legacy-example-matrix.md) lists the pinned models exercised by the adapter and typed translations.

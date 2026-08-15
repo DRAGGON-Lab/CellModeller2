@@ -1,4 +1,4 @@
-# Recorded legacy trajectory evidence
+# Comparing with recorded CellModeller trajectories
 
 CellModeller2 keeps a raw, source-controlled trajectory set from the original OpenCL implementation at `compatibility/legacy-trajectories-v1.json`. The recording uses CellModeller commit `4896f543c6250f053eea2312e628cc3a96bf7408` and authenticates every model source against the 25-example matrix before execution.
 
@@ -23,7 +23,7 @@ Neither shim changes simulation values or kernel source. Python's `random` and N
 
 `Tutorial_3` is used for coupled signaling because the bundled `ex3` and `ex4` files exceed their own default `max_planes=1` capacity during setup. Its Crank-Nicolson implementation is recorded as it runs, including the known discarded-convolution defect; this makes the fixture evidence, not a request to reintroduce that defect.
 
-## Comparison contract
+## Comparison method
 
 `python/tests/test_legacy_trajectories.py` executes the exact callback models or their source-pinned typed migrations on every available backend. It compares all recorded frames, not just the final state. The tolerances are declared by observable family in the test:
 

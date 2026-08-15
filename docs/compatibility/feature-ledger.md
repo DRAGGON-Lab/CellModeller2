@@ -1,32 +1,31 @@
-# Legacy compatibility ledger
+# CellModeller compatibility overview
 
-This ledger defines the scientific and workflow boundary inherited from CellModeller. CPU and Metal are feature complete across the maintained modeling surface. CUDA is under active development against the same contracts; its progress is tracked by the centralized [validation workflow](../development/validation.md), rather than repeated in every row below.
+This page summarizes how familiar CellModeller capabilities map to CellModeller2. It is intended to help researchers assess an existing model before migration; it is not a claim of bitwise parity with the original OpenCL implementation.
 
-`Specified` means that CellModeller2 has an explicit replacement contract. `Complete` means the feature is implemented, tested, and included in the CPU/Metal application evidence. A retired feature has an explicit, documented disposition and is not part of backend parity.
+CPU and Metal support the current modeling surface described below. CUDA status and hardware requirements are maintained in the [testing and validation guide](../development/validation.md).
 
-| Priority | Feature | Legacy source | CellModeller2 contract | Status |
-| --- | --- | --- | --- | --- |
-| P0 | Stable IDs and compact slots | `Simulator` | IDs never alias slots; division records lineage | Complete |
-| P0 | Cell creation and division | `Simulator`, `CLBacterium` | Deterministic equal and fractional division with explicit jitter policy | Complete |
-| P0 | Exponential-Euler length growth | `CLBacterium` | Explicit `length += rate * length * dt` reference step | Complete |
-| P0 | 2D/3D rod mechanics | `CLBacterium` | Typed contact graph, diagnosed solve, bounded correction integration, and checkpointed contact-frontier relaxation | Complete |
-| P0 | Cell-cell contacts | `CLBacterium.cl` | Deterministic sweep-and-prune staging and dynamic native incidence graph with no silent contact cap | Complete |
-| P0 | Plane and sphere constraints | `CLBacterium.cl` | Typed constraint records participating in the native mechanics system; no sentinel cell IDs | Complete |
-| P0 | Mechanics solver | `CLBacterium` | Regularized matrix-free CG/PCG with convergence and breakdown diagnostics | Complete |
-| P0 | Species Euler integration | `CLEulerIntegrator` | Typed rate plans, legacy-compatible effective-volume dilution, and simultaneous updates | Complete |
-| P0 | Grid signaling | `GridDiffusion` | Diffusion, optional advection, declared boundaries, spatial affine source/loss fields, explicit stability checks, and checkpointed state | Complete |
-| P0 | Coupled cell/grid rates | Signal integrators | Device-resident sample, rate, transport, scatter, and simultaneous commit | Complete |
-| P0 | Checkpoint and exact resume | Pickle output | Versioned non-executable JSON checkpoint with provenance, integrity, schema migration, and authenticated controller state | Complete |
-| P0 | Batch execution | Batch scripts | Deterministic `cm run`, explicit backend/device/seed selection, stopping rules, collision safety, and data-only run manifests | Complete |
-| P0 | Native model orchestration | Simulator/module lifecycle | Restartable controller with typed regulation, division, exact-pass mechanics, model state, and runtime RNG | Complete |
-| P1 | Legacy Python model adapter | Module regulator | Compatibility for maintained setup/init/update/divide models, constraints, neighbors, division, host species, and exact resume | Complete |
-| P1 | Legacy pickle import | `Simulator` | Explicitly trusted, lossy, one-way migration into the new checkpoint schema | Complete |
-| P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | Diagnosed native standalone and coupled solver for the intended equation | Complete |
-| P1 | Neighbor reporting | `CLBacterium` | Deterministic stable-ID graph views derived from the current contact graph | Complete |
-| P2 | Fixed-position cells | `CLFixedPosition` | Persistent fixed rods with projected mechanics and continuing biological state | Complete |
-| Retired | Neighbor diffusion | `NeighbourDiffusion` | Do not preserve the dead, dimensionally unspecified graph loop; require a new typed contact-flux proposal | Retired after audit |
-| P2 | SBML import | `SBMLImport` | Bounded libSBML Core subset compiled to typed species-rate IR with no generated source | Complete |
-| P2 | Interactive viewer | PyQt/OpenGL GUI | Independent scene consumer with no engine ownership; rod and grid workflows replaced and unused renderer families explicitly retired | Complete |
-| P2 | Analysis scripts | `Scripts` | Immutable Parquet/Zarr export, typed provenance, derived contacts, and verified lazy analysis recipes | Complete |
+| Area | CellModeller source | CellModeller2 behavior |
+| --- | --- | --- |
+| Cell identity | `Simulator` | Stable IDs are distinct from compact storage slots; division records lineage. |
+| Cell creation and division | `Simulator`, `CLBacterium` | Equal and fractional division use explicit, deterministic geometry and jitter policies. |
+| Length growth | `CLBacterium` | The reference step is `length += rate * length * dt`. |
+| Rod mechanics | `CLBacterium` | Contacts feed a diagnosed, matrix-free finite-radius mechanics solve. |
+| Cell-cell contacts | `CLBacterium.cl` | Deterministic sweep-and-prune staging produces a dynamic incidence graph without a fixed contact cap. |
+| Plane and sphere constraints | `CLBacterium.cl` | Typed constraint records participate directly in the mechanics system. |
+| Intracellular species | `CLEulerIntegrator` | Typed rate plans use effective-volume dilution and simultaneous updates. |
+| Grid signaling | `GridDiffusion` | Signal grids support diffusion, optional advection, declared boundaries, affine source/loss fields, stability checks, and checkpointed state. |
+| Coupled cell-grid rates | Signal integrators | Sampling, intracellular rates, transport, scatter, and commit form one declared stage. |
+| Checkpoint and resume | Pickle output | Versioned, non-executable JSON records state, provenance, integrity, and controller data. |
+| Batch execution | Batch scripts | `cm run` and run manifests declare backend, device, seed, parameters, stopping rules, and output policy. |
+| Model orchestration | Simulator/module lifecycle | Restartable controllers own regulation, division, mechanics scheduling, model state, and runtime randomness. |
+| Python callback models | Module regulator | Maintained `setup`/`init`/`update`/`divide` models run through the compatibility adapter within documented limits. |
+| Pickle snapshots | `Simulator` | Trusted snapshots can be imported once into native state; exact continuation is not inferred. |
+| Crank-Nicolson signaling | `CLCrankNicIntegrator` | A diagnosed native solver implements the intended semi-implicit equation. |
+| Neighbor reporting | `CLBacterium` | Stable-ID neighbor views are derived from the current contact graph. |
+| Fixed cells | `CLFixedPosition` | Rods can remain mechanically fixed while biological state continues to advance. |
+| Neighbor diffusion | `NeighbourDiffusion` | The incomplete legacy module is not supported; contact-mediated transport requires an explicit graph-flux model. |
+| SBML import | `SBMLImport` | A bounded SBML Core subset compiles to typed species-rate plans without generated source. |
+| Interactive viewer | PyQt/OpenGL GUI | An independent scene consumer displays rods and signal grids without owning engine state. |
+| Analysis | `Scripts` | Versioned Parquet/Zarr exports and documented dataframe recipes replace access to private solver objects. |
 
-The supporting evidence includes a source-pinned [25-example matrix](legacy-example-matrix.md), five [recorded legacy trajectory contracts](legacy-trajectory-evidence.md), the [mechanics audit](legacy-mechanics-audit.md), the [signaling audit](legacy-signaling-audit.md), and the [viewer](legacy-viewer-audit.md) and [analysis](legacy-analysis-audit.md) dispositions.
+For source-pinned comparisons, see the [example matrix](legacy-example-matrix.md), [recorded trajectories](legacy-trajectory-evidence.md), and the subsystem references collected in [compatibility and migration](README.md).

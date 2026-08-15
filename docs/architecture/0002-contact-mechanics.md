@@ -27,7 +27,7 @@ There is no scientific contact cap. Allocation failure is explicit. In determini
 
 The narrow phase preserves the legacy one-row/two-row distinction and the `1/sqrt(2)` two-row weighting. Degenerate normals are resolved deterministically by projecting center displacement perpendicular to the rod axis; if that also vanishes, the least-aligned Cartesian basis axis defines a perpendicular. Every emitted normal must be finite and unit length.
 
-The solver exposes a matrix-free operator rather than a materialized sparse matrix. The initial compatibility operator is the regularized seven-DOF system recorded in the legacy audit. The public result includes convergence status, iteration count, initial and final residuals, and a breakdown reason. A backend may use native reductions and preconditioning, but it must apply the same declared operator and convergence criterion.
+The solver exposes a matrix-free operator rather than a materialized sparse matrix. The compatibility operator is the regularized seven-DOF system described in the CellModeller mechanics comparison. The public result includes convergence status, iteration count, initial and final residuals, and a breakdown reason. A backend may use native reductions and preconditioning, but it must apply the same declared operator and convergence criterion.
 
 For a cell with full capsule length `L = l + 2r`, the reference regularizer uses mass `m = mu_a L`, axial inertia `m r^2 / 2`, transverse inertia `m (L^2 + 3r^2) / 12`, and length weight `gamma`. The operator adds `gamma^-1 M`. This finite-radius tensor intentionally replaces the legacy slender-rod tensor's zero-energy axial rotation, making the declared seven-DOF operator positive definite for valid cells. Legacy trajectory comparisons must identify this as an intentional numerical-model difference.
 
@@ -47,7 +47,7 @@ CPU, Metal, and CUDA own separate implementations. They share contact fixtures, 
 
 `ContactGraph::neighbor_ids(slot)` derives the legacy neighbor view from the current graph. It returns ascending, unique stable cell IDs. Multiple geometric rows for the same capsule pair therefore contribute one neighbor, and external constraint contacts never appear. The view has the same lifetime as the graph: after growth, division, or mechanical integration, callers compute a new graph rather than treating neighbors as persistent cell state.
 
-## Initial delivery order
+## Validation sequence
 
 1. Robust capsule geometry and an exhaustive CPU geometry oracle.
 2. Shared contact fixtures and a dynamic contact-graph API.
@@ -60,7 +60,7 @@ CPU, Metal, and CUDA own separate implementations. They share contact fixtures, 
 9. Native Metal external-constraint conformance.
 10. Native CUDA external-constraint conformance.
 
-This order isolates geometry disagreements before solver behavior can hide them. A feature ledger entry advances only when the corresponding shared fixture passes on real backend hardware.
+This sequence isolates geometry disagreements before solver behavior can hide them. Backend support requires the corresponding shared scenario to pass on real hardware.
 
 ## Consequences
 

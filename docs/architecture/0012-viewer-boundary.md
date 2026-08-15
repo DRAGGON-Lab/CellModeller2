@@ -27,12 +27,12 @@ CUDA and Metal remain native scientific-compute APIs. Viewer graphics are not a 
 
 Presentation mappings are declarative viewer state. The initial mapping modes are cell type, species channel, growth rate, and fixed state. Model callbacks do not mutate RGB fields in the engine. New observable fields require a scene schema change or a typed extension, not arbitrary object traversal.
 
-## Initial delivery order
+## Implementation layers
 
-1. Implement and test the scene-frame projection and strict JSON reader/writer.
-2. Add a read-only viewer for rods, grid slices, camera navigation, picking, selection details, and declarative color mapping.
-3. Add a local controller using the existing batch model/checkpoint APIs and the same scene schema.
-4. Profile large colonies before selecting a binary transport. JSON remains the inspectable correctness format; a future binary encoding must preserve the same logical schema.
+1. The scene-frame projection and strict JSON reader/writer define the data boundary.
+2. The read-only viewer provides rods, grid slices, camera navigation, picking, selection details, and declarative color mapping.
+3. The local controller uses the batch model and checkpoint APIs while publishing the same scene schema.
+4. JSON remains the inspectable reference format. Any binary transport must preserve the same logical schema and should be justified by measurements on large colonies.
 
 ## Consequences
 

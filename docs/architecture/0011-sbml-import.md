@@ -5,7 +5,7 @@
 
 ## Context
 
-The legacy SBML importer parses a small part of kinetic-law MathML, emits Python source, and executes that source as a new module. It ignores several SBML semantics and silently replaces unknown identifiers with one. The full audit is recorded in `docs/compatibility/legacy-sbml-import-audit.md`.
+The CellModeller SBML importer parses a small part of kinetic-law MathML, emits Python source, and executes that source as a new module. It ignores several SBML semantics and silently replaces unknown identifiers with one. A detailed comparison is recorded in `docs/compatibility/legacy-sbml-import-audit.md`.
 
 CellModeller2 already has a data-only `SpeciesRatePlan` instruction graph that executes independently on CPU, Metal, and CUDA and survives checkpoints. An SBML importer should be a compiler into that IR, not another runtime.
 
