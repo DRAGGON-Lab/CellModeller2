@@ -11,8 +11,11 @@ from cellmodeller2 import (
     BackendKind,
     BatchError,
     ModelContext,
+    Simulation,
+    SimulationController,
     build_model,
     load_checkpoint,
+    load_checkpoint_bundle,
     run_simulation,
 )
 from cellmodeller2.cli import main
@@ -36,6 +39,56 @@ def build(context):
     )
 
 
+def _write_controller_model(path: Path) -> None:
+    path.write_text(
+        """from cellmodeller2 import (
+    CellInit,
+    capture_random_state,
+    restore_random_state,
+)
+
+class Controller:
+    def __init__(self, simulation, rng, completed_steps=0):
+        self.simulation = simulation
+        self.rng = rng
+        self.completed_steps = completed_steps
+
+    def step(self, dt):
+        cell = self.simulation.cell(1)
+        growth_rate = 0.1 + self.rng.random() * 0.2
+        self.simulation.set_cell_attributes(cell.id, growth_rate, cell.cell_type)
+        self.simulation.step(dt)
+        self.completed_steps += 1
+
+    def controller_state(self):
+        return {
+            "kind": "runner-test-controller",
+            "version": 1,
+            "completed_steps": self.completed_steps,
+            "random": capture_random_state(self.rng),
+        }
+
+def build(context):
+    simulation = context.simulation()
+    cell = CellInit()
+    cell.length = 2.0 + context.rng.random()
+    simulation.add_cell(cell)
+    return Controller(simulation, context.rng)
+
+def resume(context, checkpoint):
+    state = checkpoint.controller
+    if not isinstance(state, dict) or state.get("kind") != "runner-test-controller":
+        raise ValueError("unsupported controller state")
+    return Controller(
+        checkpoint.simulation,
+        restore_random_state(state["random"]),
+        int(state["completed_steps"]),
+    )
+""",
+        encoding="utf-8",
+    )
+
+
 def _document(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
@@ -50,6 +103,7 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
         parameters={"length": 4.0, "cell_type": 7},
     )
     simulation, provenance = build_model(model, context)
+    assert isinstance(simulation, Simulation)
     output = tmp_path / "run.cm2.json"
     progress_steps: list[int] = []
     summary = run_simulation(
@@ -97,6 +151,7 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
         model,
         ModelContext(BackendKind.CPU, 0, 1234, {"length": 4.0, "cell_type": 7}),
     )
+    assert isinstance(second, Simulation)
     second_output = tmp_path / "second.cm2.json"
     run_simulation(
         second,
@@ -106,6 +161,115 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
         provenance=second_provenance,
     )
     assert _document(second_output)["simulation"] == document["simulation"]
+
+
+def test_native_controller_resumes_exact_runtime_state(tmp_path: Path) -> None:
+    model = tmp_path / "controller_model.py"
+    _write_controller_model(model)
+    context = ModelContext(BackendKind.CPU, 0, seed=8128)
+    controller, provenance = build_model(model, context)
+    assert isinstance(controller, SimulationController)
+
+    uninterrupted = tmp_path / "uninterrupted.cm2.json"
+    run_simulation(
+        controller,
+        steps=6,
+        dt=0.125,
+        output=uninterrupted,
+        provenance=provenance,
+    )
+
+    first = tmp_path / "first.cm2.json"
+    controller, provenance = build_model(
+        model,
+        ModelContext(BackendKind.CPU, 0, seed=8128),
+    )
+    run_simulation(controller, steps=3, dt=0.125, output=first, provenance=provenance)
+    resumed = tmp_path / "resumed.cm2.json"
+    assert (
+        main(
+            [
+                "run",
+                "--model",
+                str(model),
+                "--resume",
+                str(first),
+                "--steps",
+                "3",
+                "--dt",
+                "0.125",
+                "--output",
+                str(resumed),
+                "--quiet",
+            ]
+        )
+        == 0
+    )
+
+    expected = load_checkpoint_bundle(uninterrupted)
+    actual = load_checkpoint_bundle(resumed)
+    assert _document(resumed)["simulation"] == _document(uninterrupted)["simulation"]
+    assert actual.controller == expected.controller
+    assert actual.simulation.time == expected.simulation.time
+
+
+def test_native_controller_resume_checks_source_before_execution(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = tmp_path / "controller_model.py"
+    _write_controller_model(model)
+    controller, provenance = build_model(model, ModelContext(BackendKind.CPU, 0, seed=3))
+    checkpoint = tmp_path / "controller.cm2.json"
+    run_simulation(controller, steps=1, dt=0.1, output=checkpoint, provenance=provenance)
+
+    marker = tmp_path / "executed.txt"
+    model.write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "must-not-exist.cm2.json"
+    assert (
+        main(
+            [
+                "run",
+                "--model",
+                str(model),
+                "--resume",
+                str(checkpoint),
+                "--steps",
+                "1",
+                "--dt",
+                "0.1",
+                "--output",
+                str(output),
+                "--quiet",
+            ]
+        )
+        == 2
+    )
+    assert "digest does not match checkpoint" in capsys.readouterr().err
+    assert not marker.exists()
+    assert not output.exists()
+
+
+def test_controller_cannot_silently_checkpoint_null_state(tmp_path: Path) -> None:
+    class InvalidController:
+        def __init__(self) -> None:
+            self.simulation = Simulation(BackendKind.CPU)
+
+        def step(self, dt: float) -> None:
+            self.simulation.step(dt)
+
+        def controller_state(self) -> None:
+            return None
+
+    with pytest.raises(BatchError, match="non-null"):
+        run_simulation(
+            InvalidController(),
+            steps=0,
+            dt=0.1,
+            output=tmp_path / "invalid.cm2.json",
+        )
 
 
 def test_cell_count_threshold_can_finish_before_the_first_step(

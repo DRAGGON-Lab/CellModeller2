@@ -34,6 +34,36 @@ def _write_model(path: Path, *, side_effect: Path | None = None) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _write_controller_model(path: Path) -> str:
+    path.write_text(
+        """from cellmodeller2 import CellInit
+
+class Controller:
+    def __init__(self, simulation):
+        self.simulation = simulation
+        self.completed_steps = 0
+
+    def step(self, dt):
+        self.simulation.step(dt)
+        self.completed_steps += 1
+
+    def controller_state(self):
+        return {
+            "kind": "manifest-test-controller",
+            "version": 1,
+            "completed_steps": self.completed_steps,
+        }
+
+def build(context):
+    simulation = context.simulation()
+    simulation.add_cell(CellInit())
+    return Controller(simulation)
+""",
+        encoding="utf-8",
+    )
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _job(
     *,
     job_id: str,
@@ -169,6 +199,36 @@ def test_model_digest_is_checked_before_execution(
     assert "digest does not match manifest" in capsys.readouterr().err
     assert not marker.exists()
     assert not (tmp_path / "output.cm2.json").exists()
+
+
+def test_manifest_job_accepts_a_native_controller(tmp_path: Path) -> None:
+    model = tmp_path / "controller.py"
+    digest = _write_controller_model(model)
+    job = _job(job_id="controller", model_sha256=digest, output="controller.cm2.json")
+    cast(dict[str, Any], job["model"])["path"] = "controller.py"
+    cast(dict[str, Any], job["stopping"])["maximum_steps"] = 2
+    cast(dict[str, Any], job["stopping"])["cell_count"] = None
+    manifest_path = tmp_path / "controller-runs.json"
+    _write_manifest(manifest_path, [job])
+
+    assert (
+        main(
+            [
+                "run-manifest",
+                str(manifest_path),
+                "--job",
+                "controller",
+                "--quiet",
+            ]
+        )
+        == 0
+    )
+    bundle = load_checkpoint_bundle(tmp_path / "controller.cm2.json")
+    assert bundle.controller == {
+        "kind": "manifest-test-controller",
+        "version": 1,
+        "completed_steps": 2,
+    }
 
 
 def test_manifest_rejects_duplicate_ids_and_output_collisions(tmp_path: Path) -> None:

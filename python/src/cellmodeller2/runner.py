@@ -17,8 +17,8 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     Simulation,
     backend_available,
 )
-from .checkpoint import JSONValue, save_checkpoint
-from .legacy import LegacyModelAdapter
+from .checkpoint import CheckpointBundle, JSONValue, save_checkpoint
+from .controller import SimulationController
 
 _UINT64_MAX = (1 << 64) - 1
 
@@ -84,20 +84,57 @@ class RunSummary:
 
 
 type ProgressCallback = Callable[[RunProgress], None]
-type RunnableModel = Simulation | LegacyModelAdapter
+type RunnableModel = Simulation | SimulationController
 type RunStopReason = Literal["step_limit", "cell_count"]
 
 
-def native_simulation(model: RunnableModel) -> Simulation:
+def native_simulation(model: object) -> Simulation:
     """Return the native state owner behind any supported runnable model."""
 
-    return model.simulation if isinstance(model, LegacyModelAdapter) else model
+    if isinstance(model, Simulation):
+        return model
+    if not isinstance(model, SimulationController):
+        raise BatchError("runnable model does not implement the controller protocol")
+    simulation = cast(object, model.simulation)
+    if not isinstance(simulation, Simulation):
+        raise BatchError("controller simulation is not a native Simulation")
+    return simulation
 
 
 def controller_state(model: RunnableModel) -> JSONValue:
     """Capture optional data-only controller state for a runnable model."""
 
-    return model.controller_state() if isinstance(model, LegacyModelAdapter) else None
+    if isinstance(model, Simulation):
+        return None
+    state = model.controller_state()
+    if state is None:
+        raise BatchError("controller_state() must return non-null JSON data")
+    return state
+
+
+def _checkpoint_model_context(
+    source_path: Path,
+    digest: str,
+    context: ModelContext,
+    checkpoint: CheckpointBundle,
+) -> None:
+    model = checkpoint.provenance.get("model")
+    if not isinstance(model, dict):
+        raise BatchError("checkpoint is missing model provenance")
+    saved_digest = model.get("sha256")
+    saved_seed = model.get("seed")
+    saved_parameters = model.get("parameters")
+    if (
+        not isinstance(saved_digest, str)
+        or not isinstance(saved_seed, int)
+        or isinstance(saved_seed, bool)
+        or not isinstance(saved_parameters, dict)
+    ):
+        raise BatchError("checkpoint model provenance is invalid")
+    if digest != saved_digest:
+        raise BatchError(f"model digest does not match checkpoint: {source_path}")
+    if saved_seed != context.seed or saved_parameters != dict(context.parameters):
+        raise BatchError("resume context differs from checkpoint model provenance")
 
 
 def _periodic_path(output: Path, step: int) -> Path:
@@ -257,8 +294,9 @@ def build_model(
     context: ModelContext,
     *,
     expected_sha256: str | None = None,
-) -> tuple[Simulation, dict[str, JSONValue]]:
-    """Execute an explicit Python model file and call its ``build`` function."""
+    checkpoint: CheckpointBundle | None = None,
+) -> tuple[RunnableModel, dict[str, JSONValue]]:
+    """Build or resume a runnable model from explicitly selected Python source."""
 
     source_path = Path(path).resolve()
     try:
@@ -268,6 +306,8 @@ def build_model(
     digest = hashlib.sha256(source).hexdigest()
     if expected_sha256 is not None and digest != expected_sha256:
         raise BatchError(f"model digest does not match manifest: {source_path}")
+    if checkpoint is not None:
+        _checkpoint_model_context(source_path, digest, context, checkpoint)
     module_name = f"_cellmodeller2_model_{digest[:16]}"
     module = ModuleType(module_name)
     module.__file__ = str(source_path)
@@ -279,11 +319,22 @@ def build_model(
     try:
         code = compile(source, str(source_path), "exec")
         exec(code, module.__dict__)
-        build_value = module.__dict__.get("build")
-        if not callable(build_value):
-            raise BatchError(f"model {source_path} must define build(context)")
-        build = cast(Callable[[ModelContext], object], build_value)
-        simulation_value = build(context)
+        if checkpoint is None:
+            build_value = module.__dict__.get("build")
+            if not callable(build_value):
+                raise BatchError(f"model {source_path} must define build(context)")
+            build = cast(Callable[[ModelContext], object], build_value)
+            model_value = build(context)
+            entrypoint = "build(context)"
+        else:
+            resume_value = module.__dict__.get("resume")
+            if not callable(resume_value):
+                raise BatchError(
+                    f"model {source_path} must define resume(context, checkpoint)"
+                )
+            resume = cast(Callable[[ModelContext, CheckpointBundle], object], resume_value)
+            model_value = resume(context, checkpoint)
+            entrypoint = "resume(context, checkpoint)"
     except BatchError:
         raise
     except Exception as error:
@@ -295,12 +346,21 @@ def build_model(
         else:
             sys.modules[module_name] = previous_module
 
-    if not isinstance(simulation_value, Simulation):
-        raise BatchError(f"model {source_path} build(context) did not return a Simulation")
-    info = simulation_value.backend_info
+    if not isinstance(model_value, Simulation | SimulationController):
+        raise BatchError(
+            f"model {source_path} {entrypoint} did not return a Simulation or "
+            "SimulationController"
+        )
+    simulation = native_simulation(model_value)
+    if checkpoint is not None and simulation is not checkpoint.simulation:
+        raise BatchError(
+            f"model {source_path} resume(context, checkpoint) did not use "
+            "checkpoint.simulation"
+        )
+    info = simulation.backend_info
     if info.kind != context.backend or info.device_index != context.device_index:
         raise BatchError("model returned a simulation on a different backend or device")
-    simulation_value.validate()
+    simulation.validate()
     provenance: dict[str, JSONValue] = {
         "model": {
             "path": str(source_path),
@@ -309,4 +369,4 @@ def build_model(
             "parameters": dict(context.parameters),
         }
     }
-    return simulation_value, provenance
+    return model_value, provenance

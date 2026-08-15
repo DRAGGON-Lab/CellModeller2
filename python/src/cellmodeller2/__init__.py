@@ -50,6 +50,12 @@ from .checkpoint import (
     load_checkpoint_bundle,
     save_checkpoint,
 )
+from .controller import (
+    ControllerStateError,
+    SimulationController,
+    capture_random_state,
+    restore_random_state,
+)
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
 from .legacy_loader import build_legacy_model, resume_legacy_model
 from .legacy_pickle import LegacyPickleError, LegacyPickleImport, import_legacy_pickle
@@ -114,6 +120,7 @@ __all__ = [
     "ConstraintContactParameters",
     "ContactGraph",
     "ContactParameters",
+    "ControllerStateError",
     "CoupledRatePlan",
     "ExternalConstraintKind",
     "ExternalContact",
@@ -154,6 +161,7 @@ __all__ = [
     "SignalSolveParameters",
     "SignalSolveReport",
     "Simulation",
+    "SimulationController",
     "SolverBreakdown",
     "SolverReport",
     "SolverStatus",
@@ -165,6 +173,7 @@ __all__ = [
     "backend_device_count",
     "build_legacy_model",
     "build_model",
+    "capture_random_state",
     "capture_scene",
     "dumps_scene",
     "execute_run_job",
@@ -176,6 +185,7 @@ __all__ = [
     "load_scene",
     "parse_sbml",
     "parse_scene",
+    "restore_random_state",
     "resume_legacy_model",
     "run_simulation",
     "save_checkpoint",

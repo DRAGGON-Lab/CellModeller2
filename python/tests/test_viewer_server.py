@@ -8,7 +8,14 @@ from typing import Any, cast
 import pytest
 from aiohttp import WSServerHandshakeError
 from aiohttp.test_utils import TestClient, TestServer
-from cellmodeller2 import BackendKind, CellInit, Simulation, load_checkpoint, viewer_server
+from cellmodeller2 import (
+    BackendKind,
+    CellInit,
+    Simulation,
+    load_checkpoint,
+    load_checkpoint_bundle,
+    viewer_server,
+)
 from cellmodeller2.checkpoint import JSONValue
 from cellmodeller2.cli import main
 from cellmodeller2.viewer_server import (
@@ -26,6 +33,28 @@ def _factory() -> tuple[Simulation, dict[str, JSONValue]]:
     cell.growth_rate = 0.5
     simulation.add_cell(cell)
     return simulation, {"model": {"name": "viewer-test"}}
+
+
+class _TestController:
+    def __init__(self, simulation: Simulation) -> None:
+        self.simulation = simulation
+        self.completed_steps = 0
+
+    def step(self, dt: float) -> None:
+        self.simulation.step(dt)
+        self.completed_steps += 1
+
+    def controller_state(self) -> JSONValue:
+        return {
+            "kind": "viewer-test-controller",
+            "version": 1,
+            "completed_steps": self.completed_steps,
+        }
+
+
+def _controller_factory() -> tuple[_TestController, dict[str, JSONValue]]:
+    simulation, provenance = _factory()
+    return _TestController(simulation), provenance
 
 
 def _dist(path: Path) -> Path:
@@ -62,6 +91,20 @@ def test_live_session_steps_resets_and_writes_only_configured_checkpoint(
     disabled = LiveSession(_factory, dt=0.25)
     with pytest.raises(LiveViewerError, match="not configured"):
         disabled.checkpoint()
+
+
+def test_live_session_preserves_native_controller_state(tmp_path: Path) -> None:
+    output = tmp_path / "controller.cm2.json"
+    session = LiveSession(_controller_factory, dt=0.2, checkpoint_output=output)
+    session.step(3)
+    session.checkpoint()
+
+    bundle = load_checkpoint_bundle(output)
+    assert bundle.controller == {
+        "kind": "viewer-test-controller",
+        "version": 1,
+        "completed_steps": 3,
+    }
 
 
 @pytest.mark.parametrize(

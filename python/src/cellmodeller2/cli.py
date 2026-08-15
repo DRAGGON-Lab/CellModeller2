@@ -118,7 +118,14 @@ def _parser() -> argparse.ArgumentParser:
 
 def _add_source_arguments(parser: argparse.ArgumentParser) -> None:
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--model", type=Path, help="Python file defining build(context)")
+    source.add_argument(
+        "--model",
+        type=Path,
+        help=(
+            "Python file defining build(context) and, for controller resume, "
+            "resume(context, checkpoint)"
+        ),
+    )
     source.add_argument("--legacy-model", type=Path, help="CellModeller 1 growth/mechanics model")
     parser.add_argument("--resume", type=Path, help="CellModeller2 checkpoint to resume")
     parser.add_argument("--backend", choices=tuple(_BACKENDS), default="cpu")
@@ -248,15 +255,52 @@ def _model_factory(
     legacy_model_path = cast(Path | None, arguments.legacy_model)
     resume_path = cast(Path | None, arguments.resume)
     if model_path is not None:
-        if resume_path is not None:
-            raise BatchError("--model cannot be combined with --resume")
-        seed = cast(int, arguments.seed)
+        if resume_path is None:
+            seed = cast(int, arguments.seed)
 
-        def build_native_model() -> tuple[RunnableModel, dict[str, JSONValue]]:
-            context = ModelContext(backend, device_index, seed, parameters)
-            return build_model(model_path, context)
+            def build_native_model() -> tuple[RunnableModel, dict[str, JSONValue]]:
+                context = ModelContext(backend, device_index, seed, parameters)
+                return build_model(model_path, context)
 
-        return build_native_model
+            return build_native_model
+        if parameters:
+            raise BatchError(
+                "native resume uses the checkpoint parameters; do not pass --parameter"
+            )
+
+        def resume_native_model() -> tuple[RunnableModel, dict[str, JSONValue]]:
+            bundle = load_checkpoint_bundle(
+                resume_path,
+                backend=backend,
+                device_index=device_index,
+            )
+            model_value = bundle.provenance.get("model")
+            if not isinstance(model_value, dict):
+                raise BatchError("native checkpoint is missing model provenance")
+            seed_value = model_value.get("seed")
+            saved_parameters = model_value.get("parameters")
+            if (
+                not isinstance(seed_value, int)
+                or isinstance(seed_value, bool)
+                or not isinstance(saved_parameters, dict)
+            ):
+                raise BatchError("native checkpoint model provenance is invalid")
+            context = ModelContext(
+                backend=backend,
+                device_index=device_index,
+                seed=seed_value,
+                parameters=cast(dict[str, JSONValue], saved_parameters),
+            )
+            model, model_provenance = build_model(
+                model_path,
+                context,
+                checkpoint=bundle,
+            )
+            provenance = dict(model_provenance)
+            provenance.update(_resume_provenance(resume_path))
+            return model, provenance
+
+        return resume_native_model
     elif legacy_model_path is not None:
         if resume_path is None:
             seed = cast(int, arguments.seed)

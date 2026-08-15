@@ -246,9 +246,32 @@ uv run cm2 run \
 
 A model is trusted Python code and must define `build(context)`. Construct the
 simulation with `context.simulation()`, use `context.rng` for seeded model
-randomness, and read JSON parameters from `context.parameters`. The runner
-rejects a model that substitutes another backend or device. Existing final or
-periodic outputs are never replaced without `--overwrite`.
+randomness, and read JSON parameters from `context.parameters`. `build` may
+return the simulation directly or a structural `SimulationController` owning
+it. Controllers implement `step(dt)` and return complete finite, non-null JSON
+from `controller_state()`. The runner rejects native state on another backend
+or device. Existing final or periodic outputs are never replaced without
+`--overwrite`.
+
+Runtime-stochastic controllers should persist dedicated streams with
+`capture_random_state` and restore them with `restore_random_state`. To resume a
+controller checkpoint, the same explicitly selected model defines
+`resume(context, checkpoint)` and must wrap `checkpoint.simulation`:
+
+```console
+uv run cm2 run \
+  --model models/regulated_colony.py \
+  --resume results/colony.cm2.json \
+  --backend metal \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/colony-resumed.cm2.json
+```
+
+The model digest is checked against checkpoint provenance before its source is
+compiled. CellModeller2 never executes a model path merely because it appears
+in a checkpoint. Bare native checkpoints with a null controller still resume
+with `--resume` alone.
 
 `--steps` is always the deterministic maximum. When `--stop-cell-count` is
 present, the runner also stops before the first step if the initial colony has
