@@ -148,3 +148,12 @@ epoch boundaries, source-path privacy, time ordering, and non-destructive
 output collision handling. CUDA contact derivation stays rejected until the
 NVIDIA hardware conformance gate passes; ordinary CUDA checkpoint state can
 still be exported without a contact derivation.
+
+Recipe fixtures reopen a digest-verified dataset and evaluate the lazy Polars
+plans. They cover exact radial and length bin boundaries, retained empty bins,
+null means for absent species channels, full-capsule length weighting, contact
+row collapse, null-safe sister lineage, and invalid-edge rejection. Signal
+fixtures address arrays by the declared `(frame, channel, x, y, z)` order and
+verify both a named 2D plane and one voxel's physical-time course. Separate
+tamper cases alter a Parquet file and manifest options and must fail before a
+recipe reads scientific values.

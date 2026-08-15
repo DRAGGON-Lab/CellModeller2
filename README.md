@@ -208,6 +208,12 @@ conformant Apple hardware. CUDA state export is available, while CUDA contact
 export remains gated until the shared contact fixture passes on NVIDIA
 hardware.
 
+Verified lazy Polars recipes cover radial counts and species means, cylinder
+or full-capsule length histograms, the legacy length-weighted XY line-density
+proxy, unique stable-ID neighbor edges, sister-neighbor counts, and named
+signal slices and voxel time courses. Their bin, null, weighting, lineage, and
+dimension semantics are documented in the [analysis recipe guide](docs/analysis/recipes.md).
+
 `backend_device_count(kind)` enumerates native devices and every `Simulation`
 constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
 not inherit mutable process-thread device selection, and Metal does not
@@ -340,4 +346,5 @@ The independent interactive-viewer boundary is specified in
 [legacy viewer audit](docs/compatibility/legacy-viewer-audit.md).
 The columnar analysis boundary is specified in
 [ADR 0013](docs/architecture/0013-analysis-datasets.md) and grounded in the
-[legacy analysis audit](docs/compatibility/legacy-analysis-audit.md).
+[legacy analysis audit](docs/compatibility/legacy-analysis-audit.md). Concrete
+queries are documented in the [analysis recipe guide](docs/analysis/recipes.md).

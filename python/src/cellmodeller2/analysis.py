@@ -6,16 +6,18 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import shutil
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 import zarr
@@ -32,7 +34,20 @@ from .checkpoint import CheckpointBundle, JSONValue, load_checkpoint_bundle
 from .scene import SceneFrame, SceneGridBoundary, SceneSignalGrid, capture_scene
 
 ANALYSIS_FORMAT = "cellmodeller2-analysis"
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2
+MAX_ANALYSIS_MANIFEST_BYTES = 1 << 26
+_SUPPORTED_ANALYSIS_VERSIONS = frozenset({1, ANALYSIS_VERSION})
+
+_TABLE_NAMES = frozenset(
+    {
+        "frames.parquet",
+        "cells.parquet",
+        "species.parquet",
+        "contacts.parquet",
+        "external_contacts.parquet",
+    }
+)
+_REQUIRED_TABLE_NAMES = frozenset({"frames.parquet", "cells.parquet", "species.parquet"})
 
 _BACKEND_NAMES = {
     BackendKind.CPU: "cpu",
@@ -65,6 +80,30 @@ class AnalysisSummary:
     contact_rows: int
     external_contact_rows: int
     signal_epochs: int
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisDataset:
+    """Validated analysis dataset with lazy typed table scans."""
+
+    root: Path
+    manifest: Mapping[str, JSONValue]
+    verified: bool
+
+    def has_table(self, name: str) -> bool:
+        """Return whether a named analysis table is present."""
+
+        if name not in _TABLE_NAMES:
+            raise AnalysisError(f"unknown analysis table {name!r}")
+        tables = cast(dict[str, object], self.manifest["tables"])
+        return name in tables
+
+    def scan_table(self, name: str) -> pl.LazyFrame:
+        """Lazily scan a named Parquet table after manifest validation."""
+
+        if not self.has_table(name):
+            raise AnalysisError(f"analysis dataset does not contain {name}")
+        return pl.scan_parquet(self.root / name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +140,49 @@ def _canonical_json(value: object) -> bytes:
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+def _reject_constant(value: str) -> None:
+    raise AnalysisError(f"analysis manifest contains non-finite JSON number {value}")
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise AnalysisError(f"analysis manifest contains duplicate key {key!r}")
+        result[key] = value
+    return result
+
+
+def _manifest_object(value: object, path: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise AnalysisError(f"{path}: expected an object")
+    result = cast(dict[object, object], value)
+    if not all(isinstance(key, str) for key in result):
+        raise AnalysisError(f"{path}: expected string object keys")
+    return cast(dict[str, object], result)
+
+
+def _manifest_keys(value: dict[str, object], path: str, required: set[str]) -> None:
+    missing = required - value.keys()
+    unknown = value.keys() - required
+    if missing:
+        raise AnalysisError(f"{path}: missing keys {sorted(missing)}")
+    if unknown:
+        raise AnalysisError(f"{path}: unknown keys {sorted(unknown)}")
+
+
+def _digest_value(value: object, path: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise AnalysisError(f"{path}: expected a SHA-256 digest")
+    try:
+        bytes.fromhex(value)
+    except ValueError as error:
+        raise AnalysisError(f"{path}: expected a SHA-256 digest") from error
+    if value != value.lower():
+        raise AnalysisError(f"{path}: expected a lowercase SHA-256 digest")
+    return value
 
 
 def _schema_record(schema: Any) -> list[dict[str, JSONValue]]:
@@ -249,12 +331,126 @@ def _write_signals(path: Path, epochs: Sequence[_SignalEpoch]) -> list[dict[str,
 
 def _directory_digest(path: Path) -> str:
     digest = hashlib.sha256()
-    for child in sorted(item for item in path.rglob("*") if item.is_file()):
+    children = sorted(path.rglob("*"))
+    if any(child.is_symlink() for child in children):
+        raise AnalysisError(f"analysis data contains a symbolic link under {path}")
+    for child in (item for item in children if item.is_file()):
         relative = child.relative_to(path).as_posix().encode("utf-8")
         digest.update(len(relative).to_bytes(8, "big"))
         digest.update(relative)
         digest.update(bytes.fromhex(_sha256(child)))
     return digest.hexdigest()
+
+
+def open_dataset(
+    path: str | os.PathLike[str],
+    *,
+    verify: bool = True,
+) -> AnalysisDataset:
+    """Open a supported analysis dataset and optionally verify every data digest."""
+
+    root = Path(path)
+    if not root.is_dir() or root.is_symlink():
+        raise AnalysisError(f"analysis dataset is not a directory: {root}")
+    manifest_path = root / "manifest.json"
+    if manifest_path.is_symlink():
+        raise AnalysisError("analysis manifest must not be a symbolic link")
+    try:
+        with manifest_path.open("rb") as stream:
+            encoded = stream.read(MAX_ANALYSIS_MANIFEST_BYTES + 1)
+    except OSError as error:
+        raise AnalysisError(f"could not read analysis manifest {manifest_path}") from error
+    if not encoded:
+        raise AnalysisError("analysis manifest is empty")
+    if len(encoded) > MAX_ANALYSIS_MANIFEST_BYTES:
+        raise AnalysisError(
+            f"analysis manifest exceeds the {MAX_ANALYSIS_MANIFEST_BYTES}-byte limit"
+        )
+    try:
+        decoded = json.loads(
+            encoded,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_constant,
+        )
+    except AnalysisError:
+        raise
+    except (ValueError, UnicodeDecodeError, RecursionError) as error:
+        raise AnalysisError(f"analysis manifest is not valid UTF-8 JSON: {error}") from error
+
+    manifest = _manifest_object(cast(object, decoded), "$")
+    top_level_keys = {"format", "version", "dataset_id", "sources", "options", "tables", "signals"}
+    _manifest_keys(manifest, "$", top_level_keys)
+    if manifest["format"] != ANALYSIS_FORMAT:
+        raise AnalysisError("$.format: not a CellModeller2 analysis dataset")
+    schema_version = manifest["version"]
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version not in _SUPPORTED_ANALYSIS_VERSIONS
+    ):
+        raise AnalysisError(f"$.version: unsupported analysis version {manifest['version']!r}")
+    dataset_id = _digest_value(manifest["dataset_id"], "$.dataset_id")
+    sources = manifest["sources"]
+    options = manifest["options"]
+    if not isinstance(sources, list):
+        raise AnalysisError("$.sources: expected an array")
+    _manifest_object(options, "$.options")
+    identity: dict[str, object] = {
+        "format": ANALYSIS_FORMAT,
+        "version": schema_version,
+        "sources": sources,
+        "options": options,
+    }
+    if schema_version >= 2:
+        identity["tables"] = manifest["tables"]
+        identity["signals"] = manifest["signals"]
+    expected_dataset_id = hashlib.sha256(_canonical_json(identity)).hexdigest()
+    if not hmac.compare_digest(dataset_id, expected_dataset_id):
+        raise AnalysisError("$.dataset_id: dataset identity digest does not match")
+
+    tables = _manifest_object(manifest["tables"], "$.tables")
+    table_names = set(tables)
+    missing_tables = _REQUIRED_TABLE_NAMES - table_names
+    unknown_tables = table_names - _TABLE_NAMES
+    if missing_tables:
+        raise AnalysisError(f"$.tables: missing tables {sorted(missing_tables)}")
+    if unknown_tables:
+        raise AnalysisError(f"$.tables: unknown tables {sorted(unknown_tables)}")
+    for name, value in tables.items():
+        record = _manifest_object(value, f"$.tables.{name}")
+        _manifest_keys(record, f"$.tables.{name}", {"rows", "schema", "sha256"})
+        rows = record["rows"]
+        if isinstance(rows, bool) or not isinstance(rows, int) or rows < 0:
+            raise AnalysisError(f"$.tables.{name}.rows: expected a non-negative integer")
+        if not isinstance(record["schema"], list):
+            raise AnalysisError(f"$.tables.{name}.schema: expected an array")
+        expected_digest = _digest_value(record["sha256"], f"$.tables.{name}.sha256")
+        table_path = root / name
+        if not table_path.is_file() or table_path.is_symlink():
+            raise AnalysisError(f"analysis table is missing or unsafe: {name}")
+        if verify and not hmac.compare_digest(_sha256(table_path), expected_digest):
+            raise AnalysisError(f"analysis table digest does not match: {name}")
+
+    signals = manifest["signals"]
+    if signals is not None:
+        signal_record = _manifest_object(signals, "$.signals")
+        _manifest_keys(signal_record, "$.signals", {"path", "sha256_tree", "epochs"})
+        if signal_record["path"] != "signals.zarr":
+            raise AnalysisError("$.signals.path: expected 'signals.zarr'")
+        expected_tree = _digest_value(signal_record["sha256_tree"], "$.signals.sha256_tree")
+        if not isinstance(signal_record["epochs"], list):
+            raise AnalysisError("$.signals.epochs: expected an array")
+        signals_path = root / "signals.zarr"
+        if not signals_path.is_dir() or signals_path.is_symlink():
+            raise AnalysisError("analysis signal store is missing or unsafe")
+        if verify and not hmac.compare_digest(_directory_digest(signals_path), expected_tree):
+            raise AnalysisError("analysis signal store digest does not match")
+
+    return AnalysisDataset(
+        root=root.resolve(),
+        manifest=cast(dict[str, JSONValue], manifest),
+        verified=verify,
+    )
 
 
 def _load_sources(
@@ -636,6 +832,8 @@ def export_dataset(
                     "version": ANALYSIS_VERSION,
                     "sources": source_manifest,
                     "options": options,
+                    "tables": table_manifest,
+                    "signals": signal_manifest,
                 }
             )
         ).hexdigest()

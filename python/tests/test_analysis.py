@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -27,6 +28,18 @@ from cellmodeller2.analysis import (
     ANALYSIS_VERSION,
     AnalysisError,
     export_dataset,
+    open_dataset,
+)
+from cellmodeller2.analysis_recipes import (
+    cells_with_radial_position,
+    length_histogram,
+    line_density_xy,
+    radial_counts,
+    radial_species_mean,
+    signal_slice,
+    signal_time_course,
+    sister_neighbor_counts,
+    unique_neighbor_edges,
 )
 from cellmodeller2.cli import main
 
@@ -73,6 +86,18 @@ def _simulation() -> tuple[Simulation, int]:
 
 def _manifest(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads((path / "manifest.json").read_text()))
+
+
+def _recipe_simulation() -> Simulation:
+    simulation = Simulation(BackendKind.CPU, species_count=1)
+    for x, length, level in ((0.0, 1.0, 2.0), (1.0, 2.0, 4.0), (2.0, 3.0, 6.0)):
+        cell = CellInit()
+        cell.position = Vec3(x, 0.0, 0.0)
+        cell.length = length
+        cell.radius = 0.5
+        cell.species = [level]
+        simulation.add_cell(cell)
+    return simulation
 
 
 def test_export_dataset_preserves_typed_state_contacts_and_signals(tmp_path: Path) -> None:
@@ -153,6 +178,26 @@ def test_export_dataset_preserves_typed_state_contacts_and_signals(tmp_path: Pat
     assert epoch["levels"][:].tolist() == [[[[[1.0]], [[2.0]]]], [[[[4.0]], [[8.0]]]]]
     assert epoch["frame_index"][:].tolist() == [0, 1]
     assert epoch["time"][:].tolist() == [0.0, 0.25]
+
+    dataset = open_dataset(output)
+    signal_plane = signal_slice(dataset, epoch=0, local_frame=0, channel=0, axis="z", index=0)
+    assert signal_plane.frame_index == 0
+    assert signal_plane.time == 0.0
+    assert signal_plane.dimensions == ("x", "y")
+    assert signal_plane.values.tolist() == [[1.0], [2.0]]
+    signal_course = signal_time_course(dataset, epoch=0, channel=0, x=1, y=0, z=0)
+    assert signal_course.to_dicts() == [
+        {"frame_index": 0, "time": 0.0, "channel": 0, "x": 1, "y": 0, "z": 0, "level": 2.0},
+        {
+            "frame_index": 1,
+            "time": 0.25,
+            "channel": 0,
+            "x": 1,
+            "y": 0,
+            "z": 0,
+            "level": 8.0,
+        },
+    ]
 
     repeated = tmp_path / "repeated.cm2.dataset"
     repeated_summary = export_dataset(
@@ -246,3 +291,126 @@ def test_cli_exports_an_analysis_dataset(
     assert status == 0
     assert (output / "manifest.json").is_file()
     assert "frames=1 cells=2 signal_epochs=1" in capsys.readouterr().out
+
+
+def test_lazy_recipes_preserve_explicit_bins_weights_and_nulls(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "recipes.cm2.json"
+    output = tmp_path / "recipes.cm2.dataset"
+    save_checkpoint(_recipe_simulation(), checkpoint)
+    export_dataset([checkpoint], output)
+    dataset = open_dataset(output)
+
+    assert dataset.verified
+    assert dataset.has_table("cells.parquet")
+    assert not dataset.has_table("contacts.parquet")
+    radial = cells_with_radial_position(dataset).select("id", "radial_xy").collect().to_dicts()
+    assert radial == [
+        {"id": 1, "radial_xy": 0.0},
+        {"id": 2, "radial_xy": 1.0},
+        {"id": 3, "radial_xy": 2.0},
+    ]
+
+    counts = radial_counts(dataset, [0.0, 1.0, 2.0]).collect().to_dicts()
+    assert [row["cell_count"] for row in counts] == [1, 2]
+    assert [(row["radial_left"], row["radial_right"], row["radial_center"]) for row in counts] == [
+        (0.0, 1.0, 0.5),
+        (1.0, 2.0, 1.5),
+    ]
+    means = radial_species_mean(dataset, 0, [0.0, 1.0, 2.0]).collect().to_dicts()
+    assert [row["species_mean"] for row in means] == [2.0, 5.0]
+    missing = radial_species_mean(dataset, 7, [0.0, 1.0, 2.0]).collect().to_dicts()
+    assert [row["cell_count"] for row in missing] == [0, 0]
+    assert [row["species_mean"] for row in missing] == [None, None]
+
+    lengths = length_histogram(dataset, [1.0, 3.0, 4.0]).collect().to_dicts()
+    assert [row["cell_count"] for row in lengths] == [1, 2]
+    assert {row["length_field"] for row in lengths} == {"capsule_length"}
+    cylinders = (
+        length_histogram(dataset, [1.0, 2.0, 3.0], length="cylinder_length").collect().to_dicts()
+    )
+    assert [row["cell_count"] for row in cylinders] == [1, 2]
+
+    density = line_density_xy(dataset, [-0.5, 0.5, 2.5], [-0.5, 0.5]).collect().to_dicts()
+    assert [row["cell_count"] for row in density] == [1, 2]
+    assert [row["line_density_proxy"] for row in density] == [2.0, 7.0]
+
+
+def test_neighbor_recipes_collapse_contact_rows_and_count_sisters(tmp_path: Path) -> None:
+    simulation = Simulation(BackendKind.CPU)
+    parent = CellInit()
+    parent.length = 4.0
+    parent.radius = 0.5
+    parent_id = simulation.add_cell(parent)
+    daughters = simulation.divide_equal(parent_id)
+    checkpoint = tmp_path / "sisters.cm2.json"
+    output = tmp_path / "sisters.cm2.dataset"
+    save_checkpoint(simulation, checkpoint)
+    summary = export_dataset([checkpoint], output, include_contacts=True)
+    dataset = open_dataset(output)
+
+    edges = unique_neighbor_edges(dataset).collect().to_dicts()
+    assert len(edges) <= summary.contact_rows
+    daughter_edge = next(
+        row for row in edges if {row["first_id"], row["second_id"]} == set(daughters)
+    )
+    assert daughter_edge["contact_row_count"] >= 1
+    sisters = sister_neighbor_counts(dataset).collect().to_dicts()
+    assert {row["cell_id"] for row in sisters} == set(daughters)
+    assert {row["parent_id"] for row in sisters} == {parent_id}
+    assert {row["sister_neighbor_count"] for row in sisters} == {1}
+
+
+def test_dataset_reader_detects_manifest_and_table_tampering(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "frame.cm2.json"
+    save_checkpoint(_recipe_simulation(), checkpoint)
+
+    table_output = tmp_path / "table-tamper.cm2.dataset"
+    export_dataset([checkpoint], table_output)
+    table = table_output / "cells.parquet"
+    table.write_bytes(table.read_bytes() + b"tampered")
+    with pytest.raises(AnalysisError, match="table digest"):
+        open_dataset(table_output)
+
+    manifest_output = tmp_path / "manifest-tamper.cm2.dataset"
+    export_dataset([checkpoint], manifest_output)
+    manifest = _manifest(manifest_output)
+    manifest["options"]["path_provenance"] = True
+    (manifest_output / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(AnalysisError, match="dataset_id"):
+        open_dataset(manifest_output)
+
+    v1_output = tmp_path / "v1.cm2.dataset"
+    export_dataset([checkpoint], v1_output)
+    v1_manifest = _manifest(v1_output)
+    v1_manifest["version"] = 1
+    identity = {
+        "format": v1_manifest["format"],
+        "version": 1,
+        "sources": v1_manifest["sources"],
+        "options": v1_manifest["options"],
+    }
+    v1_manifest["dataset_id"] = hashlib.sha256(
+        json.dumps(
+            identity,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    (v1_output / "manifest.json").write_text(json.dumps(v1_manifest))
+    assert open_dataset(v1_output).verified
+
+
+@pytest.mark.parametrize(
+    "edges",
+    [[], [0.0], [0.0, 0.0], [0.0, float("inf")]],
+)
+def test_recipes_reject_invalid_edges(tmp_path: Path, edges: list[float]) -> None:
+    checkpoint = tmp_path / "frame.cm2.json"
+    output = tmp_path / "invalid-bins.cm2.dataset"
+    save_checkpoint(_recipe_simulation(), checkpoint)
+    export_dataset([checkpoint], output)
+
+    with pytest.raises(AnalysisError, match="edges"):
+        radial_counts(output, edges)
