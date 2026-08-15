@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -17,6 +18,7 @@
 #include "kernels/contacts.cuh"
 #include "kernels/growth.cuh"
 #include "kernels/mechanics.cuh"
+#include "kernels/signals.cuh"
 #include "kernels/species.cuh"
 
 namespace cm2 {
@@ -115,7 +117,7 @@ class CudaBackend final : public ComputeBackend {
     return feature == BackendFeature::growth || feature == BackendFeature::species ||
            feature == BackendFeature::cell_contacts ||
            feature == BackendFeature::external_constraints ||
-           feature == BackendFeature::cell_mechanics;
+           feature == BackendFeature::cell_mechanics || feature == BackendFeature::signals;
   }
 
   void advance_growth(WorldState& state, float dt) override {
@@ -260,8 +262,85 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaStreamSynchronize(stream_), "CUDA species download failed");
   }
 
-  void advance_signal_grid(SignalGrid&, float) override {
-    throw std::runtime_error("CUDA backend does not implement signal grids yet");
+  void advance_signal_grid(SignalGrid& grid, float dt) override {
+    activate_device();
+    grid.validate();
+    grid.validate_step(dt);
+    if (dt == 0.0F) {
+      return;
+    }
+    const auto& spec = grid.spec();
+    const auto level_view = grid.levels();
+    const std::vector<float> levels(level_view.begin(), level_view.end());
+    const auto signal_count = spec.signal_count;
+    const auto level_count = static_cast<std::uint32_t>(levels.size());
+
+    signal_levels_.reserve(levels.size(), "signal-grid levels");
+    signal_output_.reserve(levels.size(), "signal-grid output");
+    signal_diffusion_.reserve(signal_count, "signal-grid diffusion");
+    signal_advection_.reserve(signal_count, "signal-grid advection");
+    signal_fixed_values_.reserve(static_cast<std::size_t>(6) * signal_count,
+                                 "signal-grid boundary values");
+    signal_error_.reserve(1, "signal-grid error flag");
+
+    std::vector<float4> advection;
+    advection.reserve(signal_count);
+    for (const auto velocity : spec.advection) {
+      advection.push_back(make_float4(velocity.x, velocity.y, velocity.z, 0.0F));
+    }
+    const std::array<const GridBoundary*, 6> boundary_records{
+        &spec.x_lower, &spec.x_upper, &spec.y_lower, &spec.y_upper, &spec.z_lower, &spec.z_upper,
+    };
+    std::vector<float> fixed_values(static_cast<std::size_t>(6) * signal_count, 0.0F);
+    for (std::size_t face = 0; face < boundary_records.size(); ++face) {
+      if (boundary_records[face]->kind == GridBoundaryKind::fixed) {
+        std::copy(boundary_records[face]->values.begin(), boundary_records[face]->values.end(),
+                  fixed_values.begin() + static_cast<std::ptrdiff_t>(face * signal_count));
+      }
+    }
+
+    copy_to_device(signal_levels_, levels, "failed to upload CUDA signal-grid levels");
+    copy_to_device(signal_diffusion_, spec.diffusion,
+                   "failed to upload CUDA signal-grid diffusion");
+    copy_to_device(signal_advection_, advection, "failed to upload CUDA signal-grid advection");
+    copy_to_device(signal_fixed_values_, fixed_values,
+                   "failed to upload CUDA signal-grid boundary values");
+    check_cuda(cudaMemsetAsync(signal_error_.data(), 0, sizeof(std::uint32_t), stream_),
+               "failed to clear the CUDA signal-grid error flag");
+
+    const cuda::SignalGridBoundariesGpu boundaries{
+        .x_lower = static_cast<std::uint32_t>(spec.x_lower.kind),
+        .x_upper = static_cast<std::uint32_t>(spec.x_upper.kind),
+        .y_lower = static_cast<std::uint32_t>(spec.y_lower.kind),
+        .y_upper = static_cast<std::uint32_t>(spec.y_upper.kind),
+        .z_lower = static_cast<std::uint32_t>(spec.z_lower.kind),
+        .z_upper = static_cast<std::uint32_t>(spec.z_upper.kind),
+    };
+    const cuda::SignalGridShapeGpu shape{
+        .x = spec.shape.x,
+        .y = spec.shape.y,
+        .z = spec.shape.z,
+        .sites = static_cast<std::uint32_t>(spec.site_count()),
+    };
+    cuda::launch_advance_signal_grid(
+        signal_levels_.data(), signal_output_.data(), signal_diffusion_.data(),
+        signal_advection_.data(), signal_fixed_values_.data(), signal_error_.data(), boundaries,
+        shape, make_float4(spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F), dt, signal_count,
+        level_count, stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-grid kernel");
+
+    std::uint32_t error = 0;
+    std::vector<float> output(levels.size());
+    check_cuda(cudaMemcpyAsync(&error, signal_error_.data(), sizeof(error), cudaMemcpyDeviceToHost,
+                               stream_),
+               "failed to download the CUDA signal-grid error flag");
+    copy_to_host(output, signal_output_, "failed to download CUDA signal-grid levels");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA signal-grid execution failed");
+    if (error != 0) {
+      throw std::domain_error(
+          "CUDA signal-grid kernel produced a non-finite or negative concentration");
+    }
+    grid.replace_levels(std::move(output));
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -1004,6 +1083,13 @@ class CudaBackend final : public ComputeBackend {
   CudaBuffer<std::uint32_t> species_outputs_;
   CudaBuffer<float> species_workspace_;
   CudaBuffer<std::uint32_t> species_error_;
+
+  CudaBuffer<float> signal_levels_;
+  CudaBuffer<float> signal_output_;
+  CudaBuffer<float> signal_diffusion_;
+  CudaBuffer<float4> signal_advection_;
+  CudaBuffer<float> signal_fixed_values_;
+  CudaBuffer<std::uint32_t> signal_error_;
 
   CudaBuffer<std::uint64_t> contact_ids_;
   CudaBuffer<float4> contact_centers_;

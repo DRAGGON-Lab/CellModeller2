@@ -54,12 +54,12 @@ simultaneous Euler updates. CUDA has an independent native interpreter that
 compiles against the 12.8 toolkit; the same shared scenario still needs to run
 on NVIDIA hardware before CUDA species conformance is claimed.
 
-Signal-grid state has CPU and native Metal implementations for conventional
-diffusion, conservative vector upwind advection, no-flux/periodic/fixed
-boundaries, trilinear sampling, stability checks, and non-negative
-concentration updates. The MSL transport kernel is conformant on Apple GPU
-hardware. CUDA deliberately reports this feature as unsupported until its
-native transport pipeline passes the same scenarios.
+Signal-grid state has CPU, native Metal, and native CUDA implementations for
+conventional diffusion, conservative vector upwind advection,
+no-flux/periodic/fixed boundaries, trilinear sampling, stability checks, and
+non-negative concentration updates. The MSL transport kernel is conformant on
+Apple GPU hardware. The independent CUDA kernel compiles and links against the
+12.8 toolkit; its shared conformance scenario still requires NVIDIA hardware.
 
 Checkpoints preserve compact slot order, stable identity allocation, complete
 lineage, constraints, species rates, signal-grid geometry and levels,

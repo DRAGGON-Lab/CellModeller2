@@ -60,9 +60,10 @@ reservoir values, periodic upwind advection, reduced-dimensional and 3D
 trilinear samples, paired-periodic validation, explicit stability rejection,
 checkpoint round trips, and v1-to-v2 checkpoint migration. The shared
 anisotropic 630-value scenario executes native MSL transport on Apple GPU
-hardware and compares it with the CPU reference at `5e-6`. CUDA continues to
-report signal grids as unsupported until the same gate runs through a native
-pipeline; compiling the expanded backend interface is not conformance.
+hardware and compares it with the CPU reference at `5e-6`. The independent
+CUDA transport kernel compiles and links against the CUDA 12.8 toolkit, but
+compilation and driverless test execution are not conformance; the same gate
+must execute on NVIDIA hardware.
 
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an

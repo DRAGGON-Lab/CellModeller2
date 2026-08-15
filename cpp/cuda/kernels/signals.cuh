@@ -1,0 +1,32 @@
+#pragma once
+
+#include <cuda_runtime_api.h>
+
+#include <cstdint>
+
+namespace cm2::cuda {
+
+struct SignalGridShapeGpu {
+  std::uint32_t x;
+  std::uint32_t y;
+  std::uint32_t z;
+  std::uint32_t sites;
+};
+
+struct SignalGridBoundariesGpu {
+  std::uint32_t x_lower;
+  std::uint32_t x_upper;
+  std::uint32_t y_lower;
+  std::uint32_t y_upper;
+  std::uint32_t z_lower;
+  std::uint32_t z_upper;
+};
+
+void launch_advance_signal_grid(const float* levels, float* output, const float* diffusion,
+                                const float4* advection, const float* fixed_values,
+                                std::uint32_t* error, SignalGridBoundariesGpu boundaries,
+                                SignalGridShapeGpu shape, float4 spacing, float dt,
+                                std::uint32_t signal_count, std::uint32_t level_count,
+                                cudaStream_t stream);
+
+}  // namespace cm2::cuda

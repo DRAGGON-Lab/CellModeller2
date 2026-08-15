@@ -145,6 +145,7 @@ if(CM2_ENABLE_CUDA)
     cpp/cuda/kernels/contacts.cu
     cpp/cuda/kernels/growth.cu
     cpp/cuda/kernels/mechanics.cu
+    cpp/cuda/kernels/signals.cu
     cpp/cuda/kernels/species.cu
   )
   target_compile_definitions(cm2_core PRIVATE CM2_HAS_CUDA=1)
