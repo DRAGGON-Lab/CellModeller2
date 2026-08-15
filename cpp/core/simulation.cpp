@@ -11,7 +11,11 @@ std::unique_ptr<ComputeBackend> make_backend(BackendKind kind) {
     case BackendKind::cpu:
       return make_cpu_backend();
     case BackendKind::metal:
+#if CM2_HAS_METAL
+      return make_metal_backend();
+#else
       throw std::runtime_error("Metal backend is not implemented in this build");
+#endif
     case BackendKind::cuda:
       throw std::runtime_error("CUDA backend is not implemented in this build");
   }
@@ -19,6 +23,18 @@ std::unique_ptr<ComputeBackend> make_backend(BackendKind kind) {
 }
 
 }  // namespace
+
+bool backend_available(BackendKind kind) noexcept {
+  if (kind == BackendKind::cpu) {
+    return true;
+  }
+#if CM2_HAS_METAL
+  if (kind == BackendKind::metal) {
+    return true;
+  }
+#endif
+  return false;
+}
 
 Simulation::Simulation(BackendKind backend, std::size_t reserved_capacity)
     : state_(reserved_capacity), backend_(make_backend(backend)) {}

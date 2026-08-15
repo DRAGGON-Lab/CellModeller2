@@ -15,7 +15,21 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CM2_BUILD_PYTHON": "OFF",
-        "CM2_BUILD_TESTS": "ON"
+        "CM2_BUILD_TESTS": "ON",
+        "CM2_ENABLE_METAL": "OFF"
+      }
+    },
+    {
+      "name": "metal-debug",
+      "displayName": "Native Metal (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/metal-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CM2_BUILD_PYTHON": "OFF",
+        "CM2_BUILD_TESTS": "ON",
+        "CM2_ENABLE_METAL": "ON"
       }
     }
   ],
@@ -23,12 +37,23 @@
     {
       "name": "cpu-debug",
       "configurePreset": "cpu-debug"
+    },
+    {
+      "name": "metal-debug",
+      "configurePreset": "metal-debug"
     }
   ],
   "testPresets": [
     {
       "name": "cpu-debug",
       "configurePreset": "cpu-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "metal-debug",
+      "configurePreset": "metal-debug",
       "output": {
         "outputOnFailure": true
       }

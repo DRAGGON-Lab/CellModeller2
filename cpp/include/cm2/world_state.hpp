@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -31,6 +32,11 @@ struct CellSnapshot {
   std::int32_t cell_type{0};
 };
 
+struct GrowthStateView {
+  std::span<float> lengths;
+  std::span<const float> growth_rates;
+};
+
 class WorldState {
  public:
   explicit WorldState(std::size_t reserved_capacity = 0);
@@ -42,6 +48,7 @@ class WorldState {
   CellId add_cell(const CellInit& cell);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void advance_growth(float dt);
+  [[nodiscard]] GrowthStateView growth_state() noexcept;
 
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;

@@ -153,6 +153,13 @@ void WorldState::advance_growth(float dt) {
   }
 }
 
+GrowthStateView WorldState::growth_state() noexcept {
+  return {
+      .lengths = length_,
+      .growth_rates = growth_rate_,
+  };
+}
+
 CellSnapshot WorldState::cell(CellId id) const {
   const auto slot = slot_for(id);
   const auto index = static_cast<std::size_t>(slot);

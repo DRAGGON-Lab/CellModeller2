@@ -12,6 +12,8 @@ using namespace nb::literals;
 NB_MODULE(_core, module) {
   module.doc() = "CellModeller2 native simulation core";
 
+  module.def("backend_available", &cm2::backend_available, "backend"_a);
+
   nb::enum_<cm2::BackendKind>(module, "BackendKind")
       .value("CPU", cm2::BackendKind::cpu)
       .value("METAL", cm2::BackendKind::metal)

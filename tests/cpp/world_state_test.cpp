@@ -89,21 +89,20 @@ void test_invalid_state_fails_explicitly() {
 }
 
 void test_unavailable_backends_do_not_fall_back() {
-  bool rejected = false;
-  try {
-    cm2::Simulation simulation(cm2::BackendKind::metal);
-  } catch (const std::runtime_error&) {
-    rejected = true;
+  for (const auto backend : {cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
+    if (cm2::backend_available(backend)) {
+      cm2::Simulation simulation(backend);
+      assert(simulation.backend_info().kind == backend);
+      continue;
+    }
+    bool rejected = false;
+    try {
+      cm2::Simulation simulation(backend);
+    } catch (const std::runtime_error&) {
+      rejected = true;
+    }
+    assert(rejected);
   }
-  assert(rejected);
-
-  rejected = false;
-  try {
-    cm2::Simulation simulation(cm2::BackendKind::cuda);
-  } catch (const std::runtime_error&) {
-    rejected = true;
-  }
-  assert(rejected);
 }
 
 }  // namespace

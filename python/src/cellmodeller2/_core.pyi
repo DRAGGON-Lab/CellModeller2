@@ -5,6 +5,8 @@ class BackendKind(Enum):
     METAL: BackendKind
     CUDA: BackendKind
 
+def backend_available(backend: BackendKind) -> bool: ...
+
 class Vec3:
     x: float
     y: float

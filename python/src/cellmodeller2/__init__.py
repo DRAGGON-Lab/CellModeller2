@@ -7,6 +7,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     CellSnapshot,
     Simulation,
     Vec3,
+    backend_available,
 )
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "CellSnapshot",
     "Simulation",
     "Vec3",
+    "backend_available",
 ]
 
 __version__ = "0.1.0"

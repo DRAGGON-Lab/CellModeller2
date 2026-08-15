@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from cellmodeller2 import BackendKind, CellInit, Simulation, Vec3
+from cellmodeller2 import BackendKind, CellInit, Simulation, Vec3, backend_available
 
 
 def test_growth_and_division_preserve_declared_semantics() -> None:
@@ -29,8 +29,11 @@ def test_growth_and_division_preserve_declared_semantics() -> None:
     simulation.validate()
 
 
-@pytest.mark.parametrize("backend", [BackendKind.METAL, BackendKind.CUDA])
+@pytest.mark.parametrize("backend", list(BackendKind))
 def test_unavailable_backend_fails_instead_of_falling_back(backend: BackendKind) -> None:
+    if backend_available(backend):
+        Simulation(backend)
+        return
     with pytest.raises(RuntimeError, match="not implemented"):
         Simulation(backend)
 
@@ -39,3 +42,24 @@ def test_invalid_time_step_is_rejected() -> None:
     simulation = Simulation()
     with pytest.raises(ValueError, match="time step"):
         simulation.step(-0.1)
+
+
+@pytest.mark.skipif(
+    not backend_available(BackendKind.METAL),
+    reason="native Metal backend is not built",
+)
+def test_metal_growth_matches_cpu() -> None:
+    cpu = Simulation(BackendKind.CPU)
+    metal = Simulation(BackendKind.METAL)
+    for index in range(33):
+        cell = CellInit()
+        cell.length = 1.0 + index * 0.1
+        cell.growth_rate = (index % 7) * 0.025
+        assert cpu.add_cell(cell) == metal.add_cell(cell)
+
+    for dt in (0.01, 0.025, 0.1):
+        cpu.step(dt)
+        metal.step(dt)
+
+    for cpu_cell, metal_cell in zip(cpu.cells(), metal.cells(), strict=True):
+        assert math.isclose(cpu_cell.length, metal_cell.length, abs_tol=1.0e-6)
