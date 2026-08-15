@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+import rfc8785
 from cellmodeller2 import (
     SCENE_FORMAT,
     SCENE_VERSION,
@@ -88,13 +89,7 @@ def _semantic_frame(frame: SceneFrame) -> SceneFrame:
 
 
 def _resign(document: dict[str, Any]) -> str:
-    canonical = json.dumps(
-        document["frame"],
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    canonical = rfc8785.dumps(document["frame"])
     document["integrity"]["frame"] = hashlib.sha256(canonical).hexdigest()
     return json.dumps(document)
 

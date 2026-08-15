@@ -8,6 +8,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
+    { name = "rfc8785" },
 ]
 
 [package.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
 requires-dist = [
     { name = "numpy", specifier = ">=2.1,<3" },
     { name = "python-libsbml", marker = "extra == 'sbml'", specifier = ">=5.21.1,<6" },
+    { name = "rfc8785", specifier = ">=0.1.4,<0.2" },
 ]
 provides-extras = ["sbml"]
 
@@ -152,6 +154,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/40/cc/eed5aeb1141f53e788bc3acc9bc9f758b3d6ca45a9db85eee053c8166d4b/python_libsbml-5.21.1-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8e0fc4b1e2feb4af0028cffe1e8eff4e448f1124bf1e895e08e987aeeb2d8e55", size = 8049037 },
     { url = "https://files.pythonhosted.org/packages/17/d8/add9c72917802e02bec66769fd11f1ec7fa82376fdc16945f6d2508f7468/python_libsbml-5.21.1-cp312-cp312-win_amd64.whl", hash = "sha256:84101a40c11a45c996c274a042454600b205d663d48c5a58ee327565e20c890e", size = 5986612 },
     { url = "https://files.pythonhosted.org/packages/1c/e3/5c2b48b238bfadd00f9c3d0654261a1f82d36d9f2b3d7292f32b3e81caa9/python_libsbml-5.21.1-cp312-cp312-win_arm64.whl", hash = "sha256:5698f5d4216eb0c9d89895346d13a935d9ed7f23f4635076889cf7892fadcbf8", size = 5690450 },
+]
+
+[[package]]
+name = "rfc8785"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/2f/fa1d2e740c490191b572d33dbca5daa180cb423c24396b856f5886371d8b/rfc8785-0.1.4.tar.gz", hash = "sha256:e545841329fe0eee4f6a3b44e7034343100c12b4ec566dc06ca9735681deb4da", size = 14321 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/78/119878110660b2ad709888c8a1614fce7e2fab39080ab960656dc8605bf6/rfc8785-0.1.4-py3-none-any.whl", hash = "sha256:520d690b448ecf0703691c76e1a34a24ddcd4fc5bc41d589cb7c58ec651bcd48", size = 9240 },
 ]
 
 [[package]]

@@ -15,6 +15,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Literal, NoReturn, cast
 
+import rfc8785
+
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendKind,
     GridBoundary,
@@ -238,14 +240,11 @@ def _frame_to_json(frame: SceneFrame) -> dict[str, JSONValue]:
     }
 
 
-def _canonical_json(value: object) -> bytes:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+def _canonical_json(value: JSONValue) -> bytes:
+    try:
+        return rfc8785.dumps(value)
+    except rfc8785.CanonicalizationError as error:
+        raise SceneError(f"scene cannot be canonicalized: {error}") from error
 
 
 def dumps_scene(frame: SceneFrame) -> str:
@@ -662,7 +661,9 @@ def parse_scene(source: str | bytes) -> SceneFrame:
     if _string(integrity["algorithm"], "$.integrity.algorithm") != "sha256":
         _fail("$.integrity.algorithm", "unsupported integrity algorithm")
     expected_digest = _string(integrity["frame"], "$.integrity.frame")
-    actual_digest = hashlib.sha256(_canonical_json(root["frame"])).hexdigest()
+    actual_digest = hashlib.sha256(
+        _canonical_json(cast(JSONValue, root["frame"]))
+    ).hexdigest()
     if not hmac.compare_digest(actual_digest, expected_digest):
         _fail("$.integrity.frame", "frame digest does not match")
     return _frame(root["frame"], "$.frame")
