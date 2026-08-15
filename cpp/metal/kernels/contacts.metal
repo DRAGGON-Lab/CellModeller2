@@ -24,6 +24,22 @@ struct PairPoints {
   uint count;
 };
 
+struct ExternalConstraint {
+  ulong id;
+  uint kind;
+  uint allowed_region;
+  float4 geometry;
+  float4 parameters;
+};
+
+struct ExternalEvaluation {
+  float3 centerline_points[2];
+  float3 normals[2];
+  float separations[2];
+  bool active[2];
+  uint active_count;
+};
+
 Capsule load_capsule(device const ulong* ids, device const float4* centers,
                       device const float4* axes, device const float4* geometry, uint slot) {
   Capsule result;
@@ -166,6 +182,40 @@ float3 deterministic_normal(const Capsule first, const Capsule second, const Poi
   return normalize(cross(first.axis, basis));
 }
 
+ExternalEvaluation evaluate_external_constraint(const Capsule cell,
+                                                const ExternalConstraint constraint,
+                                                float2 contact_parameters) {
+  ExternalEvaluation result;
+  float half_length = cell.length * 0.5f;
+  result.centerline_points[0] = cell.center - cell.axis * half_length;
+  result.centerline_points[1] = cell.center + cell.axis * half_length;
+  result.active_count = 0;
+  for (uint endpoint = 0; endpoint < 2; ++endpoint) {
+    float3 point = result.centerline_points[endpoint];
+    if (constraint.kind == 0) {
+      float3 inward_normal = constraint.parameters.xyz;
+      result.separations[endpoint] =
+          dot(point - constraint.geometry.xyz, inward_normal) - cell.radius;
+      result.normals[endpoint] = -inward_normal;
+    } else {
+      float3 center_delta = point - constraint.geometry.xyz;
+      float distance = length(center_delta);
+      float3 radial =
+          distance > contact_parameters.y ? center_delta / distance : float3(1.0f, 0.0f, 0.0f);
+      if (constraint.allowed_region == 0) {
+        result.separations[endpoint] = distance - constraint.geometry.w - cell.radius;
+        result.normals[endpoint] = -radial;
+      } else {
+        result.separations[endpoint] = constraint.geometry.w - distance - cell.radius;
+        result.normals[endpoint] = radial;
+      }
+    }
+    result.active[endpoint] = result.separations[endpoint] < contact_parameters.x;
+    result.active_count += result.active[endpoint];
+  }
+  return result;
+}
+
 kernel void count_cell_contacts(device const ulong* ids [[buffer(0)]],
                                 device const float4* centers [[buffer(1)]],
                                 device const float4* axes [[buffer(2)]],
@@ -258,6 +308,70 @@ kernel void fill_cell_contacts(
     points_on_first[output_index] = float4(points.values[ordinal].first + normal * first.radius, 0.0f);
     normals[output_index] = float4(normal, 0.0f);
     separations[output_index] = separation;
+    weights[output_index] = weight;
+    ++output_index;
+  }
+}
+
+kernel void count_external_contacts(
+    device const ulong* ids [[buffer(0)]], device const float4* centers [[buffer(1)]],
+    device const float4* axes [[buffer(2)]], device const float4* geometry [[buffer(3)]],
+    device const ExternalConstraint* constraints [[buffer(4)]], device uint* counts [[buffer(5)]],
+    constant float2& parameters [[buffer(6)]], constant uint& cell_count [[buffer(7)]],
+    constant uint& constraint_count [[buffer(8)]], uint2 position [[thread_position_in_grid]]) {
+  if (position.x >= constraint_count || position.y >= cell_count) {
+    return;
+  }
+  uint cell_slot = position.y;
+  uint constraint_index = position.x;
+  uint pair_index = cell_slot * constraint_count + constraint_index;
+  Capsule cell = load_capsule(ids, centers, axes, geometry, cell_slot);
+  ExternalEvaluation evaluation =
+      evaluate_external_constraint(cell, constraints[constraint_index], parameters);
+  counts[pair_index] = evaluation.active_count;
+}
+
+kernel void fill_external_contacts(
+    device const ulong* ids [[buffer(0)]], device const float4* centers [[buffer(1)]],
+    device const float4* axes [[buffer(2)]], device const float4* geometry [[buffer(3)]],
+    device const ExternalConstraint* constraints [[buffer(4)]],
+    device const uint* counts [[buffer(5)]], device const uint* inclusive_counts [[buffer(6)]],
+    device ulong* cell_ids [[buffer(7)]], device ulong* constraint_ids [[buffer(8)]],
+    device uint* cell_slots [[buffer(9)]], device uint* constraint_kinds [[buffer(10)]],
+    device uint* endpoints [[buffer(11)]], device float4* points_on_cell [[buffer(12)]],
+    device float4* normals [[buffer(13)]], device float* separations [[buffer(14)]],
+    device float* weights [[buffer(15)]], constant float2& parameters [[buffer(16)]],
+    constant uint& cell_count [[buffer(17)]], constant uint& constraint_count [[buffer(18)]],
+    uint2 position [[thread_position_in_grid]]) {
+  if (position.x >= constraint_count || position.y >= cell_count) {
+    return;
+  }
+  uint cell_slot = position.y;
+  uint constraint_index = position.x;
+  uint pair_index = cell_slot * constraint_count + constraint_index;
+  uint pair_contact_count = counts[pair_index];
+  if (pair_contact_count == 0) {
+    return;
+  }
+
+  Capsule cell = load_capsule(ids, centers, axes, geometry, cell_slot);
+  ExternalConstraint constraint = constraints[constraint_index];
+  ExternalEvaluation evaluation = evaluate_external_constraint(cell, constraint, parameters);
+  float weight = constraint.parameters.w * (evaluation.active_count == 2 ? inverse_sqrt_two : 1.0f);
+  uint output_index = inclusive_counts[pair_index] - pair_contact_count;
+  for (uint endpoint = 0; endpoint < 2; ++endpoint) {
+    if (!evaluation.active[endpoint]) {
+      continue;
+    }
+    cell_ids[output_index] = cell.id;
+    constraint_ids[output_index] = constraint.id;
+    cell_slots[output_index] = cell.slot;
+    constraint_kinds[output_index] = constraint.kind;
+    endpoints[output_index] = endpoint;
+    points_on_cell[output_index] = float4(
+        evaluation.centerline_points[endpoint] + evaluation.normals[endpoint] * cell.radius, 0.0f);
+    normals[output_index] = float4(evaluation.normals[endpoint], 0.0f);
+    separations[output_index] = evaluation.separations[endpoint];
     weights[output_index] = weight;
     ++output_index;
   }

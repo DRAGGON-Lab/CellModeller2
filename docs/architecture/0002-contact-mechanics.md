@@ -95,6 +95,13 @@ rows. A simulation with constraints must execute both geometry and mechanics
 on a backend that advertises external-constraint support; unsupported native
 backends fail explicitly instead of dropping the boundary rows.
 
+The Metal implementation uploads stable-ID-sorted tagged constraints and runs
+a native MSL count/scan/fill pipeline over cell-constraint pairs. Each pair
+emits zero, one, or two endpoint rows into dynamic storage. Pair and external
+rows are then combined in the native solver buffers; a reserved invalid second
+slot marks the one-sided row inside the Metal operator without reintroducing a
+sentinel into the public contact model.
+
 CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal
 compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
@@ -108,7 +115,8 @@ compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
 5. Native Metal and CUDA operator, reductions, and solver loops.
 6. Typed plane and sphere constraint geometry.
 7. CPU external-constraint mechanics rows.
-8. Native Metal/CUDA external-constraint conformance.
+8. Native Metal external-constraint conformance.
+9. Native CUDA external-constraint conformance.
 
 This order isolates geometry disagreements before solver behavior can hide
 them. A feature ledger entry advances only when the corresponding shared

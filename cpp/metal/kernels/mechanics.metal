@@ -63,8 +63,10 @@ kernel void build_mechanics_rows(
       contact_jacobian(normal, point - centers[first].xyz, axes[first].xyz,
                        geometry[first].x + 2.0f * geometry[first].y, weight);
   second_rows[index] =
-      contact_jacobian(normal, point - centers[second].xyz, axes[second].xyz,
-                       geometry[second].x + 2.0f * geometry[second].y, weight);
+      second == 0xffffffffu
+          ? zero_dofs()
+          : contact_jacobian(normal, point - centers[second].xyz, axes[second].xyz,
+                             geometry[second].x + 2.0f * geometry[second].y, weight);
   right_hand_side[index] = weight * separations[index];
 }
 
@@ -78,8 +80,11 @@ kernel void apply_mechanics_b(
   if (index >= contact_count) {
     return;
   }
-  row_values[index] = dof_dot(first_rows[index], input[first_slots[index]]) -
-                      dof_dot(second_rows[index], input[second_slots[index]]);
+  uint second = second_slots[index];
+  row_values[index] = dof_dot(first_rows[index], input[first_slots[index]]);
+  if (second != 0xffffffffu) {
+    row_values[index] -= dof_dot(second_rows[index], input[second]);
+  }
 }
 
 kernel void apply_mechanics_transpose(

@@ -23,6 +23,13 @@
 namespace cm2 {
 namespace {
 
+struct MetalFloat2 {
+  float x;
+  float y;
+};
+
+static_assert(sizeof(MetalFloat2) == 8);
+
 struct alignas(16) MetalFloat4 {
   float x;
   float y;
@@ -38,6 +45,16 @@ struct alignas(16) MetalDofs {
 };
 
 static_assert(sizeof(MetalDofs) == 32);
+
+struct alignas(16) MetalExternalConstraint {
+  std::uint64_t id;
+  std::uint32_t kind;
+  std::uint32_t allowed_region;
+  MetalFloat4 geometry;
+  MetalFloat4 parameters;
+};
+
+static_assert(sizeof(MetalExternalConstraint) == 48);
 
 [[noreturn]] void throw_metal_error(const char* operation, NSError* error) {
   const char* detail = error == nil ? "unknown Metal error" : error.localizedDescription.UTF8String;
@@ -124,6 +141,12 @@ class MetalBackend final : public ComputeBackend {
                                                 "failed to create the Metal contact-scan pipeline");
       contact_fill_pipeline_ = compile_pipeline(device_, contacts_library, @"fill_cell_contacts",
                                                 "failed to create the Metal contact-fill pipeline");
+      external_contact_count_pipeline_ =
+          compile_pipeline(device_, contacts_library, @"count_external_contacts",
+                           "failed to create the Metal external-contact-count pipeline");
+      external_contact_fill_pipeline_ =
+          compile_pipeline(device_, contacts_library, @"fill_external_contacts",
+                           "failed to create the Metal external-contact-fill pipeline");
 
       const auto mechanics_library =
           compile_library(device_, metal::mechanics_source, "failed to compile Metal mechanics");
@@ -173,7 +196,8 @@ class MetalBackend final : public ComputeBackend {
 
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
     return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts ||
-           feature == BackendFeature::cell_mechanics;
+           feature == BackendFeature::cell_mechanics ||
+           feature == BackendFeature::external_constraints;
   }
 
   void advance_growth(WorldState& state, float dt) override {
@@ -248,8 +272,42 @@ class MetalBackend final : public ComputeBackend {
   }
 
   [[nodiscard]] ExternalContactGraph find_external_contacts(
-      const WorldState&, const ConstraintSet&, const ConstraintContactParameters&) override {
-    throw std::runtime_error("Metal external constraints are not implemented in this build");
+      const WorldState& state, const ConstraintSet& constraints,
+      const ConstraintContactParameters& parameters) override {
+    validate_constraint_contact_parameters(parameters);
+    state.validate();
+    const auto geometry = state.geometry_state();
+    if (geometry.size() == 0 || constraints.empty()) {
+      return ExternalContactGraph(geometry.size(), {});
+    }
+    if (geometry.size() > std::numeric_limits<std::uint32_t>::max() ||
+        constraints.size() > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::overflow_error("Metal external-contact launch exceeds the uint32 index space");
+    }
+    if (geometry.size() > std::numeric_limits<std::size_t>::max() / constraints.size()) {
+      throw std::overflow_error("Metal external-contact pair count overflow");
+    }
+    const auto pair_count = geometry.size() * constraints.size();
+    if (pair_count > std::numeric_limits<std::uint32_t>::max() / 2) {
+      throw std::overflow_error("Metal external-contact staging exceeds the uint32 scan space");
+    }
+
+    ensure_contact_cell_capacity(geometry.size());
+    ensure_external_constraint_capacity(constraints.size());
+    ensure_contact_pair_capacity(pair_count);
+    upload_contact_cells(geometry);
+    upload_external_constraints(constraints);
+    const auto contact_count = count_external_contacts(
+        static_cast<std::uint32_t>(geometry.size()), static_cast<std::uint32_t>(constraints.size()),
+        static_cast<std::uint32_t>(pair_count), parameters);
+    if (contact_count == 0) {
+      return ExternalContactGraph(geometry.size(), {});
+    }
+
+    ensure_contact_output_capacity(contact_count);
+    fill_external_contacts(static_cast<std::uint32_t>(geometry.size()),
+                           static_cast<std::uint32_t>(constraints.size()), parameters);
+    return download_external_contacts(geometry.size(), contact_count);
   }
 
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
@@ -265,30 +323,32 @@ class MetalBackend final : public ComputeBackend {
     if (external_contacts.cell_count() != geometry.size()) {
       throw std::invalid_argument("external contact graph and world state cell counts disagree");
     }
-    if (!external_contacts.empty()) {
-      throw std::runtime_error("Metal external mechanics are not implemented in this build");
+    if (external_contacts.size() > std::numeric_limits<std::size_t>::max() - contacts.size()) {
+      throw std::overflow_error("Metal mechanics row count overflow");
     }
+    const auto row_count = contacts.size() + external_contacts.size();
     if (geometry.size() > std::numeric_limits<std::uint32_t>::max() ||
-        contacts.size() > std::numeric_limits<std::uint32_t>::max() / 2) {
+        row_count > std::numeric_limits<std::uint32_t>::max() / 2) {
       throw std::overflow_error("Metal mechanics exceeds the uint32 index space");
     }
 
     MechanicsSolveResult result;
     result.corrections.resize(geometry.size());
-    if (geometry.size() == 0 || contacts.empty()) {
+    if (geometry.size() == 0 || row_count == 0) {
       return result;
     }
 
     validate_mechanics_contacts(geometry, contacts);
+    validate_external_mechanics_contacts(geometry, external_contacts);
     ensure_contact_cell_capacity(geometry.size());
-    ensure_contact_output_capacity(contacts.size());
-    ensure_mechanics_capacity(geometry.size(), contacts.size());
+    ensure_contact_output_capacity(row_count);
+    ensure_mechanics_capacity(geometry.size(), row_count);
     upload_contact_cells(geometry);
-    upload_mechanics_contacts(contacts);
-    upload_mechanics_incidence(contacts);
+    upload_mechanics_contacts(contacts, external_contacts);
+    upload_mechanics_incidence(contacts, external_contacts);
 
     const auto cell_count = static_cast<std::uint32_t>(geometry.size());
-    const auto contact_count = static_cast<std::uint32_t>(contacts.size());
+    const auto contact_count = static_cast<std::uint32_t>(row_count);
     auto residual_squared = initialize_mechanics(cell_count, contact_count);
     result.report.initial_residual_rms =
         std::sqrt(residual_squared / static_cast<float>(cell_count));
@@ -396,6 +456,16 @@ class MetalBackend final : public ComputeBackend {
     contact_scan_b_ = allocate_shared_buffer(device_, byte_count, "contact scan B");
   }
 
+  void ensure_external_constraint_capacity(std::size_t count) {
+    if (count <= external_constraint_capacity_) {
+      return;
+    }
+    external_constraint_capacity_ = std::bit_ceil(count);
+    external_constraints_ = allocate_shared_buffer(
+        device_, external_constraint_capacity_ * sizeof(MetalExternalConstraint),
+        "external constraints");
+  }
+
   void ensure_contact_output_capacity(std::size_t count) {
     if (count <= contact_output_capacity_) {
       return;
@@ -438,6 +508,55 @@ class MetalBackend final : public ComputeBackend {
     }
   }
 
+  void upload_external_constraints(const ConstraintSet& constraints) {
+    std::vector<MetalExternalConstraint> values;
+    values.reserve(constraints.size());
+    for (const auto& plane : constraints.planes()) {
+      values.push_back({
+          .id = plane.id,
+          .kind = static_cast<std::uint32_t>(ExternalConstraintKind::plane),
+          .allowed_region = 0,
+          .geometry = {plane.point.x, plane.point.y, plane.point.z, 0.0F},
+          .parameters = {plane.inward_normal.x, plane.inward_normal.y, plane.inward_normal.z,
+                         plane.coefficient},
+      });
+    }
+    for (const auto& sphere : constraints.spheres()) {
+      values.push_back({
+          .id = sphere.id,
+          .kind = static_cast<std::uint32_t>(ExternalConstraintKind::sphere),
+          .allowed_region = static_cast<std::uint32_t>(sphere.allowed_region),
+          .geometry = {sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius},
+          .parameters = {0.0F, 0.0F, 0.0F, sphere.coefficient},
+      });
+    }
+    std::ranges::sort(values, {}, &MetalExternalConstraint::id);
+    std::memcpy(external_constraints_.contents, values.data(),
+                values.size() * sizeof(MetalExternalConstraint));
+  }
+
+  void encode_contact_scan(id<MTLComputeCommandEncoder> encoder, std::uint32_t element_count) {
+    id<MTLBuffer> scan_input = contact_counts_;
+    id<MTLBuffer> scan_output = contact_scan_a_;
+    std::uint32_t offset = 1;
+    while (offset < element_count) {
+      [encoder setComputePipelineState:contact_scan_pipeline_];
+      [encoder setBuffer:scan_input offset:0 atIndex:0];
+      [encoder setBuffer:scan_output offset:0 atIndex:1];
+      [encoder setBytes:&offset length:sizeof(offset) atIndex:2];
+      [encoder setBytes:&element_count length:sizeof(element_count) atIndex:3];
+      dispatch_1d(encoder, contact_scan_pipeline_, element_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      scan_input = scan_output;
+      scan_output = scan_output == contact_scan_a_ ? contact_scan_b_ : contact_scan_a_;
+      if (offset > element_count / 2) {
+        break;
+      }
+      offset *= 2;
+    }
+    contact_inclusive_counts_ = scan_input;
+  }
+
   [[nodiscard]] std::uint32_t count_contacts(std::uint32_t cell_count,
                                              std::uint32_t pair_slot_count,
                                              const ContactParameters& parameters) {
@@ -467,28 +586,7 @@ class MetalBackend final : public ComputeBackend {
           threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
       [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      id<MTLBuffer> scan_input = contact_counts_;
-      id<MTLBuffer> scan_output = contact_scan_a_;
-      std::uint32_t offset = 1;
-      while (offset < pair_slot_count) {
-        [encoder setComputePipelineState:contact_scan_pipeline_];
-        [encoder setBuffer:scan_input offset:0 atIndex:0];
-        [encoder setBuffer:scan_output offset:0 atIndex:1];
-        [encoder setBytes:&offset length:sizeof(offset) atIndex:2];
-        [encoder setBytes:&pair_slot_count length:sizeof(pair_slot_count) atIndex:3];
-        const auto width =
-            std::min<NSUInteger>(contact_scan_pipeline_.maxTotalThreadsPerThreadgroup, 256);
-        [encoder dispatchThreads:MTLSizeMake(pair_slot_count, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(width, 1, 1)];
-        [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
-        scan_input = scan_output;
-        scan_output = scan_output == contact_scan_a_ ? contact_scan_b_ : contact_scan_a_;
-        if (offset > pair_slot_count / 2) {
-          break;
-        }
-        offset *= 2;
-      }
-      contact_inclusive_counts_ = scan_input;
+      encode_contact_scan(encoder, pair_slot_count);
 
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal contact count or scan failed");
@@ -574,6 +672,115 @@ class MetalBackend final : public ComputeBackend {
     return ContactGraph(cell_count, std::move(contacts));
   }
 
+  [[nodiscard]] std::uint32_t count_external_contacts(
+      std::uint32_t cell_count, std::uint32_t constraint_count, std::uint32_t pair_count,
+      const ConstraintContactParameters& parameters) {
+    const MetalFloat2 gpu_parameters{parameters.activation_margin, parameters.degeneracy_epsilon};
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal external-contact-count command");
+      }
+
+      [encoder setComputePipelineState:external_contact_count_pipeline_];
+      [encoder setBuffer:contact_ids_ offset:0 atIndex:0];
+      [encoder setBuffer:contact_centers_ offset:0 atIndex:1];
+      [encoder setBuffer:contact_axes_ offset:0 atIndex:2];
+      [encoder setBuffer:contact_geometry_ offset:0 atIndex:3];
+      [encoder setBuffer:external_constraints_ offset:0 atIndex:4];
+      [encoder setBuffer:contact_counts_ offset:0 atIndex:5];
+      [encoder setBytes:&gpu_parameters length:sizeof(gpu_parameters) atIndex:6];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:7];
+      [encoder setBytes:&constraint_count length:sizeof(constraint_count) atIndex:8];
+      [encoder dispatchThreads:MTLSizeMake(constraint_count, cell_count, 1)
+          threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      encode_contact_scan(encoder, pair_count);
+
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal external contact count or scan failed");
+    }
+
+    const auto* inclusive = static_cast<const std::uint32_t*>(contact_inclusive_counts_.contents);
+    return inclusive[pair_count - 1];
+  }
+
+  void fill_external_contacts(std::uint32_t cell_count, std::uint32_t constraint_count,
+                              const ConstraintContactParameters& parameters) {
+    const MetalFloat2 gpu_parameters{parameters.activation_margin, parameters.degeneracy_epsilon};
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal external-contact-fill command");
+      }
+
+      [encoder setComputePipelineState:external_contact_fill_pipeline_];
+      [encoder setBuffer:contact_ids_ offset:0 atIndex:0];
+      [encoder setBuffer:contact_centers_ offset:0 atIndex:1];
+      [encoder setBuffer:contact_axes_ offset:0 atIndex:2];
+      [encoder setBuffer:contact_geometry_ offset:0 atIndex:3];
+      [encoder setBuffer:external_constraints_ offset:0 atIndex:4];
+      [encoder setBuffer:contact_counts_ offset:0 atIndex:5];
+      [encoder setBuffer:contact_inclusive_counts_ offset:0 atIndex:6];
+      [encoder setBuffer:contact_first_ids_ offset:0 atIndex:7];
+      [encoder setBuffer:contact_second_ids_ offset:0 atIndex:8];
+      [encoder setBuffer:contact_first_slots_ offset:0 atIndex:9];
+      [encoder setBuffer:contact_second_slots_ offset:0 atIndex:10];
+      [encoder setBuffer:contact_ordinals_ offset:0 atIndex:11];
+      [encoder setBuffer:contact_points_ offset:0 atIndex:12];
+      [encoder setBuffer:contact_normals_ offset:0 atIndex:13];
+      [encoder setBuffer:contact_separations_ offset:0 atIndex:14];
+      [encoder setBuffer:contact_weights_ offset:0 atIndex:15];
+      [encoder setBytes:&gpu_parameters length:sizeof(gpu_parameters) atIndex:16];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:17];
+      [encoder setBytes:&constraint_count length:sizeof(constraint_count) atIndex:18];
+      [encoder dispatchThreads:MTLSizeMake(constraint_count, cell_count, 1)
+          threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal external contact fill failed");
+    }
+  }
+
+  [[nodiscard]] ExternalContactGraph download_external_contacts(std::size_t cell_count,
+                                                                std::uint32_t contact_count) const {
+    const auto* cell_ids = static_cast<const std::uint64_t*>(contact_first_ids_.contents);
+    const auto* constraint_ids = static_cast<const std::uint64_t*>(contact_second_ids_.contents);
+    const auto* cell_slots = static_cast<const std::uint32_t*>(contact_first_slots_.contents);
+    const auto* constraint_kinds =
+        static_cast<const std::uint32_t*>(contact_second_slots_.contents);
+    const auto* endpoints = static_cast<const std::uint32_t*>(contact_ordinals_.contents);
+    const auto* points = static_cast<const MetalFloat4*>(contact_points_.contents);
+    const auto* normals = static_cast<const MetalFloat4*>(contact_normals_.contents);
+    const auto* separations = static_cast<const float*>(contact_separations_.contents);
+    const auto* weights = static_cast<const float*>(contact_weights_.contents);
+
+    std::vector<ExternalContact> contacts;
+    contacts.reserve(contact_count);
+    for (std::uint32_t index = 0; index < contact_count; ++index) {
+      if (constraint_kinds[index] > static_cast<std::uint32_t>(ExternalConstraintKind::sphere) ||
+          endpoints[index] > static_cast<std::uint32_t>(RodEndpoint::positive)) {
+        throw std::runtime_error("Metal external-contact kernel produced an invalid tag");
+      }
+      contacts.push_back({
+          .cell_id = cell_ids[index],
+          .cell_slot = cell_slots[index],
+          .constraint_id = constraint_ids[index],
+          .constraint_kind = static_cast<ExternalConstraintKind>(constraint_kinds[index]),
+          .endpoint = static_cast<RodEndpoint>(endpoints[index]),
+          .point_on_cell = {points[index].x, points[index].y, points[index].z},
+          .normal = {normals[index].x, normals[index].y, normals[index].z},
+          .signed_separation = separations[index],
+          .weight = weights[index],
+      });
+    }
+    std::ranges::sort(contacts, {}, [](const ExternalContact& contact) {
+      return std::tuple{contact.cell_id, contact.constraint_id, contact.endpoint};
+    });
+    return ExternalContactGraph(cell_count, std::move(contacts));
+  }
+
   static void validate_mechanics_contacts(const CellGeometryView& geometry,
                                           const ContactGraph& contacts) {
     for (const auto& contact : contacts.contacts()) {
@@ -581,6 +788,17 @@ class MetalBackend final : public ComputeBackend {
       const auto second = static_cast<std::size_t>(contact.second_slot);
       if (geometry.ids[first] != contact.first_id || geometry.ids[second] != contact.second_id) {
         throw std::invalid_argument("contact graph identifiers do not match current state slots");
+      }
+    }
+  }
+
+  static void validate_external_mechanics_contacts(const CellGeometryView& geometry,
+                                                   const ExternalContactGraph& contacts) {
+    for (const auto& contact : contacts.contacts()) {
+      const auto cell = static_cast<std::size_t>(contact.cell_slot);
+      if (geometry.ids[cell] != contact.cell_id) {
+        throw std::invalid_argument(
+            "external contact graph identifiers do not match current state slots");
       }
     }
   }
@@ -631,7 +849,8 @@ class MetalBackend final : public ComputeBackend {
     }
   }
 
-  void upload_mechanics_contacts(const ContactGraph& contacts) {
+  void upload_mechanics_contacts(const ContactGraph& contacts,
+                                 const ExternalContactGraph& external_contacts) {
     auto* first_slots = static_cast<std::uint32_t*>(contact_first_slots_.contents);
     auto* second_slots = static_cast<std::uint32_t*>(contact_second_slots_.contents);
     auto* points = static_cast<MetalFloat4*>(contact_points_.contents);
@@ -648,9 +867,21 @@ class MetalBackend final : public ComputeBackend {
       separations[index] = contact.signed_separation;
       weights[index] = contact.weight;
     }
+    for (std::size_t index = 0; index < external_contacts.size(); ++index) {
+      const auto output_index = contacts.size() + index;
+      const auto& contact = external_contacts.contacts()[index];
+      first_slots[output_index] = contact.cell_slot;
+      second_slots[output_index] = invalid_slot;
+      points[output_index] = {contact.point_on_cell.x, contact.point_on_cell.y,
+                              contact.point_on_cell.z, 0.0F};
+      normals[output_index] = {contact.normal.x, contact.normal.y, contact.normal.z, 0.0F};
+      separations[output_index] = contact.signed_separation;
+      weights[output_index] = contact.weight;
+    }
   }
 
-  void upload_mechanics_incidence(const ContactGraph& contacts) {
+  void upload_mechanics_incidence(const ContactGraph& contacts,
+                                  const ExternalContactGraph& external_contacts) {
     auto* offsets = static_cast<std::uint32_t*>(mechanics_incidence_offsets_.contents);
     auto* indices = static_cast<std::uint32_t*>(mechanics_incidence_indices_.contents);
     std::uint32_t cursor = 0;
@@ -659,9 +890,13 @@ class MetalBackend final : public ComputeBackend {
       for (const auto contact_index : contacts.incident_contact_indices(static_cast<Slot>(slot))) {
         indices[cursor++] = static_cast<std::uint32_t>(contact_index);
       }
+      for (const auto contact_index :
+           external_contacts.incident_contact_indices(static_cast<Slot>(slot))) {
+        indices[cursor++] = static_cast<std::uint32_t>(contacts.size() + contact_index);
+      }
     }
     offsets[contacts.cell_count()] = cursor;
-    if (cursor != contacts.size() * 2) {
+    if (cursor != contacts.size() * 2 + external_contacts.size()) {
       throw std::logic_error("contact incidence size is inconsistent");
     }
   }
@@ -900,6 +1135,8 @@ class MetalBackend final : public ComputeBackend {
   id<MTLComputePipelineState> contact_count_pipeline_{nil};
   id<MTLComputePipelineState> contact_scan_pipeline_{nil};
   id<MTLComputePipelineState> contact_fill_pipeline_{nil};
+  id<MTLComputePipelineState> external_contact_count_pipeline_{nil};
+  id<MTLComputePipelineState> external_contact_fill_pipeline_{nil};
   id<MTLComputePipelineState> mechanics_rows_pipeline_{nil};
   id<MTLComputePipelineState> mechanics_b_pipeline_{nil};
   id<MTLComputePipelineState> mechanics_transpose_pipeline_{nil};
@@ -920,6 +1157,9 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> contact_axes_{nil};
   id<MTLBuffer> contact_geometry_{nil};
   std::size_t contact_cell_capacity_{0};
+
+  id<MTLBuffer> external_constraints_{nil};
+  std::size_t external_constraint_capacity_{0};
 
   id<MTLBuffer> contact_counts_{nil};
   id<MTLBuffer> contact_scan_a_{nil};

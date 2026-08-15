@@ -116,8 +116,13 @@ def test_cpu_mechanics_reports_convergence() -> None:
     assert result.corrections[1].translation.y > 0.0
 
 
-def test_cpu_plane_constraint_graph_is_typed_and_incident() -> None:
-    simulation = Simulation()
+@pytest.mark.parametrize("backend", list(BackendKind))
+def test_plane_constraint_graph_is_typed_and_incident(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+    simulation = Simulation(backend)
+    if not simulation.supports(BackendFeature.EXTERNAL_CONSTRAINTS):
+        pytest.skip("backend does not implement external constraints")
     cell = CellInit()
     cell.position = Vec3(0.0, 0.25, 0.0)
     cell.length = 2.0
@@ -155,8 +160,13 @@ def test_cpu_plane_constraint_graph_is_typed_and_incident() -> None:
     )
 
 
-def test_cpu_constraints_participate_in_mechanical_relaxation() -> None:
-    simulation = Simulation()
+@pytest.mark.parametrize("backend", list(BackendKind))
+def test_constraints_participate_in_mechanical_relaxation(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+    simulation = Simulation(backend)
+    if not simulation.supports(BackendFeature.EXTERNAL_CONSTRAINTS):
+        pytest.skip("backend does not implement external constraints")
     cell = CellInit()
     cell.position = Vec3(0.0, 0.4, 0.0)
     cell.length = 2.0

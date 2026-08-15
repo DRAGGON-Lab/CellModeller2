@@ -35,6 +35,14 @@ a 31-cell coincident case with 60 incident contacts per cell. Contact fields use
 absolute and relative tolerances of `2e-5`; IDs, slots, ordinals, graph sizes,
 and incidence indices are exact.
 
+## External-constraint conformance scenario
+
+The external-constraint scenario compares every typed field and per-cell
+incidence index with the CPU oracle for mixed planes, outside spheres, inside
+spheres, empty inputs, stable IDs across constraint kinds, and deterministic
+sphere-center degeneracy. Geometry fields use absolute and relative tolerances
+of `2e-5`; identities, kinds, endpoints, graph sizes, and incidence are exact.
+
 ## Mechanics conformance scenario
 
 The CPU mechanics fixtures probe the declared regularizer, operator symmetry

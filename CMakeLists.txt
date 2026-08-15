@@ -181,6 +181,13 @@ if(CM2_BUILD_TESTS)
   add_test(NAME contact_conformance COMMAND cm2_contact_conformance_test)
   set_tests_properties(contact_conformance PROPERTIES LABELS conformance)
 
+  add_executable(cm2_constraint_conformance_test
+    tests/conformance/constraint_conformance_test.cpp
+  )
+  target_link_libraries(cm2_constraint_conformance_test PRIVATE cm2::core)
+  add_test(NAME constraint_conformance COMMAND cm2_constraint_conformance_test)
+  set_tests_properties(constraint_conformance PROPERTIES LABELS conformance)
+
   add_executable(cm2_mechanics_conformance_test
     tests/conformance/mechanics_conformance_test.cpp
   )
