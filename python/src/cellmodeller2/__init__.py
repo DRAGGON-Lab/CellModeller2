@@ -44,6 +44,7 @@ from .checkpoint import (
     load_checkpoint,
     save_checkpoint,
 )
+from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
 from .runner import BatchError, ModelContext, RunProgress, RunSummary, build_model, run_simulation
 
 __all__ = [
@@ -68,6 +69,9 @@ __all__ = [
     "GridBoundary",
     "GridBoundaryKind",
     "GridShape",
+    "LegacyCell",
+    "LegacyCompatibilityError",
+    "LegacyModelAdapter",
     "MechanicsIntegrationParameters",
     "MechanicsParameters",
     "MechanicsSolveResult",
