@@ -19,6 +19,7 @@ struct CellInit {
   float radius{0.5F};
   float growth_rate{1.0F};
   std::int32_t cell_type{0};
+  std::vector<float> species;
 };
 
 struct CellSnapshot {
@@ -30,6 +31,7 @@ struct CellSnapshot {
   float radius{0.0F};
   float growth_rate{0.0F};
   std::int32_t cell_type{0};
+  std::vector<float> species;
 };
 
 struct GrowthStateView {
@@ -51,20 +53,42 @@ struct CellGeometryView {
   [[nodiscard]] std::size_t size() const noexcept { return ids.size(); }
 };
 
+struct CellAttributeView {
+  std::span<const float> growth_rates;
+  std::span<const std::int32_t> cell_types;
+};
+
+struct SpeciesStateView {
+  std::span<float> levels;
+  std::size_t cell_count{0};
+  std::size_t species_count{0};
+};
+
+struct ConstSpeciesStateView {
+  std::span<const float> levels;
+  std::size_t cell_count{0};
+  std::size_t species_count{0};
+};
+
 class WorldState {
  public:
-  explicit WorldState(std::size_t reserved_capacity = 0);
+  explicit WorldState(std::size_t reserved_capacity = 0, std::size_t species_count = 0);
 
   [[nodiscard]] std::size_t size() const noexcept;
   [[nodiscard]] bool empty() const noexcept;
   [[nodiscard]] bool contains(CellId id) const noexcept;
+  [[nodiscard]] std::size_t species_count() const noexcept;
 
   CellId add_cell(const CellInit& cell);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void advance_growth(float dt);
   void set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, float length);
+  void set_species(CellId id, std::span<const float> levels);
   [[nodiscard]] GrowthStateView growth_state() noexcept;
   [[nodiscard]] CellGeometryView geometry_state() const noexcept;
+  [[nodiscard]] CellAttributeView cell_attributes() const noexcept;
+  [[nodiscard]] SpeciesStateView species_state() noexcept;
+  [[nodiscard]] ConstSpeciesStateView species_state() const noexcept;
 
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;
@@ -79,6 +103,7 @@ class WorldState {
   void replace(Slot slot, CellId id, const CellInit& cell);
 
   CellId next_id_{1};
+  std::size_t species_count_{0};
   std::vector<CellId> ids_;
   std::vector<float> position_x_;
   std::vector<float> position_y_;
@@ -90,6 +115,7 @@ class WorldState {
   std::vector<float> radius_;
   std::vector<float> growth_rate_;
   std::vector<std::int32_t> cell_type_;
+  std::vector<float> species_;
   std::unordered_map<CellId, Slot> id_to_slot_;
   std::unordered_map<CellId, CellId> lineage_;
 };

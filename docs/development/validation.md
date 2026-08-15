@@ -29,6 +29,13 @@ mechanics fixtures on Apple GPU hardware. CUDA has independent native geometry
 and mechanics implementations; NVIDIA hardware execution remains its
 conformance gate.
 
+Species fixtures validate fixed schema, zero initialization, division
+inheritance, plan topology, legacy-compatible effective-volume dilution,
+post-dilution rate evaluation, and simultaneous Euler updates. The shared
+513-cell scenario crosses common GPU launch boundaries and compares native
+state with the CPU reference after heterogeneous time steps. A backend does not
+advertise species support until that scenario executes on its hardware.
+
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while

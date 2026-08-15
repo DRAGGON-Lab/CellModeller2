@@ -13,13 +13,33 @@ from cellmodeller2 import (
     MechanicsIntegrationParameters,
     MechanicsParameters,
     PlaneConstraintInit,
+    RateInstruction,
+    RateOp,
     RodEndpoint,
     Simulation,
     SolverBreakdown,
     SolverStatus,
+    SpeciesRatePlan,
     Vec3,
     backend_available,
 )
+
+
+def rate_instruction(
+    operation: RateOp,
+    *,
+    first: int = 0,
+    second: int = 0,
+    third: int = 0,
+    value: float = 0.0,
+) -> RateInstruction:
+    instruction = RateInstruction()
+    instruction.operation = operation
+    instruction.first = first
+    instruction.second = second
+    instruction.third = third
+    instruction.value = value
+    return instruction
 
 
 @pytest.mark.parametrize("backend", list(BackendKind))
@@ -54,7 +74,7 @@ def test_unavailable_backend_fails_instead_of_falling_back(backend: BackendKind)
     if backend_available(backend):
         Simulation(backend)
         return
-    with pytest.raises(RuntimeError, match="not implemented"):
+    with pytest.raises(RuntimeError, match=r"not implemented|unavailable"):
         Simulation(backend)
 
 
@@ -62,6 +82,56 @@ def test_invalid_time_step_is_rejected() -> None:
     simulation = Simulation()
     with pytest.raises(ValueError, match="time step"):
         simulation.step(-0.1)
+
+
+def test_cpu_species_step_dilutes_then_evaluates_typed_rates() -> None:
+    simulation = Simulation(species_count=2)
+    cell = CellInit()
+    cell.length = 2.0
+    cell.radius = 0.5
+    cell.growth_rate = 0.5
+    cell.species = [4.0, 2.0]
+    cell_id = simulation.add_cell(cell)
+
+    plan = SpeciesRatePlan(
+        2,
+        [
+            rate_instruction(RateOp.CONSTANT, value=2.0),
+            rate_instruction(RateOp.SPECIES, first=0),
+            rate_instruction(RateOp.CONSTANT, value=-0.5),
+            rate_instruction(RateOp.MULTIPLY, first=1, second=2),
+        ],
+        [0, 3],
+    )
+    simulation.set_species_rate_plan(plan)
+    simulation.step(0.25)
+
+    result = simulation.cell(cell_id)
+    dilution = 3.0 / 3.25
+    assert simulation.supports(BackendFeature.SPECIES)
+    assert simulation.species_count == 2
+    assert math.isclose(result.species[0], 4.0 * dilution + 0.5, rel_tol=1.0e-6)
+    assert math.isclose(
+        result.species[1],
+        2.0 * dilution - 0.5 * (4.0 * dilution) * 0.25,
+        rel_tol=1.0e-6,
+    )
+
+    first, second = simulation.divide_equal(cell_id)
+    assert simulation.cell(first).species == result.species
+    assert simulation.cell(second).species == result.species
+    simulation.set_species(first, [3.0, 4.0])
+    assert simulation.cell(first).species == [3.0, 4.0]
+    assert simulation.cell(second).species == result.species
+
+
+def test_species_plan_rejects_forward_references() -> None:
+    with pytest.raises(ValueError, match="earlier instruction"):
+        SpeciesRatePlan(
+            1,
+            [rate_instruction(RateOp.NEGATE, first=0)],
+            [0],
+        )
 
 
 @pytest.mark.parametrize("backend", list(BackendKind))

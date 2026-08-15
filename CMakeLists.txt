@@ -21,12 +21,14 @@ add_library(cm2_core STATIC
   cpp/core/contact_graph.cpp
   cpp/core/constraints.cpp
   cpp/core/mechanics_integration.cpp
+  cpp/core/species.cpp
   cpp/core/world_state.cpp
   cpp/core/simulation.cpp
   cpp/cpu/cpu_backend.cpp
   cpp/cpu/cpu_contacts.cpp
   cpp/cpu/cpu_constraints.cpp
   cpp/cpu/cpu_mechanics.cpp
+  cpp/cpu/cpu_species.cpp
 )
 add_library(cm2::core ALIAS cm2_core)
 
@@ -162,10 +164,21 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_mechanics_integration_test PRIVATE cm2::core)
   add_test(NAME mechanics_integration COMMAND cm2_mechanics_integration_test)
 
+  add_executable(cm2_species_test tests/cpp/species_test.cpp)
+  target_link_libraries(cm2_species_test PRIVATE cm2::core)
+  add_test(NAME species COMMAND cm2_species_test)
+
   add_executable(cm2_growth_conformance_test tests/conformance/growth_conformance_test.cpp)
   target_link_libraries(cm2_growth_conformance_test PRIVATE cm2::core)
   add_test(NAME growth_conformance COMMAND cm2_growth_conformance_test)
   set_tests_properties(growth_conformance PROPERTIES LABELS conformance)
+
+  add_executable(cm2_species_conformance_test
+    tests/conformance/species_conformance_test.cpp
+  )
+  target_link_libraries(cm2_species_conformance_test PRIVATE cm2::core)
+  add_test(NAME species_conformance COMMAND cm2_species_conformance_test)
+  set_tests_properties(species_conformance PROPERTIES LABELS conformance)
 
   add_executable(cm2_lifecycle_conformance_test
     tests/conformance/lifecycle_conformance_test.cpp

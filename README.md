@@ -17,6 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
+- fixed-schema species state and typed CPU Euler rate plans with growth dilution;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
 - typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
 - matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
@@ -73,3 +74,5 @@ See [ADR 0001](docs/architecture/0001-native-backends.md) and the
 [feature ledger](docs/compatibility/feature-ledger.md). The contact/mechanics
 redesign is specified in [ADR 0002](docs/architecture/0002-contact-mechanics.md)
 and grounded in the [legacy mechanics audit](docs/compatibility/legacy-mechanics-audit.md).
+The species state and rate representation is specified in
+[ADR 0003](docs/architecture/0003-species-rates.md).

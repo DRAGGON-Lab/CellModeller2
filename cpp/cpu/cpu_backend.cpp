@@ -17,12 +17,17 @@ class CpuBackend final : public ComputeBackend {
   }
 
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
-    return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts ||
-           feature == BackendFeature::cell_mechanics ||
+    return feature == BackendFeature::growth || feature == BackendFeature::species ||
+           feature == BackendFeature::cell_contacts || feature == BackendFeature::cell_mechanics ||
            feature == BackendFeature::external_constraints;
   }
 
   void advance_growth(WorldState& state, float dt) override { state.advance_growth(dt); }
+
+  void advance_species(WorldState& state, const SpeciesRatePlan& plan,
+                       std::span<const float> previous_lengths, float dt) override {
+    advance_species_cpu(state, plan, previous_lengths, dt);
+  }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {

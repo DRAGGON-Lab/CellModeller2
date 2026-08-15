@@ -12,16 +12,20 @@ namespace cm2 {
 
 class Simulation {
  public:
-  explicit Simulation(BackendKind backend = BackendKind::cpu, std::size_t reserved_capacity = 0);
+  explicit Simulation(BackendKind backend = BackendKind::cpu, std::size_t reserved_capacity = 0,
+                      std::size_t species_count = 0);
 
   [[nodiscard]] BackendInfo backend_info() const;
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept;
   [[nodiscard]] double time() const noexcept;
   [[nodiscard]] std::size_t cell_count() const noexcept;
+  [[nodiscard]] std::size_t species_count() const noexcept;
 
   CellId add_cell(const CellInit& cell);
   ConstraintId add_plane_constraint(const PlaneConstraintInit& plane);
   ConstraintId add_sphere_constraint(const SphereConstraintInit& sphere);
+  void set_species(CellId id, std::span<const float> levels);
+  void set_species_rate_plan(const SpeciesRatePlan& plan);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void step(float dt);
   [[nodiscard]] ContactGraph find_cell_contacts(
@@ -48,6 +52,7 @@ class Simulation {
   WorldState state_;
   ConstraintSet constraints_;
   std::unique_ptr<ComputeBackend> backend_;
+  SpeciesRatePlan species_rate_plan_;
   double time_{0.0};
 };
 

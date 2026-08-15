@@ -21,9 +21,39 @@ NB_MODULE(_core, module) {
 
   nb::enum_<cm2::BackendFeature>(module, "BackendFeature")
       .value("GROWTH", cm2::BackendFeature::growth)
+      .value("SPECIES", cm2::BackendFeature::species)
       .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts)
       .value("CELL_MECHANICS", cm2::BackendFeature::cell_mechanics)
       .value("EXTERNAL_CONSTRAINTS", cm2::BackendFeature::external_constraints);
+
+  nb::enum_<cm2::RateOp>(module, "RateOp")
+      .value("CONSTANT", cm2::RateOp::constant)
+      .value("SPECIES", cm2::RateOp::species)
+      .value("POSITION_X", cm2::RateOp::position_x)
+      .value("POSITION_Y", cm2::RateOp::position_y)
+      .value("POSITION_Z", cm2::RateOp::position_z)
+      .value("CELL_LENGTH", cm2::RateOp::cell_length)
+      .value("CELL_RADIUS", cm2::RateOp::cell_radius)
+      .value("GROWTH_RATE", cm2::RateOp::growth_rate)
+      .value("CELL_TYPE", cm2::RateOp::cell_type)
+      .value("CELL_VOLUME", cm2::RateOp::cell_volume)
+      .value("CELL_SURFACE_AREA", cm2::RateOp::cell_surface_area)
+      .value("ADD", cm2::RateOp::add)
+      .value("SUBTRACT", cm2::RateOp::subtract)
+      .value("MULTIPLY", cm2::RateOp::multiply)
+      .value("DIVIDE", cm2::RateOp::divide)
+      .value("POWER", cm2::RateOp::power)
+      .value("MINIMUM", cm2::RateOp::minimum)
+      .value("MAXIMUM", cm2::RateOp::maximum)
+      .value("NEGATE", cm2::RateOp::negate)
+      .value("EXPONENTIAL", cm2::RateOp::exponential)
+      .value("LOGARITHM", cm2::RateOp::logarithm)
+      .value("LESS", cm2::RateOp::less)
+      .value("LESS_EQUAL", cm2::RateOp::less_equal)
+      .value("GREATER", cm2::RateOp::greater)
+      .value("GREATER_EQUAL", cm2::RateOp::greater_equal)
+      .value("EQUAL", cm2::RateOp::equal)
+      .value("SELECT", cm2::RateOp::select);
 
   nb::enum_<cm2::SphereRegion>(module, "SphereRegion")
       .value("OUTSIDE", cm2::SphereRegion::outside)
@@ -67,7 +97,8 @@ NB_MODULE(_core, module) {
       .def_rw("length", &cm2::CellInit::length)
       .def_rw("radius", &cm2::CellInit::radius)
       .def_rw("growth_rate", &cm2::CellInit::growth_rate)
-      .def_rw("cell_type", &cm2::CellInit::cell_type);
+      .def_rw("cell_type", &cm2::CellInit::cell_type)
+      .def_rw("species", &cm2::CellInit::species);
 
   nb::class_<cm2::CellSnapshot>(module, "CellSnapshot")
       .def_ro("id", &cm2::CellSnapshot::id)
@@ -77,7 +108,33 @@ NB_MODULE(_core, module) {
       .def_ro("length", &cm2::CellSnapshot::length)
       .def_ro("radius", &cm2::CellSnapshot::radius)
       .def_ro("growth_rate", &cm2::CellSnapshot::growth_rate)
-      .def_ro("cell_type", &cm2::CellSnapshot::cell_type);
+      .def_ro("cell_type", &cm2::CellSnapshot::cell_type)
+      .def_ro("species", &cm2::CellSnapshot::species);
+
+  nb::class_<cm2::RateInstruction>(module, "RateInstruction")
+      .def(nb::init<>())
+      .def_rw("operation", &cm2::RateInstruction::operation)
+      .def_rw("first", &cm2::RateInstruction::first)
+      .def_rw("second", &cm2::RateInstruction::second)
+      .def_rw("third", &cm2::RateInstruction::third)
+      .def_rw("value", &cm2::RateInstruction::value);
+
+  nb::class_<cm2::SpeciesRatePlan>(module, "SpeciesRatePlan")
+      .def(nb::init<std::size_t, std::vector<cm2::RateInstruction>, std::vector<std::uint32_t>>(),
+           "species_count"_a, "instructions"_a, "outputs"_a)
+      .def_static("zero", &cm2::SpeciesRatePlan::zero, "species_count"_a)
+      .def_prop_ro("species_count", &cm2::SpeciesRatePlan::species_count)
+      .def_prop_ro("instructions",
+                   [](const cm2::SpeciesRatePlan& plan) {
+                     return std::vector<cm2::RateInstruction>(plan.instructions().begin(),
+                                                              plan.instructions().end());
+                   })
+      .def_prop_ro("outputs",
+                   [](const cm2::SpeciesRatePlan& plan) {
+                     return std::vector<std::uint32_t>(plan.outputs().begin(),
+                                                       plan.outputs().end());
+                   })
+      .def("validate", &cm2::SpeciesRatePlan::validate);
 
   nb::class_<cm2::ContactParameters>(module, "ContactParameters")
       .def(nb::init<>())
@@ -188,15 +245,23 @@ NB_MODULE(_core, module) {
       .def_ro("report", &cm2::MechanicsSolveResult::report);
 
   nb::class_<cm2::Simulation>(module, "Simulation")
-      .def(nb::init<cm2::BackendKind, std::size_t>(), "backend"_a = cm2::BackendKind::cpu,
-           "reserved_capacity"_a = 0)
+      .def(nb::init<cm2::BackendKind, std::size_t, std::size_t>(),
+           "backend"_a = cm2::BackendKind::cpu, "reserved_capacity"_a = 0, "species_count"_a = 0)
       .def_prop_ro("backend_info", &cm2::Simulation::backend_info)
       .def("supports", &cm2::Simulation::supports, "feature"_a)
       .def_prop_ro("time", &cm2::Simulation::time)
       .def_prop_ro("cell_count", &cm2::Simulation::cell_count)
+      .def_prop_ro("species_count", &cm2::Simulation::species_count)
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
       .def("add_plane_constraint", &cm2::Simulation::add_plane_constraint, "plane"_a)
       .def("add_sphere_constraint", &cm2::Simulation::add_sphere_constraint, "sphere"_a)
+      .def(
+          "set_species",
+          [](cm2::Simulation& simulation, cm2::CellId id, const std::vector<float>& levels) {
+            simulation.set_species(id, levels);
+          },
+          "id"_a, "levels"_a)
+      .def("set_species_rate_plan", &cm2::Simulation::set_species_rate_plan, "plan"_a)
       .def("divide_equal", &cm2::Simulation::divide_equal, "parent_id"_a)
       .def("step", &cm2::Simulation::step, "dt"_a)
       .def("find_cell_contacts", &cm2::Simulation::find_cell_contacts,

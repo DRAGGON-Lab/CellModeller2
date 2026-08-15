@@ -62,6 +62,7 @@ enum class BackendKind : std::uint8_t {
 
 enum class BackendFeature : std::uint8_t {
   growth,
+  species,
   cell_contacts,
   cell_mechanics,
   external_constraints,

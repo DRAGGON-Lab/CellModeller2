@@ -7,9 +7,39 @@ class BackendKind(Enum):
 
 class BackendFeature(Enum):
     GROWTH: BackendFeature
+    SPECIES: BackendFeature
     CELL_CONTACTS: BackendFeature
     CELL_MECHANICS: BackendFeature
     EXTERNAL_CONSTRAINTS: BackendFeature
+
+class RateOp(Enum):
+    CONSTANT: RateOp
+    SPECIES: RateOp
+    POSITION_X: RateOp
+    POSITION_Y: RateOp
+    POSITION_Z: RateOp
+    CELL_LENGTH: RateOp
+    CELL_RADIUS: RateOp
+    GROWTH_RATE: RateOp
+    CELL_TYPE: RateOp
+    CELL_VOLUME: RateOp
+    CELL_SURFACE_AREA: RateOp
+    ADD: RateOp
+    SUBTRACT: RateOp
+    MULTIPLY: RateOp
+    DIVIDE: RateOp
+    POWER: RateOp
+    MINIMUM: RateOp
+    MAXIMUM: RateOp
+    NEGATE: RateOp
+    EXPONENTIAL: RateOp
+    LOGARITHM: RateOp
+    LESS: RateOp
+    LESS_EQUAL: RateOp
+    GREATER: RateOp
+    GREATER_EQUAL: RateOp
+    EQUAL: RateOp
+    SELECT: RateOp
 
 class SphereRegion(Enum):
     OUTSIDE: SphereRegion
@@ -60,6 +90,7 @@ class CellInit:
     radius: float
     growth_rate: float
     cell_type: int
+    species: list[float]
 
     def __init__(self) -> None: ...
 
@@ -80,6 +111,34 @@ class CellSnapshot:
     def growth_rate(self) -> float: ...
     @property
     def cell_type(self) -> int: ...
+    @property
+    def species(self) -> list[float]: ...
+
+class RateInstruction:
+    operation: RateOp
+    first: int
+    second: int
+    third: int
+    value: float
+
+    def __init__(self) -> None: ...
+
+class SpeciesRatePlan:
+    def __init__(
+        self,
+        species_count: int,
+        instructions: list[RateInstruction],
+        outputs: list[int],
+    ) -> None: ...
+    @staticmethod
+    def zero(species_count: int) -> SpeciesRatePlan: ...
+    @property
+    def species_count(self) -> int: ...
+    @property
+    def instructions(self) -> list[RateInstruction]: ...
+    @property
+    def outputs(self) -> list[int]: ...
+    def validate(self) -> None: ...
 
 class ContactParameters:
     activation_margin: float
@@ -214,6 +273,7 @@ class Simulation:
         self,
         backend: BackendKind = BackendKind.CPU,
         reserved_capacity: int = 0,
+        species_count: int = 0,
     ) -> None: ...
     @property
     def backend_info(self) -> BackendInfo: ...
@@ -222,9 +282,13 @@ class Simulation:
     def time(self) -> float: ...
     @property
     def cell_count(self) -> int: ...
+    @property
+    def species_count(self) -> int: ...
     def add_cell(self, cell: CellInit) -> int: ...
     def add_plane_constraint(self, plane: PlaneConstraintInit) -> int: ...
     def add_sphere_constraint(self, sphere: SphereConstraintInit) -> int: ...
+    def set_species(self, id: int, levels: list[float]) -> None: ...
+    def set_species_rate_plan(self, plan: SpeciesRatePlan) -> None: ...
     def divide_equal(self, parent_id: int) -> tuple[int, int]: ...
     def step(self, dt: float) -> None: ...
     def find_cell_contacts(self, parameters: ContactParameters = ...) -> ContactGraph: ...

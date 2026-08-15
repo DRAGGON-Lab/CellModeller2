@@ -133,6 +133,11 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaStreamSynchronize(stream_), "CUDA growth execution failed");
   }
 
+  void advance_species(WorldState&, const SpeciesRatePlan&, std::span<const float>,
+                       float) override {
+    throw std::runtime_error("CUDA species integration is not implemented in this build");
+  }
+
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
     validate_contact_parameters(parameters);

@@ -45,8 +45,11 @@ bool backend_available(BackendKind kind) noexcept {
   return false;
 }
 
-Simulation::Simulation(BackendKind backend, std::size_t reserved_capacity)
-    : state_(reserved_capacity), backend_(make_backend(backend)) {}
+Simulation::Simulation(BackendKind backend, std::size_t reserved_capacity,
+                       std::size_t species_count)
+    : state_(reserved_capacity, species_count),
+      backend_(make_backend(backend)),
+      species_rate_plan_(SpeciesRatePlan::zero(species_count)) {}
 
 BackendInfo Simulation::backend_info() const { return backend_->info(); }
 
@@ -58,6 +61,8 @@ double Simulation::time() const noexcept { return time_; }
 
 std::size_t Simulation::cell_count() const noexcept { return state_.size(); }
 
+std::size_t Simulation::species_count() const noexcept { return state_.species_count(); }
+
 CellId Simulation::add_cell(const CellInit& cell) { return state_.add_cell(cell); }
 
 ConstraintId Simulation::add_plane_constraint(const PlaneConstraintInit& plane) {
@@ -68,6 +73,18 @@ ConstraintId Simulation::add_sphere_constraint(const SphereConstraintInit& spher
   return constraints_.add_sphere(sphere);
 }
 
+void Simulation::set_species(CellId id, std::span<const float> levels) {
+  state_.set_species(id, levels);
+}
+
+void Simulation::set_species_rate_plan(const SpeciesRatePlan& plan) {
+  plan.validate();
+  if (plan.species_count() != state_.species_count()) {
+    throw std::invalid_argument("species rate plan and simulation species counts disagree");
+  }
+  species_rate_plan_ = plan;
+}
+
 std::pair<CellId, CellId> Simulation::divide_equal(CellId parent_id) {
   return state_.divide_equal(parent_id);
 }
@@ -76,7 +93,15 @@ void Simulation::step(float dt) {
   if (!std::isfinite(dt) || dt < 0.0F) {
     throw std::invalid_argument("time step must be finite and non-negative");
   }
+  if (state_.species_count() != 0 && !backend_->supports(BackendFeature::species)) {
+    throw std::runtime_error("selected backend does not implement species integration");
+  }
+  const auto geometry = state_.geometry_state();
+  const std::vector<float> previous_lengths(geometry.lengths.begin(), geometry.lengths.end());
   backend_->advance_growth(state_, dt);
+  if (state_.species_count() != 0) {
+    backend_->advance_species(state_, species_rate_plan_, previous_lengths, dt);
+  }
   time_ += static_cast<double>(dt);
 }
 

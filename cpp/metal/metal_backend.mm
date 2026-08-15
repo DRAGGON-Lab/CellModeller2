@@ -238,6 +238,11 @@ class MetalBackend final : public ComputeBackend {
     std::memcpy(view.lengths.data(), lengths_.contents, byte_count);
   }
 
+  void advance_species(WorldState&, const SpeciesRatePlan&, std::span<const float>,
+                       float) override {
+    throw std::runtime_error("Metal species integration is not implemented in this build");
+  }
+
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
     validate_contact_parameters(parameters);

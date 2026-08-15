@@ -10,7 +10,7 @@
 namespace cm2 {
 namespace {
 
-void validate_cell(const CellInit& cell) {
+void validate_cell(const CellInit& cell, std::size_t species_count) {
   const std::array values{
       cell.position.x,  cell.position.y, cell.position.z, cell.direction.x, cell.direction.y,
       cell.direction.z, cell.length,     cell.radius,     cell.growth_rate,
@@ -25,11 +25,22 @@ void validate_cell(const CellInit& cell) {
     throw std::invalid_argument("cell radius must be positive");
   }
   static_cast<void>(normalized(cell.direction));
+  if (!cell.species.empty() && cell.species.size() != species_count) {
+    throw std::invalid_argument("cell species count does not match the world state");
+  }
+  if (!std::ranges::all_of(cell.species, [](float value) { return std::isfinite(value); })) {
+    throw std::invalid_argument("cell species levels must be finite");
+  }
 }
 
 }  // namespace
 
-WorldState::WorldState(std::size_t reserved_capacity) {
+WorldState::WorldState(std::size_t reserved_capacity, std::size_t species_count)
+    : species_count_(species_count) {
+  if (species_count != 0 &&
+      reserved_capacity > std::numeric_limits<std::size_t>::max() / species_count) {
+    throw std::overflow_error("reserved species storage size overflow");
+  }
   ids_.reserve(reserved_capacity);
   position_x_.reserve(reserved_capacity);
   position_y_.reserve(reserved_capacity);
@@ -41,6 +52,7 @@ WorldState::WorldState(std::size_t reserved_capacity) {
   radius_.reserve(reserved_capacity);
   growth_rate_.reserve(reserved_capacity);
   cell_type_.reserve(reserved_capacity);
+  species_.reserve(reserved_capacity * species_count);
   id_to_slot_.reserve(reserved_capacity);
   lineage_.reserve(reserved_capacity);
 }
@@ -50,6 +62,8 @@ std::size_t WorldState::size() const noexcept { return ids_.size(); }
 bool WorldState::empty() const noexcept { return ids_.empty(); }
 
 bool WorldState::contains(CellId id) const noexcept { return id_to_slot_.contains(id); }
+
+std::size_t WorldState::species_count() const noexcept { return species_count_; }
 
 CellId WorldState::allocate_id() {
   if (next_id_ == invalid_cell_id || next_id_ == std::numeric_limits<CellId>::max()) {
@@ -67,7 +81,7 @@ Slot WorldState::slot_for(CellId id) const {
 }
 
 void WorldState::append(CellId id, const CellInit& cell) {
-  validate_cell(cell);
+  validate_cell(cell, species_count_);
   if (ids_.size() >= static_cast<std::size_t>(invalid_slot)) {
     throw std::overflow_error("cell slot space exhausted");
   }
@@ -84,11 +98,16 @@ void WorldState::append(CellId id, const CellInit& cell) {
   radius_.push_back(cell.radius);
   growth_rate_.push_back(cell.growth_rate);
   cell_type_.push_back(cell.cell_type);
+  if (cell.species.empty()) {
+    species_.insert(species_.end(), species_count_, 0.0F);
+  } else {
+    species_.insert(species_.end(), cell.species.begin(), cell.species.end());
+  }
   id_to_slot_.emplace(id, slot);
 }
 
 void WorldState::replace(Slot slot, CellId id, const CellInit& cell) {
-  validate_cell(cell);
+  validate_cell(cell, species_count_);
   const auto index = static_cast<std::size_t>(slot);
   if (index >= size()) {
     throw std::out_of_range("cell slot is out of range");
@@ -105,6 +124,12 @@ void WorldState::replace(Slot slot, CellId id, const CellInit& cell) {
   radius_[index] = cell.radius;
   growth_rate_[index] = cell.growth_rate;
   cell_type_[index] = cell.cell_type;
+  const auto species_begin = species_.begin() + static_cast<std::ptrdiff_t>(index * species_count_);
+  if (cell.species.empty()) {
+    std::fill_n(species_begin, species_count_, 0.0F);
+  } else {
+    std::copy(cell.species.begin(), cell.species.end(), species_begin);
+  }
   id_to_slot_[id] = slot;
 }
 
@@ -129,6 +154,7 @@ std::pair<CellId, CellId> WorldState::divide_equal(CellId parent_id) {
       .radius = parent.radius,
       .growth_rate = parent.growth_rate,
       .cell_type = parent.cell_type,
+      .species = parent.species,
   };
 
   const auto first_id = allocate_id();
@@ -165,8 +191,9 @@ void WorldState::set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, flo
       .radius = radius_[index],
       .growth_rate = growth_rate_[index],
       .cell_type = cell_type_[index],
+      .species = {},
   };
-  validate_cell(candidate);
+  validate_cell(candidate, species_count_);
   const auto unit_direction = normalized(direction);
   position_x_[index] = position.x;
   position_y_[index] = position.y;
@@ -175,6 +202,17 @@ void WorldState::set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, flo
   direction_y_[index] = unit_direction.y;
   direction_z_[index] = unit_direction.z;
   length_[index] = length;
+}
+
+void WorldState::set_species(CellId id, std::span<const float> levels) {
+  if (levels.size() != species_count_) {
+    throw std::invalid_argument("cell species count does not match the world state");
+  }
+  if (!std::ranges::all_of(levels, [](float value) { return std::isfinite(value); })) {
+    throw std::invalid_argument("cell species levels must be finite");
+  }
+  const auto offset = static_cast<std::size_t>(slot_for(id)) * species_count_;
+  std::copy(levels.begin(), levels.end(), species_.begin() + static_cast<std::ptrdiff_t>(offset));
 }
 
 GrowthStateView WorldState::growth_state() noexcept {
@@ -198,9 +236,33 @@ CellGeometryView WorldState::geometry_state() const noexcept {
   };
 }
 
+CellAttributeView WorldState::cell_attributes() const noexcept {
+  return {
+      .growth_rates = growth_rate_,
+      .cell_types = cell_type_,
+  };
+}
+
+SpeciesStateView WorldState::species_state() noexcept {
+  return {
+      .levels = species_,
+      .cell_count = size(),
+      .species_count = species_count_,
+  };
+}
+
+ConstSpeciesStateView WorldState::species_state() const noexcept {
+  return {
+      .levels = species_,
+      .cell_count = size(),
+      .species_count = species_count_,
+  };
+}
+
 CellSnapshot WorldState::cell(CellId id) const {
   const auto slot = slot_for(id);
   const auto index = static_cast<std::size_t>(slot);
+  const auto species_offset = index * species_count_;
   return {
       .id = ids_[index],
       .slot = slot,
@@ -210,6 +272,9 @@ CellSnapshot WorldState::cell(CellId id) const {
       .radius = radius_[index],
       .growth_rate = growth_rate_[index],
       .cell_type = cell_type_[index],
+      .species = std::vector<float>(
+          species_.begin() + static_cast<std::ptrdiff_t>(species_offset),
+          species_.begin() + static_cast<std::ptrdiff_t>(species_offset + species_count_)),
   };
 }
 
@@ -243,6 +308,15 @@ void WorldState::validate() const {
   if (id_to_slot_.size() != expected) {
     throw std::logic_error("cell id index has the wrong size");
   }
+  if (species_count_ != 0 && expected > std::numeric_limits<std::size_t>::max() / species_count_) {
+    throw std::logic_error("world species storage size overflow");
+  }
+  if (species_.size() != expected * species_count_) {
+    throw std::logic_error("world species storage has the wrong size");
+  }
+  if (!std::ranges::all_of(species_, [](float value) { return std::isfinite(value); })) {
+    throw std::logic_error("world species levels must be finite");
+  }
   for (std::size_t index = 0; index < expected; ++index) {
     const auto id = ids_[index];
     if (id == invalid_cell_id) {
@@ -259,8 +333,9 @@ void WorldState::validate() const {
         .radius = radius_[index],
         .growth_rate = growth_rate_[index],
         .cell_type = cell_type_[index],
+        .species = {},
     };
-    validate_cell(value);
+    validate_cell(value, species_count_);
     if (std::abs(norm(value.direction) - 1.0F) > 1.0e-5F) {
       throw std::logic_error("cell direction is not normalized");
     }
