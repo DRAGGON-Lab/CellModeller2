@@ -37,8 +37,9 @@ coupled cell/grid rate plan. Version 4 adds an optional data-only controller
 payload with its own SHA-256 digest. Native checkpoints write a JSON `null`
 controller. A non-null controller cannot be silently discarded by
 `load_checkpoint`; callers use `load_checkpoint_bundle` and restore it with the
-matching controller. Writers emit only v4; readers explicitly migrate v1, v2,
-and v3.
+matching controller. Version 5 records the signal integration kind and its
+iterative-solver parameters. Writers emit only v5; readers explicitly migrate
+v1 through v4, using Forward Euler defaults for older signal grids.
 
 Files are written to a temporary sibling, flushed, and atomically replaced.
 Loading rejects duplicate JSON keys, non-finite numbers, unknown fields for the

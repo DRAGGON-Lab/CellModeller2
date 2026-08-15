@@ -34,6 +34,10 @@ NB_MODULE(_core, module) {
       .value("PERIODIC", cm2::GridBoundaryKind::periodic)
       .value("FIXED", cm2::GridBoundaryKind::fixed);
 
+  nb::enum_<cm2::SignalIntegrationKind>(module, "SignalIntegrationKind")
+      .value("FORWARD_EULER", cm2::SignalIntegrationKind::forward_euler)
+      .value("CRANK_NICOLSON", cm2::SignalIntegrationKind::crank_nicolson);
+
   nb::enum_<cm2::RateOp>(module, "RateOp")
       .value("CONSTANT", cm2::RateOp::constant)
       .value("SPECIES", cm2::RateOp::species)
@@ -112,6 +116,18 @@ NB_MODULE(_core, module) {
       .def_rw("y", &cm2::GridShape::y)
       .def_rw("z", &cm2::GridShape::z);
 
+  nb::class_<cm2::SignalSolveParameters>(module, "SignalSolveParameters")
+      .def(nb::init<>())
+      .def_rw("max_iterations", &cm2::SignalSolveParameters::max_iterations)
+      .def_rw("absolute_tolerance", &cm2::SignalSolveParameters::absolute_tolerance)
+      .def_rw("relative_tolerance", &cm2::SignalSolveParameters::relative_tolerance)
+      .def("validate", &cm2::SignalSolveParameters::validate);
+
+  nb::class_<cm2::SignalSolveReport>(module, "SignalSolveReport")
+      .def_ro("converged", &cm2::SignalSolveReport::converged)
+      .def_ro("iterations", &cm2::SignalSolveReport::iterations)
+      .def_ro("residual_rms", &cm2::SignalSolveReport::residual_rms);
+
   nb::class_<cm2::SignalGridSpec>(module, "SignalGridSpec")
       .def(nb::init<>())
       .def_rw("signal_count", &cm2::SignalGridSpec::signal_count)
@@ -120,6 +136,8 @@ NB_MODULE(_core, module) {
       .def_rw("spacing", &cm2::SignalGridSpec::spacing)
       .def_rw("diffusion", &cm2::SignalGridSpec::diffusion)
       .def_rw("advection", &cm2::SignalGridSpec::advection)
+      .def_rw("integration", &cm2::SignalGridSpec::integration)
+      .def_rw("solver", &cm2::SignalGridSpec::solver)
       .def_rw("x_lower", &cm2::SignalGridSpec::x_lower)
       .def_rw("x_upper", &cm2::SignalGridSpec::x_upper)
       .def_rw("y_lower", &cm2::SignalGridSpec::y_lower)
@@ -382,14 +400,15 @@ NB_MODULE(_core, module) {
       .def_prop_ro("species_count", &cm2::Simulation::species_count)
       .def_prop_ro("signal_count", &cm2::Simulation::signal_count)
       .def_prop_ro("has_signal_grid", &cm2::Simulation::has_signal_grid)
+      .def_prop_ro("last_signal_solve_report", &cm2::Simulation::last_signal_solve_report)
       .def_prop_ro("has_coupled_rate_plan", &cm2::Simulation::has_coupled_rate_plan)
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
       .def("add_plane_constraint", &cm2::Simulation::add_plane_constraint, "plane"_a)
       .def("add_sphere_constraint", &cm2::Simulation::add_sphere_constraint, "sphere"_a)
       .def("set_cell_geometry", &cm2::Simulation::set_cell_geometry, "id"_a, "position"_a,
            "direction"_a, "length"_a)
-      .def("set_cell_attributes", &cm2::Simulation::set_cell_attributes, "id"_a,
-           "growth_rate"_a, "cell_type"_a)
+      .def("set_cell_attributes", &cm2::Simulation::set_cell_attributes, "id"_a, "growth_rate"_a,
+           "cell_type"_a)
       .def(
           "set_species",
           [](cm2::Simulation& simulation, cm2::CellId id, const std::vector<float>& levels) {

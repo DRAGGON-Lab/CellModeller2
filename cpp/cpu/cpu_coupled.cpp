@@ -1,5 +1,3 @@
-#include "cm2/coupled_rates.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -8,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "cm2/coupled_rates.hpp"
 #include "cm2/signals.hpp"
 #include "cm2/world_state.hpp"
 
@@ -16,8 +15,8 @@ namespace {
 
 float evaluate_instruction(const RateInstruction& instruction, std::span<const float> workspace,
                            std::span<const float> species, std::span<const float> signals,
-                           const CellGeometryView& geometry,
-                           const CellAttributeView& attributes, std::size_t cell) {
+                           const CellGeometryView& geometry, const CellAttributeView& attributes,
+                           std::size_t cell) {
   switch (instruction.operation) {
     case RateOp::constant:
       return instruction.value;
@@ -83,8 +82,8 @@ float evaluate_instruction(const RateInstruction& instruction, std::span<const f
 }  // namespace
 
 void validate_coupled_step(const WorldState& state, const SignalGrid& grid,
-                           const CoupledRatePlan& plan,
-                           std::span<const float> previous_lengths, float dt) {
+                           const CoupledRatePlan& plan, std::span<const float> previous_lengths,
+                           float dt) {
   if (!std::isfinite(dt) || dt < 0.0F) {
     throw std::invalid_argument("coupled time step must be finite and non-negative");
   }
@@ -108,12 +107,14 @@ void validate_coupled_step(const WorldState& state, const SignalGrid& grid,
   const auto geometry = state.geometry_state();
   for (std::size_t cell = 0; cell < state.size(); ++cell) {
     static_cast<void>(signal_grid_stencil(
-        grid.spec(), {geometry.position_x[cell], geometry.position_y[cell], geometry.position_z[cell]}));
+        grid.spec(),
+        {geometry.position_x[cell], geometry.position_y[cell], geometry.position_z[cell]}));
   }
 }
 
-void advance_coupled_cpu(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
-                         std::span<const float> previous_lengths, float dt) {
+SignalSolveReport advance_coupled_cpu(WorldState& state, SignalGrid& grid,
+                                      const CoupledRatePlan& plan,
+                                      std::span<const float> previous_lengths, float dt) {
   validate_coupled_step(state, grid, plan, previous_lengths, dt);
 
   const auto geometry = state.geometry_state();
@@ -128,7 +129,8 @@ void advance_coupled_cpu(WorldState& state, SignalGrid& grid, const CoupledRateP
   std::vector<float> sampled(state.size() * plan.signal_count(), 0.0F);
   for (std::size_t cell = 0; cell < state.size(); ++cell) {
     const auto stencil = signal_grid_stencil(
-        grid_spec, {geometry.position_x[cell], geometry.position_y[cell], geometry.position_z[cell]});
+        grid_spec,
+        {geometry.position_x[cell], geometry.position_y[cell], geometry.position_z[cell]});
     stencils.push_back(stencil);
     for (std::size_t entry = 0; entry < stencil.count; ++entry) {
       for (std::size_t signal = 0; signal < plan.signal_count(); ++signal) {
@@ -142,8 +144,7 @@ void advance_coupled_cpu(WorldState& state, SignalGrid& grid, const CoupledRateP
   for (std::size_t cell = 0; cell < state.size(); ++cell) {
     const auto previous_volume =
         effective_cell_volume(previous_lengths[cell], geometry.radii[cell]);
-    const auto current_volume =
-        effective_cell_volume(geometry.lengths[cell], geometry.radii[cell]);
+    const auto current_volume = effective_cell_volume(geometry.lengths[cell], geometry.radii[cell]);
     const auto dilution = previous_volume / current_volume;
     const auto offset = cell * state.species_count();
     for (std::size_t species = 0; species < state.species_count(); ++species) {
@@ -168,8 +169,7 @@ void advance_coupled_cpu(WorldState& state, SignalGrid& grid, const CoupledRateP
       }
     }
     for (std::size_t species = 0; species < state.species_count(); ++species) {
-      next_species[species_offset + species] +=
-          dt * workspace[plan.species_outputs()[species]];
+      next_species[species_offset + species] += dt * workspace[plan.species_outputs()[species]];
       if (!std::isfinite(next_species[species_offset + species])) {
         throw std::domain_error("coupled species update produced a non-finite level");
       }
@@ -185,13 +185,26 @@ void advance_coupled_cpu(WorldState& state, SignalGrid& grid, const CoupledRateP
     }
   }
 
-  auto next_grid = signal_grid_transport_candidate(grid, dt);
-  for (std::size_t index = 0; index < next_grid.size(); ++index) {
-    next_grid[index] += dt * signal_sources[index];
+  SignalSolveReport signal_report;
+  std::vector<float> next_grid;
+  if (grid_spec.integration == SignalIntegrationKind::crank_nicolson) {
+    auto result = signal_grid_crank_nicolson_candidate(grid, dt, signal_sources);
+    signal_report = result.report;
+    if (!signal_report.converged) {
+      throw std::runtime_error("Crank-Nicolson coupled signal solve did not converge after " +
+                               std::to_string(signal_report.iterations) + " iterations");
+    }
+    next_grid = std::move(result.levels);
+  } else {
+    next_grid = signal_grid_transport_candidate(grid, dt);
+    for (std::size_t index = 0; index < next_grid.size(); ++index) {
+      next_grid[index] += dt * signal_sources[index];
+    }
   }
   SignalGridCheckpoint{.spec = grid_spec, .levels = next_grid}.validate();
   std::ranges::copy(next_species, species_state.levels.begin());
   grid.replace_levels(std::move(next_grid));
+  return signal_report;
 }
 
 }  // namespace cm2

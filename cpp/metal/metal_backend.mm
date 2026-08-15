@@ -413,11 +413,14 @@ class MetalBackend final : public ComputeBackend {
                 species_state.levels.size_bytes());
   }
 
-  void advance_signal_grid(SignalGrid& grid, float dt) override {
+  SignalSolveReport advance_signal_grid(SignalGrid& grid, float dt) override {
+    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
+      throw std::runtime_error("Metal Crank-Nicolson signal integration is not implemented");
+    }
     grid.validate();
     grid.validate_step(dt);
     if (dt == 0.0F) {
-      return;
+      return {};
     }
     const auto& spec = grid.spec();
     const auto levels = grid.levels();
@@ -487,10 +490,15 @@ class MetalBackend final : public ComputeBackend {
     }
     const auto* output = static_cast<const float*>(signal_output_.contents);
     grid.replace_levels(std::vector<float>(output, output + levels.size()));
+    return {};
   }
 
-  void advance_coupled(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
-                       std::span<const float> previous_lengths, float dt) override {
+  SignalSolveReport advance_coupled(WorldState& state, SignalGrid& grid,
+                                    const CoupledRatePlan& plan,
+                                    std::span<const float> previous_lengths, float dt) override {
+    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
+      throw std::runtime_error("Metal Crank-Nicolson coupled integration is not implemented");
+    }
     validate_coupled_step(state, grid, plan, previous_lengths, dt);
     const auto checked_product = [](std::size_t left, std::size_t right, const char* name) {
       if (right != 0 && left > std::numeric_limits<std::size_t>::max() / right) {
@@ -662,6 +670,7 @@ class MetalBackend final : public ComputeBackend {
                   species_state.levels.size_bytes());
     }
     grid.replace_levels(std::move(next_grid));
+    return {};
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -688,8 +697,7 @@ class MetalBackend final : public ComputeBackend {
     upload_contact_cells(geometry);
     upload_contact_candidates(candidates);
     const auto candidate_count = static_cast<std::uint32_t>(candidates.size());
-    const auto contact_count =
-        count_contacts(candidate_count, parameters);
+    const auto contact_count = count_contacts(candidate_count, parameters);
     if (contact_count == 0) {
       return ContactGraph(geometry.size(), {});
     }

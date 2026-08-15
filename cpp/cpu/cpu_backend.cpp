@@ -32,13 +32,14 @@ class CpuBackend final : public ComputeBackend {
     advance_species_cpu(state, plan, previous_lengths, dt);
   }
 
-  void advance_signal_grid(SignalGrid& grid, float dt) override {
-    advance_signal_grid_cpu(grid, dt);
+  SignalSolveReport advance_signal_grid(SignalGrid& grid, float dt) override {
+    return advance_signal_grid_cpu(grid, dt);
   }
 
-  void advance_coupled(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
-                       std::span<const float> previous_lengths, float dt) override {
-    advance_coupled_cpu(state, grid, plan, previous_lengths, dt);
+  SignalSolveReport advance_coupled(WorldState& state, SignalGrid& grid,
+                                    const CoupledRatePlan& plan,
+                                    std::span<const float> previous_lengths, float dt) override {
+    return advance_coupled_cpu(state, grid, plan, previous_lengths, dt);
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,

@@ -23,6 +23,21 @@ field, while `GridDiffusion` owns its geometry and transport coefficients.
 Pickles save the flattened signal field but do not define an independent,
 versioned grid-state schema.
 
+## Crank-Nicolson path
+
+`CLCrankNicIntegrator` constructs the intended operator `I - dt/2 T`, uses
+SciPy GMRES to approximate a central Green's function, and forms the right-hand
+side `(I + dt/2 T)c_n + dt f(c_n)`. The final call to
+`scipy.ndimage.convolve`, however, neither assigns its return value nor supplies
+an output array. The inverse application is therefore discarded in shipped
+code. Observable execution leaves only the explicit right-hand side in the
+signal field.
+
+CellModeller2 treats the comments and operator construction as the recoverable
+scientific intent and implements the full semi-implicit equation. It does not
+reproduce the discarded-convolution behavior, truncated Green's function, or
+legacy coefficient scaling.
+
 ## Transport
 
 The explicit integrator asks SciPy to compute a nearest-neighbor Laplacian and

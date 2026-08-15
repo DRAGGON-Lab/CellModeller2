@@ -264,12 +264,15 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaStreamSynchronize(stream_), "CUDA species download failed");
   }
 
-  void advance_signal_grid(SignalGrid& grid, float dt) override {
+  SignalSolveReport advance_signal_grid(SignalGrid& grid, float dt) override {
+    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
+      throw std::runtime_error("CUDA Crank-Nicolson signal integration is not implemented");
+    }
     activate_device();
     grid.validate();
     grid.validate_step(dt);
     if (dt == 0.0F) {
-      return;
+      return {};
     }
     const auto& spec = grid.spec();
     const auto level_view = grid.levels();
@@ -343,10 +346,15 @@ class CudaBackend final : public ComputeBackend {
           "CUDA signal-grid kernel produced a non-finite or negative concentration");
     }
     grid.replace_levels(std::move(output));
+    return {};
   }
 
-  void advance_coupled(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
-                       std::span<const float> previous_lengths, float dt) override {
+  SignalSolveReport advance_coupled(WorldState& state, SignalGrid& grid,
+                                    const CoupledRatePlan& plan,
+                                    std::span<const float> previous_lengths, float dt) override {
+    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
+      throw std::runtime_error("CUDA Crank-Nicolson coupled integration is not implemented");
+    }
     activate_device();
     validate_coupled_step(state, grid, plan, previous_lengths, dt);
     const auto checked_product = [](std::size_t left, std::size_t right, const char* name) {
@@ -524,6 +532,7 @@ class CudaBackend final : public ComputeBackend {
     SignalGridCheckpoint{.spec = spec, .levels = next_grid}.validate();
     std::ranges::copy(next_species, species_state.levels.begin());
     grid.replace_levels(std::move(next_grid));
+    return {};
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,

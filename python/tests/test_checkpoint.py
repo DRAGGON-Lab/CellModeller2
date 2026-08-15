@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,6 +20,7 @@ from cellmodeller2 import (
     RateInstruction,
     RateOp,
     SignalGridSpec,
+    SignalIntegrationKind,
     Simulation,
     SpeciesRatePlan,
     SphereConstraintInit,
@@ -220,6 +222,8 @@ def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) 
     del document["controller"]
     del document["integrity"]["controller"]
     del document["simulation"]["coupled_rate_plan"]
+    del document["simulation"]["signal_grid"]["spec"]["integration"]
+    del document["simulation"]["signal_grid"]["spec"]["solver"]
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -236,12 +240,54 @@ def test_version_three_checkpoint_migrates_without_controller_state(tmp_path: Pa
     document["version"] = 3
     del document["controller"]
     del document["integrity"]["controller"]
+    del document["simulation"]["signal_grid"]["spec"]["integration"]
+    del document["simulation"]["signal_grid"]["spec"]["solver"]
     _rewrite_with_state_digest(path, document)
 
     bundle = load_checkpoint_bundle(path)
     assert isinstance(bundle, CheckpointBundle)
     assert bundle.controller is None
     _assert_cells_exact(bundle.simulation, simulation)
+
+
+def test_version_four_signal_grid_migrates_to_forward_euler(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v4.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 4
+    del document["simulation"]["signal_grid"]["spec"]["integration"]
+    del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _rewrite_with_state_digest(path, document)
+
+    restored = load_checkpoint(path)
+    restored.step(0.25)
+    simulation.step(0.25)
+    assert restored.signal_levels == simulation.signal_levels
+
+
+def test_crank_nicolson_signal_configuration_round_trips(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    checkpoint = simulation._checkpoint()
+    assert checkpoint.signal_grid is not None
+    checkpoint.signal_grid.spec.integration = SignalIntegrationKind.CRANK_NICOLSON
+    checkpoint.signal_grid.spec.solver.max_iterations = 321
+    checkpoint.signal_grid.spec.solver.absolute_tolerance = 2.0e-7
+    checkpoint.signal_grid.spec.solver.relative_tolerance = 3.0e-6
+    simulation = Simulation(BackendKind.CPU, checkpoint)
+    path = tmp_path / "crank-nicolson.cm2.json"
+    save_checkpoint(simulation, path)
+
+    document = _document(path)
+    assert document["simulation"]["signal_grid"]["spec"]["integration"] == "crank_nicolson"
+    restored = load_checkpoint(path)
+    restored_checkpoint = restored._checkpoint()
+    assert restored_checkpoint.signal_grid is not None
+    spec = restored_checkpoint.signal_grid.spec
+    assert spec.integration is SignalIntegrationKind.CRANK_NICOLSON
+    assert spec.solver.max_iterations == 321
+    assert math.isclose(spec.solver.absolute_tolerance, 2.0e-7, rel_tol=1.0e-6)
+    assert math.isclose(spec.solver.relative_tolerance, 3.0e-6, rel_tol=1.0e-6)
 
 
 def test_controller_state_is_authenticated_and_cannot_be_silently_discarded(

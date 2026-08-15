@@ -89,6 +89,23 @@ void test_old_grid_sampling_follows_post_growth_dilution() {
   assert(close(levels[2], 0.5F));
 }
 
+void test_crank_nicolson_includes_coupled_sources() {
+  cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 0);
+  auto spec = grid_spec({1, 1, 1});
+  spec.integration = cm2::SignalIntegrationKind::crank_nicolson;
+  simulation.configure_signal_grid(spec, {1.0F});
+  cm2::CellInit cell;
+  cell.growth_rate = 0.0F;
+  simulation.add_cell(cell);
+  simulation.set_coupled_rate_plan(cm2::CoupledRatePlan(0, 1, {constant(2.0F)}, {}, {0}));
+
+  simulation.step(1.0F);
+
+  assert(close(simulation.signal_levels()[0], 3.0F));
+  assert(simulation.last_signal_solve_report().has_value());
+  assert(simulation.last_signal_solve_report()->converged);
+}
+
 void test_invalid_position_is_rejected_before_growth() {
   cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 1);
   simulation.configure_signal_grid(grid_spec({2, 1, 1}), {1.0F, 1.0F});
@@ -98,8 +115,7 @@ void test_invalid_position_is_rejected_before_growth() {
   cell.growth_rate = 1.0F;
   cell.species = {3.0F};
   const auto id = simulation.add_cell(cell);
-  simulation.set_coupled_rate_plan(
-      cm2::CoupledRatePlan(1, 1, {constant(0.0F)}, {0}, {0}));
+  simulation.set_coupled_rate_plan(cm2::CoupledRatePlan(1, 1, {constant(0.0F)}, {0}, {0}));
 
   assert_throws<std::out_of_range>([&] { simulation.step(0.25F); });
   assert(close(simulation.cell(id).length, 2.0F));
@@ -140,6 +156,7 @@ void test_signal_inputs_are_reserved_for_coupled_plans() {
 int main() {
   test_sample_and_scatter_share_trilinear_weights();
   test_old_grid_sampling_follows_post_growth_dilution();
+  test_crank_nicolson_includes_coupled_sources();
   test_invalid_position_is_rejected_before_growth();
   test_coupled_plan_is_exact_checkpoint_state();
   test_signal_inputs_are_reserved_for_coupled_plans();

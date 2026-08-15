@@ -14,6 +14,7 @@ from cellmodeller2 import (
     RateInstruction,
     RateOp,
     SignalGridSpec,
+    SignalIntegrationKind,
     Simulation,
     Vec3,
     backend_available,
@@ -67,6 +68,22 @@ def test_cpu_signal_transport_sampling_and_stability() -> None:
     assert simulation.time == before_time
     with pytest.raises(IndexError, match="outside"):
         simulation.sample_signals(Vec3(3.0, 0.0, 0.0))
+
+
+def test_cpu_crank_nicolson_accepts_a_step_beyond_the_euler_bound() -> None:
+    spec = _line_spec()
+    spec.integration = SignalIntegrationKind.CRANK_NICOLSON
+    simulation = Simulation()
+    simulation.configure_signal_grid(spec, [0.0, 1.0, 0.0])
+
+    simulation.step(1.0)
+
+    _assert_levels(simulation.signal_levels, [0.4, 0.2, 0.4])
+    report = simulation.last_signal_solve_report
+    assert report is not None
+    assert report.converged
+    assert report.iterations > 0
+    assert report.residual_rms <= 2.0e-5
 
 
 def test_fixed_and_periodic_boundaries_are_explicit() -> None:

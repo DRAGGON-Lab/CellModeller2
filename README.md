@@ -20,7 +20,8 @@ The initial slice establishes:
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
-- validated CPU and native Metal signal grids with explicit transport boundaries;
+- validated CPU and native Metal signal grids with explicit transport boundaries,
+  plus a diagnosed CPU Crank-Nicolson reference solver;
 - typed coupled cell/grid rate plans with simultaneous CPU and native Metal stages;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
 - typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
@@ -61,6 +62,8 @@ no-flux/periodic/fixed boundaries, trilinear sampling, stability checks, and
 non-negative concentration updates. The MSL transport kernel is conformant on
 Apple GPU hardware. The independent CUDA kernel compiles and links against the
 12.8 toolkit; its shared conformance scenario still requires NVIDIA hardware.
+The checkpointed Crank-Nicolson option currently has a diagnosed CPU reference;
+native Metal and CUDA solvers are the next backend checkpoints.
 
 Coupled rate plans add sampled-signal inputs and separate intracellular
 concentration-rate and extracellular amount-rate outputs. CPU and native Metal
@@ -74,9 +77,9 @@ toolkit; the shared fixture still requires execution on NVIDIA hardware.
 
 Checkpoints preserve compact slot order, stable identity allocation, complete
 lineage, constraints, species rates, signal-grid geometry and levels,
-concentrations, cell geometry, coupled rates, and simulation time. Schema v3
-adds coupled rate plans; the reader explicitly migrates v1 files to an empty
-signal state and v2 files to no coupled plan. Files
+concentrations, cell geometry, coupled rates, and simulation time. Schema v5
+adds the signal integration and solver configuration; the reader explicitly
+migrates v1 through v4, using Forward Euler defaults for older signal grids. Files
 contain data only: loading never imports a model or evaluates source text.
 Writes use an atomic replace and each file carries a SHA-256 digest over the
 simulation payload.

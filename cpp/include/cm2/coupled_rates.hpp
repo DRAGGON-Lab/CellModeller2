@@ -11,6 +11,7 @@ namespace cm2 {
 
 class SignalGrid;
 class WorldState;
+struct SignalSolveReport;
 
 class CoupledRatePlan {
  public:
@@ -39,9 +40,11 @@ class CoupledRatePlan {
 };
 
 void validate_coupled_step(const WorldState& state, const SignalGrid& grid,
-                           const CoupledRatePlan& plan,
-                           std::span<const float> previous_lengths, float dt);
-void advance_coupled_cpu(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
-                         std::span<const float> previous_lengths, float dt);
+                           const CoupledRatePlan& plan, std::span<const float> previous_lengths,
+                           float dt);
+[[nodiscard]] SignalSolveReport advance_coupled_cpu(WorldState& state, SignalGrid& grid,
+                                                    const CoupledRatePlan& plan,
+                                                    std::span<const float> previous_lengths,
+                                                    float dt);
 
 }  // namespace cm2

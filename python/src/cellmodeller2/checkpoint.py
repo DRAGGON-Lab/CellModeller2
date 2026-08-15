@@ -26,6 +26,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     RateInstruction,
     RateOp,
     SignalGridSpec,
+    SignalIntegrationKind,
     Simulation,
     SpeciesRatePlan,
     SphereRegion,
@@ -40,7 +41,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 
 CHECKPOINT_FORMAT = "cellmodeller2-checkpoint"
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 5
 MAX_CHECKPOINT_BYTES = 1 << 30
 _NATIVE_CHECKPOINT_VERSION = 3
 
@@ -114,6 +115,11 @@ _GRID_BOUNDARY_NAMES = {
     GridBoundaryKind.FIXED: "fixed",
 }
 _GRID_BOUNDARIES = {name: kind for kind, name in _GRID_BOUNDARY_NAMES.items()}
+_SIGNAL_INTEGRATION_NAMES = {
+    SignalIntegrationKind.FORWARD_EULER: "forward_euler",
+    SignalIntegrationKind.CRANK_NICOLSON: "crank_nicolson",
+}
+_SIGNAL_INTEGRATIONS = {name: kind for kind, name in _SIGNAL_INTEGRATION_NAMES.items()}
 
 
 def _installed_version() -> str:
@@ -146,6 +152,12 @@ def _signal_grid_to_json(checkpoint: _SignalGridCheckpoint | None) -> JSONValue:
             "spacing": _vec3_to_json(spec.spacing),
             "diffusion": list(spec.diffusion),
             "advection": [_vec3_to_json(value) for value in spec.advection],
+            "integration": _SIGNAL_INTEGRATION_NAMES[spec.integration],
+            "solver": {
+                "max_iterations": spec.solver.max_iterations,
+                "absolute_tolerance": spec.solver.absolute_tolerance,
+                "relative_tolerance": spec.solver.relative_tolerance,
+            },
             "boundaries": {
                 "x_lower": _boundary_to_json(spec.x_lower),
                 "x_upper": _boundary_to_json(spec.x_upper),
@@ -513,24 +525,27 @@ def _boundary(value: object, path: str) -> GridBoundary:
     return boundary
 
 
-def _signal_grid(value: object, path: str) -> _SignalGridCheckpoint | None:
+def _signal_grid(value: object, path: str, schema_version: int) -> _SignalGridCheckpoint | None:
     if value is None:
         return None
     data = _object(value, path)
     _keys(data, path, {"spec", "levels"})
     spec_data = _object(data["spec"], f"{path}.spec")
+    spec_keys = {
+        "signal_count",
+        "shape",
+        "origin",
+        "spacing",
+        "diffusion",
+        "advection",
+        "boundaries",
+    }
+    if schema_version >= 5:
+        spec_keys.update({"integration", "solver"})
     _keys(
         spec_data,
         f"{path}.spec",
-        {
-            "signal_count",
-            "shape",
-            "origin",
-            "spacing",
-            "diffusion",
-            "advection",
-            "boundaries",
-        },
+        spec_keys,
     )
     shape_values = _array(spec_data["shape"], f"{path}.spec.shape")
     if len(shape_values) != 3:
@@ -559,6 +574,33 @@ def _signal_grid(value: object, path: str) -> _SignalGridCheckpoint | None:
         _vec3(item, f"{path}.spec.advection[{index}]")
         for index, item in enumerate(_array(spec_data["advection"], f"{path}.spec.advection"))
     ]
+    if schema_version >= 5:
+        integration_name = _string(spec_data["integration"], f"{path}.spec.integration")
+        if integration_name not in _SIGNAL_INTEGRATIONS:
+            _fail(f"{path}.spec.integration", f"unknown integration {integration_name!r}")
+        spec.integration = _SIGNAL_INTEGRATIONS[integration_name]
+        solver_data = _object(spec_data["solver"], f"{path}.spec.solver")
+        _keys(
+            solver_data,
+            f"{path}.spec.solver",
+            {"max_iterations", "absolute_tolerance", "relative_tolerance"},
+        )
+        spec.solver.max_iterations = _integer(
+            solver_data["max_iterations"],
+            f"{path}.spec.solver.max_iterations",
+            1,
+            _UINT32_MAX,
+        )
+        spec.solver.absolute_tolerance = _number(
+            solver_data["absolute_tolerance"],
+            f"{path}.spec.solver.absolute_tolerance",
+            float32=True,
+        )
+        spec.solver.relative_tolerance = _number(
+            solver_data["relative_tolerance"],
+            f"{path}.spec.solver.relative_tolerance",
+            float32=True,
+        )
     spec.x_lower = _boundary(boundaries["x_lower"], f"{path}.spec.boundaries.x_lower")
     spec.x_upper = _boundary(boundaries["x_upper"], f"{path}.spec.boundaries.x_upper")
     spec.y_lower = _boundary(boundaries["y_lower"], f"{path}.spec.boundaries.y_lower")
@@ -692,7 +734,7 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     checkpoint.constraints = constraints
     checkpoint.species_rate_plan = SpeciesRatePlan(plan_species_count, instructions, outputs)
     checkpoint.signal_grid = (
-        _signal_grid(data["signal_grid"], "$.simulation.signal_grid")
+        _signal_grid(data["signal_grid"], "$.simulation.signal_grid", schema_version)
         if schema_version >= 2
         else None
     )
@@ -742,7 +784,7 @@ def load_checkpoint_bundle(
     if "version" not in root:
         _fail("$", "missing keys ['version']")
     schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
-    supported_versions = {1, 2, 3, CHECKPOINT_VERSION}
+    supported_versions = {1, 2, 3, 4, CHECKPOINT_VERSION}
     if schema_version not in supported_versions:
         _fail("$.version", f"unsupported checkpoint version {schema_version}")
     required = {

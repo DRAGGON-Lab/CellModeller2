@@ -16,6 +16,30 @@ enum class GridBoundaryKind : std::uint8_t {
   fixed,
 };
 
+enum class SignalIntegrationKind : std::uint8_t {
+  forward_euler,
+  crank_nicolson,
+};
+
+struct SignalSolveParameters {
+  std::uint32_t max_iterations{10'000};
+  float absolute_tolerance{1.0e-7F};
+  float relative_tolerance{1.0e-5F};
+
+  void validate() const;
+};
+
+struct SignalSolveReport {
+  bool converged{true};
+  std::uint32_t iterations{0};
+  float residual_rms{0.0F};
+};
+
+struct SignalSolveResult {
+  std::vector<float> levels;
+  SignalSolveReport report;
+};
+
 struct GridBoundary {
   GridBoundaryKind kind{GridBoundaryKind::no_flux};
   std::vector<float> values;
@@ -36,6 +60,8 @@ struct SignalGridSpec {
   Vec3 spacing{1.0F, 1.0F, 1.0F};
   std::vector<float> diffusion;
   std::vector<Vec3> advection;
+  SignalIntegrationKind integration{SignalIntegrationKind::forward_euler};
+  SignalSolveParameters solver;
   GridBoundary x_lower;
   GridBoundary x_upper;
   GridBoundary y_lower;
@@ -84,7 +110,11 @@ class SignalGrid {
   std::vector<float> levels_;
 };
 
-void advance_signal_grid_cpu(SignalGrid& grid, float dt);
+[[nodiscard]] SignalSolveReport advance_signal_grid_cpu(SignalGrid& grid, float dt);
 [[nodiscard]] std::vector<float> signal_grid_transport_candidate(const SignalGrid& grid, float dt);
+[[nodiscard]] std::vector<float> signal_grid_transport_rates(const SignalGrid& grid,
+                                                             std::span<const float> levels);
+[[nodiscard]] SignalSolveResult signal_grid_crank_nicolson_candidate(
+    const SignalGrid& grid, float dt, std::span<const float> source_rates = {});
 
 }  // namespace cm2

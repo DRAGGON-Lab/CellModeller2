@@ -20,6 +20,10 @@ class GridBoundaryKind(Enum):
     PERIODIC: GridBoundaryKind
     FIXED: GridBoundaryKind
 
+class SignalIntegrationKind(Enum):
+    FORWARD_EULER: SignalIntegrationKind
+    CRANK_NICOLSON: SignalIntegrationKind
+
 class RateOp(Enum):
     CONSTANT: RateOp
     SPECIES: RateOp
@@ -109,6 +113,22 @@ class GridShape:
 
     def __init__(self) -> None: ...
 
+class SignalSolveParameters:
+    max_iterations: int
+    absolute_tolerance: float
+    relative_tolerance: float
+
+    def __init__(self) -> None: ...
+    def validate(self) -> None: ...
+
+class SignalSolveReport:
+    @property
+    def converged(self) -> bool: ...
+    @property
+    def iterations(self) -> int: ...
+    @property
+    def residual_rms(self) -> float: ...
+
 class SignalGridSpec:
     signal_count: int
     shape: GridShape
@@ -116,6 +136,8 @@ class SignalGridSpec:
     spacing: Vec3
     diffusion: list[float]
     advection: list[Vec3]
+    integration: SignalIntegrationKind
+    solver: SignalSolveParameters
     x_lower: GridBoundary
     x_upper: GridBoundary
     y_lower: GridBoundary
@@ -420,6 +442,8 @@ class Simulation:
     def signal_count(self) -> int: ...
     @property
     def has_signal_grid(self) -> bool: ...
+    @property
+    def last_signal_solve_report(self) -> SignalSolveReport | None: ...
     @property
     def has_coupled_rate_plan(self) -> bool: ...
     def add_cell(self, cell: CellInit) -> int: ...

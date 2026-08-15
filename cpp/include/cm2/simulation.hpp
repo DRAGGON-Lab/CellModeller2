@@ -26,6 +26,7 @@ class Simulation {
   [[nodiscard]] std::size_t species_count() const noexcept;
   [[nodiscard]] std::size_t signal_count() const noexcept;
   [[nodiscard]] bool has_signal_grid() const noexcept;
+  [[nodiscard]] std::optional<SignalSolveReport> last_signal_solve_report() const noexcept;
   [[nodiscard]] bool has_coupled_rate_plan() const noexcept;
 
   CellId add_cell(const CellInit& cell);
@@ -71,6 +72,7 @@ class Simulation {
   std::unique_ptr<ComputeBackend> backend_;
   SpeciesRatePlan species_rate_plan_;
   std::optional<SignalGrid> signal_grid_;
+  std::optional<SignalSolveReport> last_signal_solve_report_;
   std::optional<CoupledRatePlan> coupled_rate_plan_;
   double time_{0.0};
 };

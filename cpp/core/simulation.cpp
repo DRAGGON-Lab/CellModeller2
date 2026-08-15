@@ -92,6 +92,10 @@ std::size_t Simulation::signal_count() const noexcept {
 
 bool Simulation::has_signal_grid() const noexcept { return signal_grid_.has_value(); }
 
+std::optional<SignalSolveReport> Simulation::last_signal_solve_report() const noexcept {
+  return last_signal_solve_report_;
+}
+
 bool Simulation::has_coupled_rate_plan() const noexcept { return coupled_rate_plan_.has_value(); }
 
 CellId Simulation::add_cell(const CellInit& cell) { return state_.add_cell(cell); }
@@ -186,14 +190,16 @@ void Simulation::step(float dt) {
     signal_grid_->validate_step(dt);
   }
   backend_->advance_growth(state_, dt);
+  last_signal_solve_report_.reset();
   if (coupled_rate_plan_.has_value()) {
-    backend_->advance_coupled(state_, *signal_grid_, *coupled_rate_plan_, previous_lengths, dt);
+    last_signal_solve_report_ =
+        backend_->advance_coupled(state_, *signal_grid_, *coupled_rate_plan_, previous_lengths, dt);
   } else {
     if (state_.species_count() != 0) {
       backend_->advance_species(state_, species_rate_plan_, previous_lengths, dt);
     }
     if (signal_grid_.has_value()) {
-      backend_->advance_signal_grid(*signal_grid_, dt);
+      last_signal_solve_report_ = backend_->advance_signal_grid(*signal_grid_, dt);
     }
   }
   time_ += static_cast<double>(dt);

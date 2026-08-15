@@ -30,7 +30,7 @@ temporary import shims for `CLBacterium`, `ModuleRegulator`, and renderer
 declarations; the shims are removed after construction and do not install a
 shadow `CellModeller` package. `controller_state` serializes arbitrary JSON-like
 attributes, tuples, numeric NumPy arrays, adapter options, and the exact random
-stream into the authenticated v4 controller payload; `from_controller_state`
+stream into the authenticated v5 controller payload; `from_controller_state`
 restores that data without executable content. `cm2 run --legacy-model` writes
 the controller payload in periodic and final checkpoints; combining
 `--legacy-model` with `--resume` reloads the callbacks only after verifying the
