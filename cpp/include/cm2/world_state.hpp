@@ -37,6 +37,20 @@ struct GrowthStateView {
   std::span<const float> growth_rates;
 };
 
+struct CellGeometryView {
+  std::span<const CellId> ids;
+  std::span<const float> position_x;
+  std::span<const float> position_y;
+  std::span<const float> position_z;
+  std::span<const float> direction_x;
+  std::span<const float> direction_y;
+  std::span<const float> direction_z;
+  std::span<const float> lengths;
+  std::span<const float> radii;
+
+  [[nodiscard]] std::size_t size() const noexcept { return ids.size(); }
+};
+
 class WorldState {
  public:
   explicit WorldState(std::size_t reserved_capacity = 0);
@@ -49,6 +63,7 @@ class WorldState {
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void advance_growth(float dt);
   [[nodiscard]] GrowthStateView growth_state() noexcept;
+  [[nodiscard]] CellGeometryView geometry_state() const noexcept;
 
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;

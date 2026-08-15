@@ -18,9 +18,11 @@ endif()
 option(CM2_ENABLE_METAL "Build the native Apple Metal backend" ${CM2_METAL_DEFAULT})
 
 add_library(cm2_core STATIC
+  cpp/core/contact_graph.cpp
   cpp/core/world_state.cpp
   cpp/core/simulation.cpp
   cpp/cpu/cpu_backend.cpp
+  cpp/cpu/cpu_contacts.cpp
 )
 add_library(cm2::core ALIAS cm2_core)
 
@@ -108,6 +110,10 @@ if(CM2_BUILD_TESTS)
   add_executable(cm2_world_state_test tests/cpp/world_state_test.cpp)
   target_link_libraries(cm2_world_state_test PRIVATE cm2::core)
   add_test(NAME world_state COMMAND cm2_world_state_test)
+
+  add_executable(cm2_contact_geometry_test tests/cpp/contact_geometry_test.cpp)
+  target_link_libraries(cm2_contact_geometry_test PRIVATE cm2::core)
+  add_test(NAME contact_geometry COMMAND cm2_contact_geometry_test)
 
   add_executable(cm2_growth_conformance_test tests/conformance/growth_conformance_test.cpp)
   target_link_libraries(cm2_growth_conformance_test PRIVATE cm2::core)

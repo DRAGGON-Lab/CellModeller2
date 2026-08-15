@@ -160,6 +160,20 @@ GrowthStateView WorldState::growth_state() noexcept {
   };
 }
 
+CellGeometryView WorldState::geometry_state() const noexcept {
+  return {
+      .ids = ids_,
+      .position_x = position_x_,
+      .position_y = position_y_,
+      .position_z = position_z_,
+      .direction_x = direction_x_,
+      .direction_y = direction_y_,
+      .direction_z = direction_z_,
+      .lengths = length_,
+      .radii = radius_,
+  };
+}
+
 CellSnapshot WorldState::cell(CellId id) const {
   const auto slot = slot_for(id);
   const auto index = static_cast<std::size_t>(slot);

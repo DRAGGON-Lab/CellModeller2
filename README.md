@@ -17,6 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
+- robust CPU capsule contacts with dynamic incidence storage;
 - a C++ CPU reference backend;
 - a small Python API backed by nanobind;
 - C++ and Python conformance tests;

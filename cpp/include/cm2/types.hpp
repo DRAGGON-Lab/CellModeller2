@@ -32,9 +32,19 @@ struct Vec3 {
   }
 };
 
-[[nodiscard]] inline float norm(const Vec3& value) noexcept {
-  return std::sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
+[[nodiscard]] inline constexpr float dot(const Vec3& left, const Vec3& right) noexcept {
+  return (left.x * right.x) + (left.y * right.y) + (left.z * right.z);
 }
+
+[[nodiscard]] inline constexpr Vec3 cross(const Vec3& left, const Vec3& right) noexcept {
+  return {
+      (left.y * right.z) - (left.z * right.y),
+      (left.z * right.x) - (left.x * right.z),
+      (left.x * right.y) - (left.y * right.x),
+  };
+}
+
+[[nodiscard]] inline float norm(const Vec3& value) noexcept { return std::sqrt(dot(value, value)); }
 
 [[nodiscard]] inline Vec3 normalized(const Vec3& value) {
   const auto magnitude = norm(value);
