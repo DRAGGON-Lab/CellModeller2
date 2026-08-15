@@ -11,5 +11,10 @@ The project uses vertical conformance slices. For every feature:
 6. Run the same fixture on real Apple and NVIDIA hardware.
 7. Add scaling and long-run statistical tests only after stage-level parity.
 
+The first shared scenario is `growth_conformance`. Every test-enabled build
+runs the same fixture against each backend compiled into that build. Its exact
+state checks and numerical tolerances are recorded beside the test in
+`tests/conformance/README.md`.
+
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.

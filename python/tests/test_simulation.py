@@ -44,22 +44,22 @@ def test_invalid_time_step_is_rejected() -> None:
         simulation.step(-0.1)
 
 
-@pytest.mark.skipif(
-    not backend_available(BackendKind.METAL),
-    reason="native Metal backend is not built",
-)
-def test_metal_growth_matches_cpu() -> None:
+@pytest.mark.parametrize("backend", [BackendKind.METAL, BackendKind.CUDA])
+def test_native_growth_matches_cpu(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+
     cpu = Simulation(BackendKind.CPU)
-    metal = Simulation(BackendKind.METAL)
+    native = Simulation(backend)
     for index in range(33):
         cell = CellInit()
         cell.length = 1.0 + index * 0.1
         cell.growth_rate = (index % 7) * 0.025
-        assert cpu.add_cell(cell) == metal.add_cell(cell)
+        assert cpu.add_cell(cell) == native.add_cell(cell)
 
     for dt in (0.01, 0.025, 0.1):
         cpu.step(dt)
-        metal.step(dt)
+        native.step(dt)
 
-    for cpu_cell, metal_cell in zip(cpu.cells(), metal.cells(), strict=True):
-        assert math.isclose(cpu_cell.length, metal_cell.length, abs_tol=1.0e-6)
+    for cpu_cell, native_cell in zip(cpu.cells(), native.cells(), strict=True):
+        assert math.isclose(cpu_cell.length, native_cell.length, abs_tol=1.0e-6)
