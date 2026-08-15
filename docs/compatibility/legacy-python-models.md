@@ -24,14 +24,16 @@ It preserves the legacy order: regulation, division, native integration,
 mechanics, then cell-state refresh.
 
 The adapter is deliberately explicit rather than pretending the old OpenCL
-objects still exist. It currently requires construction around an empty native
-`Simulation`; a direct `setup(sim)` import facade and batch checkpointing of
-arbitrary Python attributes remain separate work. Geometry remains
-engine-owned, and callback attempts to mutate position, direction, length, or
-radius fail explicitly. Equal division is supported, including an explicitly
-seeded compatibility policy for the legacy per-daughter direction jitter;
-asymmetric division fails explicitly until its native lifecycle contract is
-implemented.
+objects still exist. It requires construction around an empty native
+`Simulation`. `build_legacy_model` supplies an opt-in `setup(sim)` facade and
+temporary import shims for `CLBacterium`, `ModuleRegulator`, and renderer
+declarations; the shims are removed after construction and do not install a
+shadow `CellModeller` package. Batch checkpointing of arbitrary Python
+attributes remains separate work. Geometry remains engine-owned, and callback
+attempts to mutate position, direction, length, or radius fail explicitly.
+Equal division is supported, including an explicitly seeded compatibility
+policy for the legacy per-daughter direction jitter; asymmetric division fails
+explicitly until its native lifecycle contract is implemented.
 
 OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not accepted or
 translated. Those models must express equations as `SpeciesRatePlan` or

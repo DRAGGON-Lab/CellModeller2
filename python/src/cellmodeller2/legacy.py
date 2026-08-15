@@ -13,6 +13,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendFeature,
     CellInit,
     CellSnapshot,
+    MechanicsParameters,
     Simulation,
     Vec3,
 )
@@ -102,6 +103,7 @@ class LegacyModelAdapter:
         compute_neighbors: bool = False,
         division_jitter_z: bool | None = None,
         rng: random.Random | None = None,
+        mechanics_parameters: MechanicsParameters | None = None,
     ) -> None:
         if simulation.cell_count != 0:
             raise LegacyCompatibilityError("legacy adapter requires an empty simulation")
@@ -121,6 +123,7 @@ class LegacyModelAdapter:
         self._compute_neighbors = compute_neighbors
         self._division_jitter_z = division_jitter_z
         self._rng = rng
+        self._mechanics_parameters = mechanics_parameters or MechanicsParameters()
         self._cells: dict[int, LegacyCell] = {}
 
     @property
@@ -159,7 +162,7 @@ class LegacyModelAdapter:
 
         self.simulation.step(dt)
         if self._mechanics and self.simulation.cell_count != 0:
-            self.simulation.relax_cell_mechanics()
+            self.simulation.relax_cell_mechanics(self._mechanics_parameters)
         self._refresh_cells()
 
     def _divide_cell(self, parent_id: int) -> None:

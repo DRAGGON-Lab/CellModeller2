@@ -45,6 +45,7 @@ from .checkpoint import (
     save_checkpoint,
 )
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
+from .legacy_loader import build_legacy_model
 from .runner import BatchError, ModelContext, RunProgress, RunSummary, build_model, run_simulation
 
 __all__ = [
@@ -93,6 +94,7 @@ __all__ = [
     "Vec3",
     "backend_available",
     "backend_device_count",
+    "build_legacy_model",
     "build_model",
     "load_checkpoint",
     "run_simulation",

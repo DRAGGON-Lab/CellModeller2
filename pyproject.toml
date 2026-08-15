@@ -18,6 +18,9 @@ classifiers = [
   "Programming Language :: C++",
   "Programming Language :: Python :: 3.12",
 ]
+dependencies = [
+    "numpy>=2.1,<3",
+]
 
 [project.scripts]
 cm2 = "cellmodeller2.cli:main"
@@ -49,3 +52,4 @@ select = ["B", "E", "F", "I", "N", "RUF", "SIM", "UP"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 include = ["python/src", "python/tests"]
+exclude = ["python/tests/fixtures"]
