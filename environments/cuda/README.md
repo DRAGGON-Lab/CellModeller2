@@ -32,10 +32,20 @@ persistent GPU host. Keep the Actions runner current enough for
 uploads the evidence directory, including a failed gate's `result.tsv`.
 
 The CUDA 12.8 toolkit compiles and links the full CUDA-enabled project in
-NVIDIA's official arm64 development container. That driverless validation does
-not establish CUDA conformance. Every CUDA hardware gate remains pending until
-the shared tests are recorded on an NVIDIA device. Test reports must include
-the device, driver, toolkit, and target compute capability.
+NVIDIA's official development container. Reproduce that driverless gate with:
+
+```console
+scripts/run_cuda_compile_check.sh
+```
+
+The script mounts the source read-only, configures and links all native CUDA
+targets inside an ephemeral CUDA 12.8.1 container, lists the registered tests
+without executing them, and records the exact container image plus checksummed
+logs. Override `CM2_CUDA_ARCHITECTURES` or `CM2_CUDA_CONTAINER_IMAGE` when a
+different compile target is required. This proves source and link compatibility
+only; it does not establish CUDA conformance. Every CUDA hardware gate remains
+pending until the shared tests are recorded on an NVIDIA device. Hardware test
+reports must include the device, driver, toolkit, and target compute capability.
 
 Contact generation uses deterministic sweep-and-prune capsule-bound staging,
 then native CUDA count, scan, and fill kernels for the narrow phase.

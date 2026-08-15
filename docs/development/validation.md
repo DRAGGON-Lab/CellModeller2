@@ -146,9 +146,14 @@ exercise only the CPU paths because no CUDA device can be constructed; the
 mandatory on NVIDIA hardware before CUDA conformance is claimed.
 
 A CUDA toolkit-only build proves source and link compatibility, not backend
-conformance. CUDA rows advance only after the shared executable runs on an
-NVIDIA device. `backend_available` reports runtime device availability, while
-`Simulation.supports` reports features implemented by a constructed backend.
+conformance. `scripts/run_cuda_compile_check.sh` makes that boundary explicit:
+it mounts the clean source tree read-only in an ephemeral CUDA development
+container, builds every native target, lists but does not execute the registered
+tests, and records checksummed image and compiler evidence. CUDA rows advance
+only after the shared executable runs on an NVIDIA device. `backend_available`
+reports runtime device availability, while `Simulation.supports` reports
+features implemented by a constructed backend.
+
 Every CUDA-enabled test build adds `cuda_runtime_gate`, so a Toolkit-only host
 cannot report a green CTest suite by exercising only the CPU paths. On an
 NVIDIA host, run `scripts/run_cuda_conformance.sh`; it requires a clean source

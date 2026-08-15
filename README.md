@@ -64,6 +64,11 @@ simultaneous Euler updates. CUDA has an independent native interpreter that
 compiles against the 12.8 toolkit; the same shared scenario still needs to run
 on NVIDIA hardware before CUDA species conformance is claimed.
 
+Run `scripts/run_cuda_compile_check.sh` to reproduce the driverless native CUDA
+source/link gate in the versioned CUDA development container. Its passing result
+is deliberately distinct from `scripts/run_cuda_conformance.sh`, which requires
+an NVIDIA GPU and is the only command that can establish CUDA conformance.
+
 Signal-grid state has CPU, native Metal, and native CUDA implementations for
 conventional diffusion, conservative vector upwind advection,
 no-flux/periodic/fixed boundaries, trilinear sampling, stability checks, and
