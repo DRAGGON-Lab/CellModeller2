@@ -97,9 +97,10 @@ NVIDIA device. `backend_available` reports runtime device availability, while
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.
 
-Fixed-cell CPU fixtures verify stable-ID mutation, division inheritance,
+Fixed-cell fixtures verify stable-ID mutation, division inheritance,
 checkpoint v6 persistence, migration of v1-through-v5 cells to movable state,
 the projected mechanics operator and right-hand side, and integration that
-rejects contact correction while retaining declared growth. The corresponding
-native GPU mechanics cases remain required before Metal or CUDA fixed-cell
-support is claimed.
+rejects contact correction while retaining declared growth. The shared
+relaxation scenario passes on CPU and native Metal, including exact zero
+correction and unchanged geometry for the fixed cell. CUDA hardware execution
+remains required before CUDA fixed-cell support is claimed.

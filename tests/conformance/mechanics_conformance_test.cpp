@@ -14,14 +14,14 @@ bool close(float actual, float expected) {
   return std::abs(actual - expected) <= tolerance;
 }
 
-void add_capsule(cm2::Simulation& simulation, cm2::Vec3 center, cm2::Vec3 axis, float length = 4.0F,
-                 float radius = 0.5F) {
+cm2::CellId add_capsule(cm2::Simulation& simulation, cm2::Vec3 center, cm2::Vec3 axis,
+                        float length = 4.0F, float radius = 0.5F) {
   cm2::CellInit cell;
   cell.position = center;
   cell.direction = axis;
   cell.length = length;
   cell.radius = radius;
-  simulation.add_cell(cell);
+  return simulation.add_cell(cell);
 }
 
 void populate_mixed_colony(cm2::Simulation& simulation) {
@@ -141,6 +141,46 @@ void run_integrated_relaxation(cm2::BackendKind backend) {
   }
 }
 
+void run_fixed_cell_relaxation(cm2::BackendKind backend) {
+  cm2::Simulation reference(cm2::BackendKind::cpu);
+  cm2::Simulation candidate(backend);
+  const auto reference_fixed =
+      add_capsule(reference, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  const auto candidate_fixed =
+      add_capsule(candidate, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  const auto reference_free =
+      add_capsule(reference, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  const auto candidate_free =
+      add_capsule(candidate, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  reference.set_cell_fixed(reference_fixed, true);
+  candidate.set_cell_fixed(candidate_fixed, true);
+
+  cm2::MechanicsParameters parameters;
+  parameters.residual_rms_tolerance = 2.0e-5F;
+  const auto expected = reference.solve_cell_mechanics(parameters);
+  const auto actual = candidate.solve_cell_mechanics(parameters);
+  compare_corrections(actual, expected);
+  assert(actual.report.status == cm2::SolverStatus::converged);
+  assert(actual.corrections[0].translation.x == 0.0F);
+  assert(actual.corrections[0].translation.y == 0.0F);
+  assert(actual.corrections[0].translation.z == 0.0F);
+  assert(actual.corrections[0].rotation.x == 0.0F);
+  assert(actual.corrections[0].rotation.y == 0.0F);
+  assert(actual.corrections[0].rotation.z == 0.0F);
+  assert(actual.corrections[0].length == 0.0F);
+  assert(actual.corrections[1].translation.y > 0.0F);
+
+  const auto expected_relaxation = reference.relax_cell_mechanics(parameters);
+  const auto actual_relaxation = candidate.relax_cell_mechanics(parameters);
+  compare_corrections(actual_relaxation, expected_relaxation);
+  assert(candidate.cell(candidate_fixed).position.x == 0.0F);
+  assert(candidate.cell(candidate_fixed).position.y == 0.0F);
+  assert(candidate.cell(candidate_fixed).position.z == 0.0F);
+  assert(candidate.cell(candidate_free).position.y > 0.8F);
+  assert(close(candidate.cell(candidate_free).position.y,
+               reference.cell(reference_free).position.y));
+}
+
 }  // namespace
 
 int main() {
@@ -158,6 +198,7 @@ int main() {
     run_iteration_limit(backend);
     run_buffer_growth(backend);
     run_integrated_relaxation(backend);
+    run_fixed_cell_relaxation(backend);
   }
   return 0;
 }

@@ -17,7 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
-- persistent fixed rod cells with continuing biological state and projected CPU mechanics;
+- persistent fixed rod cells with continuing biological state and projected CPU/Metal mechanics;
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;

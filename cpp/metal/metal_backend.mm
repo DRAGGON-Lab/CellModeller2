@@ -821,6 +821,7 @@ class MetalBackend final : public ComputeBackend {
     ensure_contact_output_capacity(row_count);
     ensure_mechanics_capacity(geometry.size(), row_count);
     upload_contact_cells(geometry);
+    upload_mechanics_fixed(state.cell_attributes().fixed);
     upload_mechanics_contacts(contacts, external_contacts);
     upload_mechanics_incidence(contacts, external_contacts);
 
@@ -1633,6 +1634,8 @@ class MetalBackend final : public ComputeBackend {
       mechanics_incidence_offsets_ =
           allocate_shared_buffer(device_, (mechanics_cell_capacity_ + 1) * sizeof(std::uint32_t),
                                  "mechanics incidence offsets");
+      mechanics_fixed_ = allocate_shared_buffer(device_, mechanics_cell_capacity_,
+                                                 "mechanics fixed flags");
       mechanics_solution_ = allocate_shared_buffer(device_, dof_bytes, "mechanics solution");
       mechanics_rhs_ = allocate_shared_buffer(device_, dof_bytes, "mechanics right-hand side");
       mechanics_residual_ = allocate_shared_buffer(device_, dof_bytes, "mechanics residual");
@@ -1657,6 +1660,10 @@ class MetalBackend final : public ComputeBackend {
           allocate_shared_buffer(device_, mechanics_contact_capacity_ * 2 * sizeof(std::uint32_t),
                                  "mechanics incidence indices");
     }
+  }
+
+  void upload_mechanics_fixed(std::span<const std::uint8_t> fixed) {
+    std::memcpy(mechanics_fixed_.contents, fixed.data(), fixed.size_bytes());
   }
 
   void upload_mechanics_contacts(const ContactGraph& contacts,
@@ -1756,6 +1763,7 @@ class MetalBackend final : public ComputeBackend {
     [encoder setBuffer:input offset:0 atIndex:4];
     [encoder setBuffer:mechanics_row_values_ offset:0 atIndex:5];
     [encoder setBytes:&contact_count length:sizeof(contact_count) atIndex:6];
+    [encoder setBuffer:mechanics_fixed_ offset:0 atIndex:7];
     dispatch_1d(encoder, mechanics_b_pipeline_, contact_count);
     [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
@@ -1770,6 +1778,7 @@ class MetalBackend final : public ComputeBackend {
     [encoder setBuffer:output offset:0 atIndex:3];
     [encoder setBytes:&gpu_parameters length:sizeof(gpu_parameters) atIndex:4];
     [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:5];
+    [encoder setBuffer:mechanics_fixed_ offset:0 atIndex:6];
     dispatch_1d(encoder, mechanics_regularizer_pipeline_, cell_count);
   }
 
@@ -1823,6 +1832,7 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBuffer:mechanics_residual_ offset:0 atIndex:2];
       [encoder setBuffer:mechanics_search_ offset:0 atIndex:3];
       [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:4];
+      [encoder setBuffer:mechanics_fixed_ offset:0 atIndex:5];
       dispatch_1d(encoder, mechanics_initialize_pipeline_, cell_count);
       [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
@@ -2063,6 +2073,7 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> mechanics_row_rhs_{nil};
   id<MTLBuffer> mechanics_incidence_offsets_{nil};
   id<MTLBuffer> mechanics_incidence_indices_{nil};
+  id<MTLBuffer> mechanics_fixed_{nil};
   id<MTLBuffer> mechanics_solution_{nil};
   id<MTLBuffer> mechanics_rhs_{nil};
   id<MTLBuffer> mechanics_residual_{nil};

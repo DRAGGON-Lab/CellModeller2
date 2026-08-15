@@ -21,7 +21,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | trusted native-state importer implemented with explicit loss provenance |
 | P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | CPU and native Metal standalone/coupled solvers conformant; native CUDA builds with NVIDIA hardware validation pending |
 | P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | implemented as deterministic backend-neutral graph views |
-| P2 | Fixed-position cells | `CLFixedPosition` | persistent fixed rod state with projected mechanics and continuing biology | legacy point-volume model audited; state, checkpoint migration, and CPU mechanics implemented; Metal/CUDA pending |
+| P2 | Fixed-position cells | `CLFixedPosition` | persistent fixed rod state with projected mechanics and continuing biology | legacy point-volume model audited; CPU and native Metal mechanics conformant; CUDA pending |
 | P2 | Neighbor diffusion | `NeighbourDiffusion` | retain only after model and attribute audit | dormant/ambiguous |
 | P2 | SBML import | `SBMLImport` | libSBML to typed reaction model; no generated Python source | redesign needed |
 | P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | redesign needed |

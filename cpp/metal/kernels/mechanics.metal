@@ -76,14 +76,18 @@ kernel void apply_mechanics_b(
     device const uint* first_slots [[buffer(2)]],
     device const uint* second_slots [[buffer(3)]],
     device const MechanicsDofs* input [[buffer(4)]], device float* row_values [[buffer(5)]],
-    constant uint& contact_count [[buffer(6)]], uint index [[thread_position_in_grid]]) {
+    constant uint& contact_count [[buffer(6)]], device const uchar* fixed [[buffer(7)]],
+    uint index [[thread_position_in_grid]]) {
   if (index >= contact_count) {
     return;
   }
+  uint first = first_slots[index];
   uint second = second_slots[index];
-  row_values[index] = dof_dot(first_rows[index], input[first_slots[index]]);
+  MechanicsDofs first_input = fixed[first] == 0 ? input[first] : zero_dofs();
+  row_values[index] = dof_dot(first_rows[index], first_input);
   if (second != 0xffffffffu) {
-    row_values[index] -= dof_dot(second_rows[index], input[second]);
+    MechanicsDofs second_input = fixed[second] == 0 ? input[second] : zero_dofs();
+    row_values[index] -= dof_dot(second_rows[index], second_input);
   }
 }
 
@@ -113,8 +117,12 @@ kernel void add_mechanics_regularizer(
     device const float4* axes [[buffer(0)]], device const float4* geometry [[buffer(1)]],
     device const MechanicsDofs* input [[buffer(2)]], device MechanicsDofs* output [[buffer(3)]],
     constant float4& parameters [[buffer(4)]], constant uint& cell_count [[buffer(5)]],
-    uint cell [[thread_position_in_grid]]) {
+    device const uchar* fixed [[buffer(6)]], uint cell [[thread_position_in_grid]]) {
   if (cell >= cell_count) {
+    return;
+  }
+  if (fixed[cell] != 0) {
+    output[cell] = input[cell];
     return;
   }
   float mu_a = parameters.x;
@@ -142,13 +150,15 @@ kernel void initialize_mechanics_vectors(
     device const MechanicsDofs* right_hand_side [[buffer(0)]],
     device MechanicsDofs* solution [[buffer(1)]], device MechanicsDofs* residual [[buffer(2)]],
     device MechanicsDofs* search_direction [[buffer(3)]],
-    constant uint& cell_count [[buffer(4)]], uint cell [[thread_position_in_grid]]) {
+    constant uint& cell_count [[buffer(4)]], device const uchar* fixed [[buffer(5)]],
+    uint cell [[thread_position_in_grid]]) {
   if (cell >= cell_count) {
     return;
   }
   solution[cell] = zero_dofs();
-  residual[cell] = right_hand_side[cell];
-  search_direction[cell] = right_hand_side[cell];
+  MechanicsDofs projected_rhs = fixed[cell] == 0 ? right_hand_side[cell] : zero_dofs();
+  residual[cell] = projected_rhs;
+  search_direction[cell] = projected_rhs;
 }
 
 kernel void update_mechanics_solution_residual(

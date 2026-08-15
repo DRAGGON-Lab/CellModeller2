@@ -31,6 +31,21 @@ void populate_plane(cm2::Simulation& simulation) {
   simulation.add_plane_constraint(plane);
 }
 
+void populate_fixed_plane(cm2::Simulation& simulation) {
+  cm2::CellInit cell;
+  cell.position = {0.0F, 0.4F, 0.0F};
+  cell.direction = {1.0F, 0.0F, 0.0F};
+  cell.length = 2.0F;
+  cell.radius = 0.5F;
+  cell.fixed = true;
+  simulation.add_cell(cell);
+
+  cm2::PlaneConstraintInit plane;
+  plane.inward_normal = {0.0F, 1.0F, 0.0F};
+  plane.coefficient = 1.25F;
+  simulation.add_plane_constraint(plane);
+}
+
 void populate_outside_sphere(cm2::Simulation& simulation) {
   cm2::CellInit cell;
   cell.position = {1.2F, 0.0F, 0.0F};
@@ -134,6 +149,7 @@ int main() {
       continue;
     }
     run_fixture(backend, populate_plane);
+    run_fixture(backend, populate_fixed_plane);
     run_fixture(backend, populate_outside_sphere);
     run_fixture(backend, populate_inside_sphere);
   }
