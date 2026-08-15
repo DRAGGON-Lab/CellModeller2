@@ -1,0 +1,31 @@
+# Legacy compatibility ledger
+
+This ledger defines the finish line. `specified` means the intended behavior
+has an initial contract; it does not mean a GPU implementation exists.
+
+| Priority | Feature | Legacy source | Intended CellModeller2 behavior | Status |
+|---|---|---|---|---|
+| P0 | Stable IDs and compact slots | `Simulator` | IDs never alias slots; division records lineage | implemented on CPU |
+| P0 | Cell creation and division | `Simulator`, `CLBacterium` | deterministic equal division first; asymmetric and jitter policies follow | partial |
+| P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | implemented on CPU |
+| P0 | 2D/3D rod mechanics | `CLBacterium` | native contact and matrix-free solve | specified |
+| P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic two-pass CSR; no silent contact cap | specified |
+| P0 | Plane and sphere constraints | `CLBacterium.cl` | explicit constraint records in the contact graph | specified |
+| P0 | Mechanics solver | `CLBacterium` | matrix-free CG/PCG with residual report | specified |
+| P0 | Species Euler integration | `CLEulerIntegrator` | typed rate plan and growth dilution | specified |
+| P0 | Grid signaling | `GridDiffusion` | diffusion, optional advection, declared boundaries | specified |
+| P0 | Coupled cell/grid rates | signal integrators | device-resident sample, rate, scatter, and update | specified |
+| P0 | Checkpoint and exact resume | pickle output | versioned, non-executable checkpoint with provenance | specified |
+| P0 | Batch execution | batch scripts | `cm2 run`, backend/device/seed selection | specified |
+| P1 | Legacy Python model adapter | module regulator | adapter for maintained `setup/init/update/divide` models | audit needed |
+| P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | audit needed |
+| P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | semantic audit needed |
+| P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | specified |
+| P2 | Fixed-position cells | `CLFixedPosition` | reference and native growth-only state | audit needed |
+| P2 | Neighbor diffusion | `NeighbourDiffusion` | retain only after model and attribute audit | dormant/ambiguous |
+| P2 | SBML import | `SBMLImport` | libSBML to typed reaction model; no generated Python source | redesign needed |
+| P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | redesign needed |
+| P2 | Analysis scripts | `Scripts` | replace with documented Parquet/Zarr workflows | inventory needed |
+
+Each row advances through: `audit` -> `specified` -> `CPU reference` ->
+`Metal conformance` and `CUDA conformance` -> `backend-complete`.

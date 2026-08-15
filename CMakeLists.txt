@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.25)
+
+project(
+  CellModeller2
+  VERSION 0.1.0
+  DESCRIPTION "Native Metal and CUDA multicellular simulation engine"
+  LANGUAGES CXX
+)
+
+option(CM2_BUILD_PYTHON "Build the nanobind Python extension" ON)
+option(CM2_BUILD_TESTS "Build C++ tests" ON)
+
+add_library(cm2_core STATIC
+  cpp/core/world_state.cpp
+  cpp/core/simulation.cpp
+  cpp/cpu/cpu_backend.cpp
+)
+add_library(cm2::core ALIAS cm2_core)
+
+target_compile_features(cm2_core PUBLIC cxx_std_23)
+target_include_directories(cm2_core PUBLIC cpp/include)
+set_target_properties(cm2_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+if(MSVC)
+  target_compile_options(cm2_core PRIVATE /W4 /permissive-)
+else()
+  target_compile_options(cm2_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+endif()
+
+if(CM2_BUILD_PYTHON)
+  find_package(Python 3.12 COMPONENTS Interpreter Development.Module REQUIRED)
+  find_package(nanobind CONFIG REQUIRED)
+
+  nanobind_add_module(_core cpp/python/bindings.cpp)
+  target_link_libraries(_core PRIVATE cm2::core)
+  install(TARGETS _core LIBRARY DESTINATION cellmodeller2)
+endif()
+
+if(CM2_BUILD_TESTS)
+  include(CTest)
+  add_executable(cm2_world_state_test tests/cpp/world_state_test.cpp)
+  target_link_libraries(cm2_world_state_test PRIVATE cm2::core)
+  add_test(NAME world_state COMMAND cm2_world_state_test)
+endif()

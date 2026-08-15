@@ -1,0 +1,48 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.10,<0.12",
+  "nanobind>=2.7,<3",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "cellmodeller2"
+version = "0.1.0"
+description = "Native Metal and CUDA multicellular simulation engine"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "DRAGGON Lab" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3.12",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9",
+  "pyright>=1.1.390,<2",
+  "ruff>=0.9,<1",
+]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.packages = ["python/src/cellmodeller2"]
+build-dir = "build/python/{wheel_tag}"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["python/tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "N", "RUF", "SIM", "UP"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["python/src", "python/tests"]
