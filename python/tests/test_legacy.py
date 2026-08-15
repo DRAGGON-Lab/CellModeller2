@@ -101,6 +101,34 @@ def test_legacy_callback_changes_are_validated_before_native_updates() -> None:
     assert simulation.cell(cell_id).growth_rate == 1.0
 
 
+def test_legacy_host_species_state_is_preserved_without_native_integration() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.species = [1.0, 2.0]
+
+    def update(cells: dict[int, LegacyCell]) -> None:
+        next(iter(cells.values())).species[0] += 0.5
+
+    simulation = Simulation(species_count=0)
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=update,
+        mechanics=False,
+    )
+    adapter.add_cell(CellInit())
+
+    adapter.step(0.1)
+
+    assert adapter.cells[1].species == [1.5, 2.0]
+    restored = LegacyModelAdapter.from_controller_state(
+        simulation,
+        adapter.controller_state(),
+        init=initialize,
+        update=update,
+    )
+    assert restored.cells[1].species == [1.5, 2.0]
+
+
 def test_legacy_adapter_rejects_geometry_mutation() -> None:
     def initialize(cell: LegacyCell) -> None:
         cell.targetVol = 1.0

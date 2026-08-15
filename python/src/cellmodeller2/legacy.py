@@ -485,7 +485,10 @@ class LegacyModelAdapter:
             if (
                 float(cell.growthRate) != snapshot.growth_rate
                 or int(cell.cellType) != snapshot.cell_type
-                or [float(item) for item in cell.species] != list(snapshot.species)
+                or (
+                    self.simulation.species_count != 0
+                    and [float(item) for item in cell.species] != list(snapshot.species)
+                )
             ):
                 raise LegacyCompatibilityError(
                     "legacy controller mutable state disagrees with native state"
@@ -620,7 +623,10 @@ class LegacyModelAdapter:
         cell_type = cast(object, cell.cellType)
         if not isinstance(cell_type, int):
             raise LegacyCompatibilityError("legacy cellType must be an integer")
-        if len(cell.species) != self.simulation.species_count:
+        if (
+            self.simulation.species_count != 0
+            and len(cell.species) != self.simulation.species_count
+        ):
             raise LegacyCompatibilityError("legacy species count does not match the simulation")
         if not all(math.isfinite(float(value)) for value in cell.species):
             raise LegacyCompatibilityError("legacy species levels must be finite")
@@ -644,7 +650,8 @@ class LegacyModelAdapter:
             cell.radius = snapshot.radius
             cell.growthRate = snapshot.growth_rate
             cell.cellType = snapshot.cell_type
-            cell.species = list(snapshot.species)
+            if self.simulation.species_count != 0:
+                cell.species = list(snapshot.species)
             cell.signals = (
                 self.simulation.sample_signals(snapshot.position)
                 if self.simulation.has_signal_grid

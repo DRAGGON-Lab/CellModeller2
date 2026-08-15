@@ -41,6 +41,12 @@ randomized founder construction cannot consume future runtime draws. Mutable
 module globals other than this controlled random binding are not checkpointed;
 evolving model state must live on cells or in native arrays. Callback attempts
 to mutate position, direction, length, or radius fail explicitly.
+When a simulation has no native species integration, a legacy callback may use
+`cell.species` as ordinary host-side model state; it is checkpointed rather than
+overwritten by the empty native vector. This is required by the bundled
+`TimRudgeThesis/Meristem.py` model. Once a native species vector exists, its
+declared size and values remain authoritative.
+
 Equal and asymmetric division are supported, including an explicitly seeded
 compatibility policy for the legacy per-daughter direction jitter. The adapter
 normalizes the two positive `cell.asymm` weights into the native daughter
@@ -57,3 +63,7 @@ translated. Those models must express equations as `SpeciesRatePlan` or
 without treating OpenCL C as an intermediate language. GUI renderers are also
 outside the adapter: a future viewer consumes snapshots without owning engine
 state.
+
+The complete source-pinned classification and executable CPU/Metal acceptance
+contract is recorded in `compatibility/legacy-examples-v1.json` and
+`docs/compatibility/legacy-example-matrix.md`.
