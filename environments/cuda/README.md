@@ -47,5 +47,10 @@ only; it does not establish CUDA conformance. Every CUDA hardware gate remains
 pending until the shared tests are recorded on an NVIDIA device. Hardware test
 reports must include the device, driver, toolkit, and target compute capability.
 
+The `CUDA compile check` workflow runs this container gate for pull requests,
+pushes to `main`, and manual dispatches on GitHub's hosted Ubuntu 24.04 runner.
+It uploads the checksummed compile evidence even when the build fails. It never
+replaces or advances the manually dispatched GPU conformance gate.
+
 Contact generation uses deterministic sweep-and-prune capsule-bound staging,
 then native CUDA count, scan, and fill kernels for the narrow phase.

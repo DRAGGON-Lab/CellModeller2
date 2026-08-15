@@ -1,0 +1,40 @@
+name: CUDA compile check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuda-compile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          clean: true
+          persist-credentials: false
+
+      - name: Compile native CUDA targets
+        env:
+          CM2_CUDA_ARCHITECTURES: "75"
+        run: scripts/run_cuda_compile_check.sh build/cuda-compile-report
+
+      - name: Upload compile evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cuda-compile-${{ github.sha }}
+          path: build/cuda-compile-report
+          if-no-files-found: error
+          retention-days: 30

@@ -150,9 +150,11 @@ conformance. `scripts/run_cuda_compile_check.sh` makes that boundary explicit:
 it mounts the clean source tree read-only in an ephemeral CUDA development
 container, builds every native target, lists but does not execute the registered
 tests, and records checksummed image and compiler evidence. CUDA rows advance
-only after the shared executable runs on an NVIDIA device. `backend_available`
-reports runtime device availability, while `Simulation.supports` reports
-features implemented by a constructed backend.
+only after the shared executable runs on an NVIDIA device. The hosted `CUDA
+compile check` workflow runs the compile-only command for pull requests and
+`main`; it cannot advance a feature-ledger row. `backend_available` reports
+runtime device availability, while `Simulation.supports` reports features
+implemented by a constructed backend.
 
 Every CUDA-enabled test build adds `cuda_runtime_gate`, so a Toolkit-only host
 cannot report a green CTest suite by exercising only the CPU paths. On an
