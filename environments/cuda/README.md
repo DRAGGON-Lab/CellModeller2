@@ -22,6 +22,14 @@ the source commit, device inventory, driver and toolkit details, logs, JUnit
 results, and an explicit pass/fail record. Pass a path as its sole argument to
 choose a different new evidence directory.
 
+The manually dispatched `CUDA conformance` GitHub Actions workflow runs this
+same gate on a self-hosted runner carrying the default `self-hosted`, `linux`,
+and `x64` labels plus the custom `gpu` label. It is intentionally not triggered
+by pull requests, so untrusted branch code is not sent automatically to a
+persistent GPU host. Keep the Actions runner current enough for
+`actions/checkout@v6` and `actions/upload-artifact@v7`; the workflow always
+uploads the evidence directory, including a failed gate's `result.tsv`.
+
 The CUDA 12.8 toolkit compiles and links the full CUDA-enabled project in
 NVIDIA's official arm64 development container. That driverless validation does
 not establish CUDA conformance. Every CUDA hardware gate remains pending until

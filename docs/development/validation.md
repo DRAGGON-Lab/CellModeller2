@@ -140,6 +140,10 @@ cannot report a green CTest suite by exercising only the CPU paths. On an
 NVIDIA host, run `scripts/run_cuda_conformance.sh`; it requires a clean source
 tree and preserves the exact commit, GPU inventory, compute capability, driver,
 Toolkit, configure/build logs, JUnit results, and final status under `build/`.
+The manual `CUDA conformance` workflow routes the same command to a self-hosted
+Linux x64 runner with the custom `gpu` label and uploads the evidence on both
+success and failure. It has no pull-request trigger; hardware acceptance must
+be an explicit action by a repository maintainer.
 
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.

@@ -1,0 +1,35 @@
+name: CUDA conformance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuda-conformance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  conformance:
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          clean: true
+          persist-credentials: false
+
+      - name: Run native CUDA conformance
+        run: scripts/run_cuda_conformance.sh build/cuda-conformance-report
+
+      - name: Upload conformance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cuda-conformance-${{ github.sha }}
+          path: build/cuda-conformance-report
+          if-no-files-found: error
+          retention-days: 90
