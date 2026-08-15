@@ -271,6 +271,13 @@ if(CM2_BUILD_TESTS)
   add_test(NAME lifecycle_conformance COMMAND cm2_lifecycle_conformance_test)
   set_tests_properties(lifecycle_conformance PROPERTIES LABELS conformance)
 
+  add_executable(cm2_trajectory_conformance_test
+    tests/conformance/trajectory_conformance_test.cpp
+  )
+  target_link_libraries(cm2_trajectory_conformance_test PRIVATE cm2::core)
+  add_test(NAME trajectory_conformance COMMAND cm2_trajectory_conformance_test)
+  set_tests_properties(trajectory_conformance PROPERTIES LABELS conformance)
+
   add_executable(cm2_contact_conformance_test
     tests/conformance/contact_conformance_test.cpp
   )

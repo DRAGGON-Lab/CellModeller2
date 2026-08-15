@@ -22,6 +22,11 @@ advertise the complete growth, species, contact, mechanics, constraint, signal,
 and coupled-rate contract. Capability guards in individual fixtures therefore
 cannot turn an omitted feature into a green feature-complete build.
 
+`trajectory_conformance` then composes those capabilities over three steps:
+coupled rates and transport, native contact and constraint geometry, fixed-cell
+mechanics, integration, and division all feed the following stage. This catches
+cross-feature failures that isolated one-step fixtures cannot expose.
+
 Every Metal-enabled test build includes `metal_runtime_gate`, which constructs
 each enumerated device and compiles every embedded MSL library. Run
 `scripts/run_metal_conformance.sh` on Apple hardware to preserve the exact

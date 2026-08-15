@@ -47,6 +47,17 @@ daughter geometry, inherited cell attributes, and simulation time are checked.
 Floating-point length and position checks use the same `1e-6` absolute and
 relative tolerances as the growth scenario; lifecycle identities are exact.
 
+## Trajectory conformance scenario
+
+The trajectory scenario composes coupled intracellular/extracellular rates,
+growth, cell and plane contacts, fixed-cell projection, mechanics relaxation,
+and equal division over three heterogeneous time steps. It compares every
+intermediate cell and signal state with a fresh CPU trajectory, requires each
+mechanics solve to converge, checks exact lineage identities, and confirms the
+final contact count. Geometry uses a `2e-3` absolute and relative tolerance,
+species use `2e-4`, and signal levels use `5e-4`; the wider bounds account for
+native solver differences feeding subsequent trajectory stages.
+
 ## Signal-grid conformance scenario
 
 The signal-grid scenario uses two fields on a 9-by-7-by-5 anisotropic lattice,
