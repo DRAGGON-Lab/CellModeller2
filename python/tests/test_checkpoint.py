@@ -12,6 +12,7 @@ from cellmodeller2 import (
     BackendKind,
     CellInit,
     CheckpointError,
+    CoupledRatePlan,
     GridShape,
     PlaneConstraintInit,
     RateInstruction,
@@ -112,6 +113,7 @@ def _assert_cells_exact(actual: Simulation, expected: Simulation) -> None:
     assert actual.species_count == expected.species_count
     assert actual.signal_count == expected.signal_count
     assert actual.has_signal_grid == expected.has_signal_grid
+    assert actual.has_coupled_rate_plan == expected.has_coupled_rate_plan
     if actual.has_signal_grid:
         assert actual.signal_levels == expected.signal_levels
     actual_cells = actual.cells()
@@ -195,12 +197,75 @@ def test_version_one_checkpoint_migrates_to_an_empty_signal_state(tmp_path: Path
     document = _document(path)
     document["version"] = 1
     del document["simulation"]["signal_grid"]
+    del document["simulation"]["coupled_rate_plan"]
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
     assert not restored.has_signal_grid
     assert restored.signal_count == 0
     assert restored.time == simulation.time
+
+
+def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v2.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 2
+    del document["simulation"]["coupled_rate_plan"]
+    _rewrite_with_state_digest(path, document)
+
+    restored = load_checkpoint(path)
+    assert restored.has_signal_grid
+    assert not restored.has_coupled_rate_plan
+    assert restored.signal_levels == simulation.signal_levels
+
+
+def test_coupled_plan_round_trip_is_exact(tmp_path: Path) -> None:
+    simulation = Simulation(species_count=1)
+    shape = GridShape()
+    shape.x = 1
+    shape.y = 1
+    shape.z = 1
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.diffusion = [0.0]
+    grid.advection = [Vec3()]
+    simulation.configure_signal_grid(grid, [2.0])
+    cell = CellInit()
+    cell.growth_rate = 0.0
+    cell.species = [1.0]
+    simulation.add_cell(cell)
+    simulation.set_coupled_rate_plan(
+        CoupledRatePlan(
+            1,
+            1,
+            [
+                _instruction(RateOp.SIGNAL, first=0),
+                _instruction(RateOp.CONSTANT, value=0.0),
+            ],
+            [0],
+            [1],
+        )
+    )
+    path = tmp_path / "coupled.cm2.json"
+    save_checkpoint(simulation, path)
+
+    document = _document(path)
+    coupled = document["simulation"]["coupled_rate_plan"]
+    assert coupled["instructions"][0]["operation"] == "signal"
+    restored = load_checkpoint(path)
+    assert restored.has_coupled_rate_plan
+    restored.step(0.5)
+    simulation.step(0.5)
+    _assert_cells_exact(restored, simulation)
+
+    invalid = _document(path)
+    invalid["simulation"]["coupled_rate_plan"]["signal_outputs"] = []
+    _rewrite_with_state_digest(path, invalid)
+    with pytest.raises(CheckpointError, match="coupled signal output count"):
+        load_checkpoint(path)
 
 
 def test_checkpoint_rejects_corruption_and_invalid_state(tmp_path: Path) -> None:

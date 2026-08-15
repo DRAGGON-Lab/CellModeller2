@@ -26,12 +26,15 @@ class Simulation {
   [[nodiscard]] std::size_t species_count() const noexcept;
   [[nodiscard]] std::size_t signal_count() const noexcept;
   [[nodiscard]] bool has_signal_grid() const noexcept;
+  [[nodiscard]] bool has_coupled_rate_plan() const noexcept;
 
   CellId add_cell(const CellInit& cell);
   ConstraintId add_plane_constraint(const PlaneConstraintInit& plane);
   ConstraintId add_sphere_constraint(const SphereConstraintInit& sphere);
   void set_species(CellId id, std::span<const float> levels);
   void set_species_rate_plan(const SpeciesRatePlan& plan);
+  void set_coupled_rate_plan(const CoupledRatePlan& plan);
+  void clear_coupled_rate_plan() noexcept;
   void configure_signal_grid(const SignalGridSpec& spec, std::vector<float> levels = {});
   void set_signal_levels(std::span<const float> levels);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
@@ -65,6 +68,7 @@ class Simulation {
   std::unique_ptr<ComputeBackend> backend_;
   SpeciesRatePlan species_rate_plan_;
   std::optional<SignalGrid> signal_grid_;
+  std::optional<CoupledRatePlan> coupled_rate_plan_;
   double time_{0.0};
 };
 

@@ -75,6 +75,8 @@ void SpeciesRatePlan::validate() const {
           throw std::invalid_argument("species rate instruction uses an unknown species");
         }
         break;
+      case RateOp::signal:
+        throw std::invalid_argument("standalone species rate plans cannot sample signals");
       case RateOp::position_x:
       case RateOp::position_y:
       case RateOp::position_z:

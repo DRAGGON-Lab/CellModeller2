@@ -473,6 +473,11 @@ class MetalBackend final : public ComputeBackend {
     grid.replace_levels(std::vector<float>(output, output + levels.size()));
   }
 
+  void advance_coupled(WorldState&, SignalGrid&, const CoupledRatePlan&, std::span<const float>,
+                       float) override {
+    throw std::runtime_error("Metal coupled rates are not implemented");
+  }
+
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
     validate_contact_parameters(parameters);

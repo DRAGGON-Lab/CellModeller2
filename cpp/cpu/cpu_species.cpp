@@ -19,6 +19,8 @@ float evaluate_instruction(const RateInstruction& instruction, std::span<const f
       return instruction.value;
     case RateOp::species:
       return species[instruction.first];
+    case RateOp::signal:
+      throw std::logic_error("standalone species rate plans cannot sample signals");
     case RateOp::position_x:
       return geometry.position_x[cell];
     case RateOp::position_y:

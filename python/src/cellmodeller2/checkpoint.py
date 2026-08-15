@@ -18,6 +18,7 @@ from typing import NoReturn, cast
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendKind,
     CellSnapshot,
+    CoupledRatePlan,
     GridBoundary,
     GridBoundaryKind,
     GridShape,
@@ -38,7 +39,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 
 CHECKPOINT_FORMAT = "cellmodeller2-checkpoint"
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 MAX_CHECKPOINT_BYTES = 1 << 30
 
 _UINT32_MAX = (1 << 32) - 1
@@ -83,6 +84,7 @@ _RATE_OP_NAMES = {
     RateOp.GREATER_EQUAL: "greater_equal",
     RateOp.EQUAL: "equal",
     RateOp.SELECT: "select",
+    RateOp.SIGNAL: "signal",
 }
 _RATE_OPS = {name: operation for operation, name in _RATE_OP_NAMES.items()}
 _SPHERE_REGION_NAMES = {
@@ -146,6 +148,31 @@ def _signal_grid_to_json(checkpoint: _SignalGridCheckpoint | None) -> JSONValue:
     }
 
 
+def _instructions_to_json(instructions: list[RateInstruction]) -> list[JSONValue]:
+    return [
+        {
+            "operation": _RATE_OP_NAMES[instruction.operation],
+            "first": instruction.first,
+            "second": instruction.second,
+            "third": instruction.third,
+            "value": instruction.value,
+        }
+        for instruction in instructions
+    ]
+
+
+def _coupled_rate_plan_to_json(plan: CoupledRatePlan | None) -> JSONValue:
+    if plan is None:
+        return None
+    return {
+        "species_count": plan.species_count,
+        "signal_count": plan.signal_count,
+        "instructions": _instructions_to_json(plan.instructions),
+        "species_outputs": list(plan.species_outputs),
+        "signal_outputs": list(plan.signal_outputs),
+    }
+
+
 def _simulation_to_json(checkpoint: _SimulationCheckpoint) -> dict[str, JSONValue]:
     cells: list[JSONValue] = []
     for cell in checkpoint.world.cells:
@@ -185,16 +212,7 @@ def _simulation_to_json(checkpoint: _SimulationCheckpoint) -> dict[str, JSONValu
         }
         for sphere in checkpoint.constraints.spheres
     ]
-    instructions: list[JSONValue] = [
-        {
-            "operation": _RATE_OP_NAMES[instruction.operation],
-            "first": instruction.first,
-            "second": instruction.second,
-            "third": instruction.third,
-            "value": instruction.value,
-        }
-        for instruction in checkpoint.species_rate_plan.instructions
-    ]
+    instructions = _instructions_to_json(checkpoint.species_rate_plan.instructions)
     return {
         "time": checkpoint.time,
         "world": {
@@ -214,6 +232,7 @@ def _simulation_to_json(checkpoint: _SimulationCheckpoint) -> dict[str, JSONValu
             "outputs": list(checkpoint.species_rate_plan.outputs),
         },
         "signal_grid": _signal_grid_to_json(checkpoint.signal_grid),
+        "coupled_rate_plan": _coupled_rate_plan_to_json(checkpoint.coupled_rate_plan),
     }
 
 
@@ -256,13 +275,16 @@ def save_checkpoint(
         "simulation": state,
     }
     try:
-        encoded = json.dumps(
-            document,
-            allow_nan=False,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        ).encode("utf-8") + b"\n"
+        encoded = (
+            json.dumps(
+                document,
+                allow_nan=False,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ).encode("utf-8")
+            + b"\n"
+        )
     except (TypeError, ValueError, RecursionError) as error:
         raise CheckpointError("checkpoint provenance is not finite JSON data") from error
 
@@ -513,15 +535,11 @@ def _signal_grid(value: object, path: str) -> _SignalGridCheckpoint | None:
     spec.spacing = _vec3(spec_data["spacing"], f"{path}.spec.spacing")
     spec.diffusion = [
         _number(item, f"{path}.spec.diffusion[{index}]", float32=True)
-        for index, item in enumerate(
-            _array(spec_data["diffusion"], f"{path}.spec.diffusion")
-        )
+        for index, item in enumerate(_array(spec_data["diffusion"], f"{path}.spec.diffusion"))
     ]
     spec.advection = [
         _vec3(item, f"{path}.spec.advection[{index}]")
-        for index, item in enumerate(
-            _array(spec_data["advection"], f"{path}.spec.advection")
-        )
+        for index, item in enumerate(_array(spec_data["advection"], f"{path}.spec.advection"))
     ]
     spec.x_lower = _boundary(boundaries["x_lower"], f"{path}.spec.boundaries.x_lower")
     spec.x_upper = _boundary(boundaries["x_upper"], f"{path}.spec.boundaries.x_upper")
@@ -539,11 +557,54 @@ def _signal_grid(value: object, path: str) -> _SignalGridCheckpoint | None:
     return checkpoint
 
 
+def _coupled_rate_plan(value: object, path: str) -> CoupledRatePlan | None:
+    if value is None:
+        return None
+    data = _object(value, path)
+    _keys(
+        data,
+        path,
+        {
+            "species_count",
+            "signal_count",
+            "instructions",
+            "species_outputs",
+            "signal_outputs",
+        },
+    )
+    species_count = _integer(data["species_count"], f"{path}.species_count", 0, _UINT64_MAX)
+    signal_count = _integer(data["signal_count"], f"{path}.signal_count", 1, _UINT64_MAX)
+    instructions = [
+        _instruction(item, f"{path}.instructions[{index}]")
+        for index, item in enumerate(_array(data["instructions"], f"{path}.instructions"))
+    ]
+    species_outputs = [
+        _integer(item, f"{path}.species_outputs[{index}]", 0, _UINT32_MAX)
+        for index, item in enumerate(_array(data["species_outputs"], f"{path}.species_outputs"))
+    ]
+    signal_outputs = [
+        _integer(item, f"{path}.signal_outputs[{index}]", 0, _UINT32_MAX)
+        for index, item in enumerate(_array(data["signal_outputs"], f"{path}.signal_outputs"))
+    ]
+    try:
+        return CoupledRatePlan(
+            species_count,
+            signal_count,
+            instructions,
+            species_outputs,
+            signal_outputs,
+        )
+    except (ValueError, OverflowError) as error:
+        raise CheckpointError(f"{path}: invalid coupled rate plan: {error}") from error
+
+
 def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpoint:
     data = _object(value, "$.simulation")
     required = {"time", "world", "constraints", "species_rate_plan"}
-    if schema_version == 2:
+    if schema_version >= 2:
         required.add("signal_grid")
+    if schema_version >= 3:
+        required.add("coupled_rate_plan")
     _keys(data, "$.simulation", required)
 
     world_data = _object(data["world"], "$.simulation.world")
@@ -552,20 +613,14 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     world.species_count = _integer(
         world_data["species_count"], "$.simulation.world.species_count", 0, _UINT64_MAX
     )
-    world.next_id = _integer(
-        world_data["next_id"], "$.simulation.world.next_id", 1, _UINT64_MAX
-    )
+    world.next_id = _integer(world_data["next_id"], "$.simulation.world.next_id", 1, _UINT64_MAX)
     world.cells = [
         _cell(item, f"$.simulation.world.cells[{index}]")
-        for index, item in enumerate(
-            _array(world_data["cells"], "$.simulation.world.cells")
-        )
+        for index, item in enumerate(_array(world_data["cells"], "$.simulation.world.cells"))
     ]
     world.lineage = [
         _lineage_entry(item, f"$.simulation.world.lineage[{index}]")
-        for index, item in enumerate(
-            _array(world_data["lineage"], "$.simulation.world.lineage")
-        )
+        for index, item in enumerate(_array(world_data["lineage"], "$.simulation.world.lineage"))
     ]
 
     constraint_data = _object(data["constraints"], "$.simulation.constraints")
@@ -620,7 +675,12 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     checkpoint.species_rate_plan = SpeciesRatePlan(plan_species_count, instructions, outputs)
     checkpoint.signal_grid = (
         _signal_grid(data["signal_grid"], "$.simulation.signal_grid")
-        if schema_version == 2
+        if schema_version >= 2
+        else None
+    )
+    checkpoint.coupled_rate_plan = (
+        _coupled_rate_plan(data["coupled_rate_plan"], "$.simulation.coupled_rate_plan")
+        if schema_version >= 3
         else None
     )
     try:
@@ -645,9 +705,7 @@ def load_checkpoint(
         if not encoded:
             raise CheckpointError("checkpoint is empty")
         if len(encoded) > MAX_CHECKPOINT_BYTES:
-            raise CheckpointError(
-                f"checkpoint exceeds the {MAX_CHECKPOINT_BYTES}-byte limit"
-            )
+            raise CheckpointError(f"checkpoint exceeds the {MAX_CHECKPOINT_BYTES}-byte limit")
     except OSError as error:
         raise CheckpointError(f"could not read checkpoint {source}") from error
 
@@ -679,7 +737,7 @@ def load_checkpoint(
     if _string(root["format"], "$.format") != CHECKPOINT_FORMAT:
         _fail("$.format", "not a CellModeller2 checkpoint")
     schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
-    if schema_version not in {1, CHECKPOINT_VERSION}:
+    if schema_version not in {1, 2, CHECKPOINT_VERSION}:
         _fail("$.version", f"unsupported checkpoint version {schema_version}")
     _object(root["producer"], "$.producer")
     _object(root["source_backend"], "$.source_backend")

@@ -37,6 +37,7 @@ enum class RateOp : std::uint8_t {
   greater_equal = 24,
   equal = 25,
   select = 26,
+  signal = 27,
 };
 
 struct RateInstruction {

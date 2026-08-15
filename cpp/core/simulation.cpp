@@ -69,6 +69,7 @@ Simulation::Simulation(BackendKind backend, const SimulationCheckpoint& checkpoi
       signal_grid_(checkpoint.signal_grid.has_value()
                        ? std::optional<SignalGrid>(SignalGrid(*checkpoint.signal_grid))
                        : std::nullopt),
+      coupled_rate_plan_(checkpoint.coupled_rate_plan),
       time_(checkpoint.time) {
   validate();
 }
@@ -91,6 +92,8 @@ std::size_t Simulation::signal_count() const noexcept {
 
 bool Simulation::has_signal_grid() const noexcept { return signal_grid_.has_value(); }
 
+bool Simulation::has_coupled_rate_plan() const noexcept { return coupled_rate_plan_.has_value(); }
+
 CellId Simulation::add_cell(const CellInit& cell) { return state_.add_cell(cell); }
 
 ConstraintId Simulation::add_plane_constraint(const PlaneConstraintInit& plane) {
@@ -112,6 +115,20 @@ void Simulation::set_species_rate_plan(const SpeciesRatePlan& plan) {
   }
   species_rate_plan_ = plan;
 }
+
+void Simulation::set_coupled_rate_plan(const CoupledRatePlan& plan) {
+  plan.validate();
+  if (!signal_grid_.has_value()) {
+    throw std::logic_error("coupled rate plan requires a signal grid");
+  }
+  if (plan.species_count() != state_.species_count() ||
+      plan.signal_count() != signal_grid_->spec().signal_count) {
+    throw std::invalid_argument("coupled rate plan counts disagree with the simulation");
+  }
+  coupled_rate_plan_ = plan;
+}
+
+void Simulation::clear_coupled_rate_plan() noexcept { coupled_rate_plan_.reset(); }
 
 void Simulation::configure_signal_grid(const SignalGridSpec& spec, std::vector<float> levels) {
   if (!state_.empty()) {
@@ -138,23 +155,34 @@ void Simulation::step(float dt) {
   if (!std::isfinite(dt) || dt < 0.0F) {
     throw std::invalid_argument("time step must be finite and non-negative");
   }
-  if (state_.species_count() != 0 && !backend_->supports(BackendFeature::species)) {
-    throw std::runtime_error("selected backend does not implement species integration");
+  const auto geometry = state_.geometry_state();
+  const std::vector<float> previous_lengths(geometry.lengths.begin(), geometry.lengths.end());
+  if (coupled_rate_plan_.has_value()) {
+    if (!backend_->supports(BackendFeature::coupled_rates)) {
+      throw std::runtime_error("selected backend does not implement coupled rates");
+    }
+    validate_coupled_step(state_, *signal_grid_, *coupled_rate_plan_, previous_lengths, dt);
+  } else {
+    if (state_.species_count() != 0 && !backend_->supports(BackendFeature::species)) {
+      throw std::runtime_error("selected backend does not implement species integration");
+    }
   }
-  if (signal_grid_.has_value()) {
+  if (signal_grid_.has_value() && !coupled_rate_plan_.has_value()) {
     if (!backend_->supports(BackendFeature::signals)) {
       throw std::runtime_error("selected backend does not implement signal grid integration");
     }
     signal_grid_->validate_step(dt);
   }
-  const auto geometry = state_.geometry_state();
-  const std::vector<float> previous_lengths(geometry.lengths.begin(), geometry.lengths.end());
   backend_->advance_growth(state_, dt);
-  if (state_.species_count() != 0) {
-    backend_->advance_species(state_, species_rate_plan_, previous_lengths, dt);
-  }
-  if (signal_grid_.has_value()) {
-    backend_->advance_signal_grid(*signal_grid_, dt);
+  if (coupled_rate_plan_.has_value()) {
+    backend_->advance_coupled(state_, *signal_grid_, *coupled_rate_plan_, previous_lengths, dt);
+  } else {
+    if (state_.species_count() != 0) {
+      backend_->advance_species(state_, species_rate_plan_, previous_lengths, dt);
+    }
+    if (signal_grid_.has_value()) {
+      backend_->advance_signal_grid(*signal_grid_, dt);
+    }
   }
   time_ += static_cast<double>(dt);
 }
@@ -233,6 +261,7 @@ SimulationCheckpoint Simulation::checkpoint() const {
       .signal_grid = signal_grid_.has_value()
                          ? std::optional<SignalGridCheckpoint>(signal_grid_->checkpoint())
                          : std::nullopt,
+      .coupled_rate_plan = coupled_rate_plan_,
   };
   result.validate();
   return result;
@@ -244,6 +273,14 @@ void Simulation::validate() const {
   species_rate_plan_.validate();
   if (signal_grid_.has_value()) {
     signal_grid_->validate();
+  }
+  if (coupled_rate_plan_.has_value()) {
+    coupled_rate_plan_->validate();
+    if (!signal_grid_.has_value() ||
+        coupled_rate_plan_->species_count() != state_.species_count() ||
+        coupled_rate_plan_->signal_count() != signal_grid_->spec().signal_count) {
+      throw std::logic_error("simulation coupled rate plan counts disagree with state");
+    }
   }
   if (!std::isfinite(time_) || time_ < 0.0) {
     throw std::logic_error("simulation time must be finite and non-negative");

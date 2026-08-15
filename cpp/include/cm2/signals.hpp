@@ -56,6 +56,14 @@ struct SignalGridCheckpoint {
   void validate() const;
 };
 
+struct SignalGridStencil {
+  std::array<std::uint32_t, 8> sites{};
+  std::array<float, 8> weights{};
+  std::uint32_t count{0};
+};
+
+[[nodiscard]] SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position);
+
 class SignalGrid {
  public:
   explicit SignalGrid(const SignalGridSpec& spec, std::vector<float> levels = {});
@@ -77,5 +85,6 @@ class SignalGrid {
 };
 
 void advance_signal_grid_cpu(SignalGrid& grid, float dt);
+[[nodiscard]] std::vector<float> signal_grid_transport_candidate(const SignalGrid& grid, float dt);
 
 }  // namespace cm2

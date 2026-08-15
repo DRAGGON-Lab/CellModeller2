@@ -21,6 +21,16 @@ void SimulationCheckpoint::validate() const {
   if (signal_grid.has_value()) {
     signal_grid->validate();
   }
+  if (coupled_rate_plan.has_value()) {
+    coupled_rate_plan->validate();
+    if (!signal_grid.has_value()) {
+      throw std::invalid_argument("checkpoint coupled rate plan requires a signal grid");
+    }
+    if (coupled_rate_plan->species_count() != world.species_count ||
+        coupled_rate_plan->signal_count() != signal_grid->spec.signal_count) {
+      throw std::invalid_argument("checkpoint coupled rate plan counts disagree with state");
+    }
+  }
 }
 
 }  // namespace cm2

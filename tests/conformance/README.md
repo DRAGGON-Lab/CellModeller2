@@ -46,6 +46,17 @@ absolute and relative tolerances of `5e-6`. An available backend is skipped
 until it advertises native signal-grid support; after that advertisement this
 executable is its hardware conformance gate.
 
+## Coupled-rate conformance scenario
+
+The coupled scenario uses 513 heterogeneous cells, three intracellular
+species, and two signals on a 9-by-7-by-5 anisotropic lattice. It combines
+post-growth dilution, fractional old-field sampling, typed species and signal
+outputs, transport, and repeated trilinear scatter destinations in one step.
+Cell state uses an absolute tolerance of `2e-5` and grid state uses `1e-4` to
+allow backend-specific floating-point accumulation order. An available backend
+is skipped until it advertises the complete native coupled operation; after
+advertisement this executable becomes its hardware gate.
+
 ## Checkpoint conformance scenario
 
 The checkpoint scenario captures a divided colony with a typed species plan,

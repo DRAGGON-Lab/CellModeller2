@@ -21,7 +21,8 @@ class CpuBackend final : public ComputeBackend {
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
     return feature == BackendFeature::growth || feature == BackendFeature::species ||
            feature == BackendFeature::cell_contacts || feature == BackendFeature::cell_mechanics ||
-           feature == BackendFeature::external_constraints || feature == BackendFeature::signals;
+           feature == BackendFeature::external_constraints || feature == BackendFeature::signals ||
+           feature == BackendFeature::coupled_rates;
   }
 
   void advance_growth(WorldState& state, float dt) override { state.advance_growth(dt); }
@@ -33,6 +34,11 @@ class CpuBackend final : public ComputeBackend {
 
   void advance_signal_grid(SignalGrid& grid, float dt) override {
     advance_signal_grid_cpu(grid, dt);
+  }
+
+  void advance_coupled(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
+                       std::span<const float> previous_lengths, float dt) override {
+    advance_coupled_cpu(state, grid, plan, previous_lengths, dt);
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,

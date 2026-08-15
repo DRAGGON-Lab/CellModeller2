@@ -343,6 +343,11 @@ class CudaBackend final : public ComputeBackend {
     grid.replace_levels(std::move(output));
   }
 
+  void advance_coupled(WorldState&, SignalGrid&, const CoupledRatePlan&, std::span<const float>,
+                       float) override {
+    throw std::runtime_error("CUDA coupled rates are not implemented");
+  }
+
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
     activate_device();

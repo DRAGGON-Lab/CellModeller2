@@ -21,6 +21,7 @@ add_library(cm2_core STATIC
   cpp/core/checkpoint.cpp
   cpp/core/contact_graph.cpp
   cpp/core/constraints.cpp
+  cpp/core/coupled_rates.cpp
   cpp/core/mechanics_integration.cpp
   cpp/core/signals.cpp
   cpp/core/species.cpp
@@ -29,6 +30,7 @@ add_library(cm2_core STATIC
   cpp/cpu/cpu_backend.cpp
   cpp/cpu/cpu_contacts.cpp
   cpp/cpu/cpu_constraints.cpp
+  cpp/cpu/cpu_coupled.cpp
   cpp/cpu/cpu_mechanics.cpp
   cpp/cpu/cpu_species.cpp
 )
@@ -204,6 +206,10 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_signal_grid_test PRIVATE cm2::core)
   add_test(NAME signal_grid COMMAND cm2_signal_grid_test)
 
+  add_executable(cm2_coupled_rates_test tests/cpp/coupled_rates_test.cpp)
+  target_link_libraries(cm2_coupled_rates_test PRIVATE cm2::core)
+  add_test(NAME coupled_rates COMMAND cm2_coupled_rates_test)
+
   add_executable(cm2_checkpoint_test tests/cpp/checkpoint_test.cpp)
   target_link_libraries(cm2_checkpoint_test PRIVATE cm2::core)
   add_test(NAME checkpoint COMMAND cm2_checkpoint_test)
@@ -227,6 +233,13 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_signal_grid_conformance_test PRIVATE cm2::core)
   add_test(NAME signal_grid_conformance COMMAND cm2_signal_grid_conformance_test)
   set_tests_properties(signal_grid_conformance PROPERTIES LABELS conformance)
+
+  add_executable(cm2_coupled_rates_conformance_test
+    tests/conformance/coupled_rates_conformance_test.cpp
+  )
+  target_link_libraries(cm2_coupled_rates_conformance_test PRIVATE cm2::core)
+  add_test(NAME coupled_rates_conformance COMMAND cm2_coupled_rates_conformance_test)
+  set_tests_properties(coupled_rates_conformance PROPERTIES LABELS conformance)
 
   add_executable(cm2_lifecycle_conformance_test
     tests/conformance/lifecycle_conformance_test.cpp

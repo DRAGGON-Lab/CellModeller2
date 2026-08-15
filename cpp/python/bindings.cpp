@@ -26,7 +26,8 @@ NB_MODULE(_core, module) {
       .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts)
       .value("CELL_MECHANICS", cm2::BackendFeature::cell_mechanics)
       .value("EXTERNAL_CONSTRAINTS", cm2::BackendFeature::external_constraints)
-      .value("SIGNALS", cm2::BackendFeature::signals);
+      .value("SIGNALS", cm2::BackendFeature::signals)
+      .value("COUPLED_RATES", cm2::BackendFeature::coupled_rates);
 
   nb::enum_<cm2::GridBoundaryKind>(module, "GridBoundaryKind")
       .value("NO_FLUX", cm2::GridBoundaryKind::no_flux)
@@ -60,7 +61,8 @@ NB_MODULE(_core, module) {
       .value("GREATER", cm2::RateOp::greater)
       .value("GREATER_EQUAL", cm2::RateOp::greater_equal)
       .value("EQUAL", cm2::RateOp::equal)
-      .value("SELECT", cm2::RateOp::select);
+      .value("SELECT", cm2::RateOp::select)
+      .value("SIGNAL", cm2::RateOp::signal);
 
   nb::enum_<cm2::SphereRegion>(module, "SphereRegion")
       .value("OUTSIDE", cm2::SphereRegion::outside)
@@ -195,6 +197,30 @@ NB_MODULE(_core, module) {
                    })
       .def("validate", &cm2::SpeciesRatePlan::validate);
 
+  nb::class_<cm2::CoupledRatePlan>(module, "CoupledRatePlan")
+      .def(nb::init<std::size_t, std::size_t, std::vector<cm2::RateInstruction>,
+                    std::vector<std::uint32_t>, std::vector<std::uint32_t>>(),
+           "species_count"_a, "signal_count"_a, "instructions"_a, "species_outputs"_a,
+           "signal_outputs"_a)
+      .def_prop_ro("species_count", &cm2::CoupledRatePlan::species_count)
+      .def_prop_ro("signal_count", &cm2::CoupledRatePlan::signal_count)
+      .def_prop_ro("instructions",
+                   [](const cm2::CoupledRatePlan& plan) {
+                     return std::vector<cm2::RateInstruction>(plan.instructions().begin(),
+                                                              plan.instructions().end());
+                   })
+      .def_prop_ro("species_outputs",
+                   [](const cm2::CoupledRatePlan& plan) {
+                     return std::vector<std::uint32_t>(plan.species_outputs().begin(),
+                                                       plan.species_outputs().end());
+                   })
+      .def_prop_ro("signal_outputs",
+                   [](const cm2::CoupledRatePlan& plan) {
+                     return std::vector<std::uint32_t>(plan.signal_outputs().begin(),
+                                                       plan.signal_outputs().end());
+                   })
+      .def("validate", &cm2::CoupledRatePlan::validate);
+
   nb::class_<cm2::ContactParameters>(module, "ContactParameters")
       .def(nb::init<>())
       .def_rw("activation_margin", &cm2::ContactParameters::activation_margin)
@@ -272,6 +298,7 @@ NB_MODULE(_core, module) {
       .def_rw("constraints", &cm2::SimulationCheckpoint::constraints)
       .def_rw("species_rate_plan", &cm2::SimulationCheckpoint::species_rate_plan)
       .def_rw("signal_grid", &cm2::SimulationCheckpoint::signal_grid)
+      .def_rw("coupled_rate_plan", &cm2::SimulationCheckpoint::coupled_rate_plan)
       .def("validate", &cm2::SimulationCheckpoint::validate);
 
   nb::class_<cm2::ConstraintContactParameters>(module, "ConstraintContactParameters")
@@ -348,6 +375,7 @@ NB_MODULE(_core, module) {
       .def_prop_ro("species_count", &cm2::Simulation::species_count)
       .def_prop_ro("signal_count", &cm2::Simulation::signal_count)
       .def_prop_ro("has_signal_grid", &cm2::Simulation::has_signal_grid)
+      .def_prop_ro("has_coupled_rate_plan", &cm2::Simulation::has_coupled_rate_plan)
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
       .def("add_plane_constraint", &cm2::Simulation::add_plane_constraint, "plane"_a)
       .def("add_sphere_constraint", &cm2::Simulation::add_sphere_constraint, "sphere"_a)
@@ -358,6 +386,8 @@ NB_MODULE(_core, module) {
           },
           "id"_a, "levels"_a)
       .def("set_species_rate_plan", &cm2::Simulation::set_species_rate_plan, "plan"_a)
+      .def("set_coupled_rate_plan", &cm2::Simulation::set_coupled_rate_plan, "plan"_a)
+      .def("clear_coupled_rate_plan", &cm2::Simulation::clear_coupled_rate_plan)
       .def("configure_signal_grid", &cm2::Simulation::configure_signal_grid, "spec"_a,
            "levels"_a = std::vector<float>{})
       .def(

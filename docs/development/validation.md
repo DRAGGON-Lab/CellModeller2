@@ -58,12 +58,24 @@ produce the same serialized simulation state.
 Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
 reservoir values, periodic upwind advection, reduced-dimensional and 3D
 trilinear samples, paired-periodic validation, explicit stability rejection,
-checkpoint round trips, and v1-to-v2 checkpoint migration. The shared
+checkpoint round trips, and v1/v2-to-v3 checkpoint migration. The shared
 anisotropic 630-value scenario executes native MSL transport on Apple GPU
 hardware and compares it with the CPU reference at `5e-6`. The independent
 CUDA transport kernel compiles and links against the CUDA 12.8 toolkit, but
 compilation and driverless test execution are not conformance; the same gate
 must execute on NVIDIA hardware.
+
+Coupled-rate CPU fixtures verify that sampling and scatter use the same
+trilinear weights, cell signal outputs are amount-per-time divided by voxel
+volume, transport samples the old field, species rates see post-growth diluted
+concentrations, invalid cell positions fail before growth, and the complete
+plan survives a v3 checkpoint round trip. Checkpoint tests separately verify
+that v1 and v2 files migrate with no coupled plan. A backend must execute the
+same coupled stage without a host fallback before advertising coupled-rate
+support.
+The shared fixture uses 513 heterogeneous cells, two signals, three species,
+anisotropic transport, fractional samples, and repeated scatter destinations;
+native implementations compare every committed value with the CPU reference.
 
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an

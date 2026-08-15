@@ -85,6 +85,25 @@ float boundary_value(const GridBoundary& boundary, std::size_t signal, float cur
 
 }  // namespace
 
+SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position) {
+  spec.validate();
+  const auto x = interpolation_axis(position.x, spec.origin.x, spec.spacing.x, spec.shape.x, "x");
+  const auto y = interpolation_axis(position.y, spec.origin.y, spec.spacing.y, spec.shape.y, "y");
+  const auto z = interpolation_axis(position.z, spec.origin.z, spec.spacing.z, spec.shape.z, "z");
+  SignalGridStencil result;
+  for (std::size_t xi = 0; xi < x.count; ++xi) {
+    for (std::size_t yi = 0; yi < y.count; ++yi) {
+      for (std::size_t zi = 0; zi < z.count; ++zi) {
+        result.sites[result.count] = static_cast<std::uint32_t>(
+            flat_site(spec.shape, x.indices[xi], y.indices[yi], z.indices[zi]));
+        result.weights[result.count] = x.weights[xi] * y.weights[yi] * z.weights[zi];
+        ++result.count;
+      }
+    }
+  }
+  return result;
+}
+
 void GridBoundary::validate(std::size_t signal_count) const {
   switch (kind) {
     case GridBoundaryKind::no_flux:
@@ -188,23 +207,12 @@ const SignalGridSpec& SignalGrid::spec() const noexcept { return spec_; }
 std::span<const float> SignalGrid::levels() const& noexcept { return levels_; }
 
 std::vector<float> SignalGrid::sample(Vec3 position) const {
-  const auto x =
-      interpolation_axis(position.x, spec_.origin.x, spec_.spacing.x, spec_.shape.x, "x");
-  const auto y =
-      interpolation_axis(position.y, spec_.origin.y, spec_.spacing.y, spec_.shape.y, "y");
-  const auto z =
-      interpolation_axis(position.z, spec_.origin.z, spec_.spacing.z, spec_.shape.z, "z");
+  const auto stencil = signal_grid_stencil(spec_, position);
   const auto sites = spec_.site_count();
   std::vector<float> result(spec_.signal_count, 0.0F);
-  for (std::size_t xi = 0; xi < x.count; ++xi) {
-    for (std::size_t yi = 0; yi < y.count; ++yi) {
-      for (std::size_t zi = 0; zi < z.count; ++zi) {
-        const auto weight = x.weights[xi] * y.weights[yi] * z.weights[zi];
-        const auto site = flat_site(spec_.shape, x.indices[xi], y.indices[yi], z.indices[zi]);
-        for (std::size_t signal = 0; signal < spec_.signal_count; ++signal) {
-          result[signal] += weight * levels_[(signal * sites) + site];
-        }
-      }
+  for (std::size_t entry = 0; entry < stencil.count; ++entry) {
+    for (std::size_t signal = 0; signal < spec_.signal_count; ++signal) {
+      result[signal] += stencil.weights[entry] * levels_[(signal * sites) + stencil.sites[entry]];
     }
   }
   return result;
@@ -257,11 +265,11 @@ void SignalGrid::validate() const {
   SignalGridCheckpoint{.spec = spec_, .levels = levels_}.validate();
 }
 
-void advance_signal_grid_cpu(SignalGrid& grid, float dt) {
+std::vector<float> signal_grid_transport_candidate(const SignalGrid& grid, float dt) {
   grid.validate();
   grid.validate_step(dt);
   if (dt == 0.0F) {
-    return;
+    return std::vector<float>(grid.levels().begin(), grid.levels().end());
   }
   const auto& spec = grid.spec();
   const auto levels = grid.levels();
@@ -340,7 +348,11 @@ void advance_signal_grid_cpu(SignalGrid& grid, float dt) {
       }
     }
   }
-  grid.replace_levels(std::move(updated));
+  return updated;
+}
+
+void advance_signal_grid_cpu(SignalGrid& grid, float dt) {
+  grid.replace_levels(signal_grid_transport_candidate(grid, dt));
 }
 
 }  // namespace cm2
