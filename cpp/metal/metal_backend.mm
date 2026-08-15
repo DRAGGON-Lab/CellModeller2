@@ -18,6 +18,7 @@
 
 #include "cm2/backend.hpp"
 #include "cm2/metal/contacts_source.hpp"
+#include "cm2/metal/coupled_rates_source.hpp"
 #include "cm2/metal/growth_source.hpp"
 #include "cm2/metal/mechanics_source.hpp"
 #include "cm2/metal/signals_source.hpp"
@@ -178,6 +179,13 @@ class MetalBackend final : public ComputeBackend {
       signals_pipeline_ = compile_pipeline(device_, signals_library, @"advance_signal_grid",
                                            "failed to create the Metal signals pipeline");
 
+      const auto coupled_library = compile_library(device_, metal::coupled_rates_source,
+                                                   "failed to compile Metal coupled rates");
+      coupled_cells_pipeline_ =
+          compile_pipeline(device_, coupled_library, @"advance_coupled_cells",
+                           "failed to create the Metal coupled-cell pipeline");
+      coupled_grid_pipeline_ = compile_pipeline(device_, coupled_library, @"advance_coupled_grid",
+                                                "failed to create the Metal coupled-grid pipeline");
       const auto contacts_library =
           compile_library(device_, metal::contacts_source, "failed to compile Metal contacts");
       contact_count_pipeline_ =
@@ -244,7 +252,8 @@ class MetalBackend final : public ComputeBackend {
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
     return feature == BackendFeature::growth || feature == BackendFeature::species ||
            feature == BackendFeature::cell_contacts || feature == BackendFeature::cell_mechanics ||
-           feature == BackendFeature::external_constraints || feature == BackendFeature::signals;
+           feature == BackendFeature::external_constraints || feature == BackendFeature::signals ||
+           feature == BackendFeature::coupled_rates;
   }
 
   void advance_growth(WorldState& state, float dt) override {
@@ -473,9 +482,179 @@ class MetalBackend final : public ComputeBackend {
     grid.replace_levels(std::vector<float>(output, output + levels.size()));
   }
 
-  void advance_coupled(WorldState&, SignalGrid&, const CoupledRatePlan&, std::span<const float>,
-                       float) override {
-    throw std::runtime_error("Metal coupled rates are not implemented");
+  void advance_coupled(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
+                       std::span<const float> previous_lengths, float dt) override {
+    validate_coupled_step(state, grid, plan, previous_lengths, dt);
+    const auto checked_product = [](std::size_t left, std::size_t right, const char* name) {
+      if (right != 0 && left > std::numeric_limits<std::size_t>::max() / right) {
+        throw std::overflow_error(std::string("Metal coupled ") + name + " size overflow");
+      }
+      return left * right;
+    };
+    const auto cell_count_size = state.size();
+    const auto species_count_size = state.species_count();
+    const auto signal_count_size = plan.signal_count();
+    const auto instruction_count_size = plan.instructions().size();
+    const auto species_level_count =
+        checked_product(cell_count_size, species_count_size, "species level");
+    const auto workspace_count =
+        checked_product(cell_count_size, instruction_count_size, "workspace");
+    const auto cell_signal_count =
+        checked_product(cell_count_size, signal_count_size, "cell signal");
+    const auto grid_level_count = grid.levels().size();
+    for (const auto count :
+         {cell_count_size, species_count_size, signal_count_size, instruction_count_size,
+          species_level_count, workspace_count, cell_signal_count, grid_level_count}) {
+      if (count > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::overflow_error("Metal coupled launch exceeds the uint32 index space");
+      }
+    }
+    ensure_coupled_capacity(cell_count_size, species_level_count, instruction_count_size,
+                            species_count_size, signal_count_size, workspace_count,
+                            cell_signal_count, grid_level_count);
+
+    const auto geometry = state.geometry_state();
+    const auto attributes = state.cell_attributes();
+    auto species_state = state.species_state();
+    const auto& spec = grid.spec();
+    const auto grid_levels = grid.levels();
+    if (!species_state.levels.empty()) {
+      std::memcpy(coupled_species_levels_.contents, species_state.levels.data(),
+                  species_state.levels.size_bytes());
+    }
+    if (!previous_lengths.empty()) {
+      std::memcpy(coupled_previous_lengths_.contents, previous_lengths.data(),
+                  previous_lengths.size_bytes());
+      std::memcpy(coupled_growth_rates_.contents, attributes.growth_rates.data(),
+                  attributes.growth_rates.size_bytes());
+      std::memcpy(coupled_cell_types_.contents, attributes.cell_types.data(),
+                  attributes.cell_types.size_bytes());
+    }
+    auto* centers = static_cast<MetalFloat4*>(coupled_centers_.contents);
+    auto* cell_geometry = static_cast<MetalFloat4*>(coupled_geometry_.contents);
+    for (std::size_t index = 0; index < cell_count_size; ++index) {
+      centers[index] = {geometry.position_x[index], geometry.position_y[index],
+                        geometry.position_z[index], 0.0F};
+      cell_geometry[index] = {geometry.lengths[index], geometry.radii[index], 0.0F, 0.0F};
+    }
+    auto* instructions = static_cast<MetalRateInstruction*>(coupled_instructions_.contents);
+    for (std::size_t index = 0; index < instruction_count_size; ++index) {
+      const auto& instruction = plan.instructions()[index];
+      instructions[index] = {
+          .operation = static_cast<std::uint32_t>(instruction.operation),
+          .first = instruction.first,
+          .second = instruction.second,
+          .third = instruction.third,
+          .value = instruction.value,
+      };
+    }
+    if (!plan.species_outputs().empty()) {
+      std::memcpy(coupled_species_outputs_.contents, plan.species_outputs().data(),
+                  plan.species_outputs().size_bytes());
+    }
+    std::memcpy(coupled_signal_outputs_.contents, plan.signal_outputs().data(),
+                plan.signal_outputs().size_bytes());
+    std::memcpy(coupled_grid_levels_.contents, grid_levels.data(), grid_levels.size_bytes());
+    std::memcpy(coupled_diffusion_.contents, spec.diffusion.data(),
+                spec.diffusion.size() * sizeof(float));
+    auto* advection = static_cast<MetalFloat4*>(coupled_advection_.contents);
+    for (std::size_t signal = 0; signal < signal_count_size; ++signal) {
+      advection[signal] = {spec.advection[signal].x, spec.advection[signal].y,
+                           spec.advection[signal].z, 0.0F};
+    }
+    const std::array<const GridBoundary*, 6> boundaries{
+        &spec.x_lower, &spec.x_upper, &spec.y_lower, &spec.y_upper, &spec.z_lower, &spec.z_upper,
+    };
+    auto* fixed_values = static_cast<float*>(coupled_fixed_values_.contents);
+    std::fill_n(fixed_values, static_cast<std::size_t>(6) * signal_count_size, 0.0F);
+    std::array<std::uint32_t, 6> boundary_kinds{};
+    for (std::size_t face = 0; face < boundaries.size(); ++face) {
+      boundary_kinds[face] = static_cast<std::uint32_t>(boundaries[face]->kind);
+      if (boundaries[face]->kind == GridBoundaryKind::fixed) {
+        std::copy(boundaries[face]->values.begin(), boundaries[face]->values.end(),
+                  fixed_values + (face * signal_count_size));
+      }
+    }
+    *static_cast<std::uint32_t*>(coupled_error_.contents) = 0;
+
+    const auto cell_count = static_cast<std::uint32_t>(cell_count_size);
+    const auto species_count = static_cast<std::uint32_t>(species_count_size);
+    const auto signal_count = static_cast<std::uint32_t>(signal_count_size);
+    const auto instruction_count = static_cast<std::uint32_t>(instruction_count_size);
+    const auto level_count = static_cast<std::uint32_t>(grid_level_count);
+    const MetalUInt4 shape{spec.shape.x, spec.shape.y, spec.shape.z,
+                           static_cast<std::uint32_t>(spec.site_count())};
+    const MetalFloat4 origin{spec.origin.x, spec.origin.y, spec.origin.z, 0.0F};
+    const MetalFloat4 spacing{spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F};
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal coupled-rate command");
+      }
+      if (cell_count != 0) {
+        [encoder setComputePipelineState:coupled_cells_pipeline_];
+        [encoder setBuffer:coupled_species_levels_ offset:0 atIndex:0];
+        [encoder setBuffer:coupled_previous_lengths_ offset:0 atIndex:1];
+        [encoder setBuffer:coupled_centers_ offset:0 atIndex:2];
+        [encoder setBuffer:coupled_geometry_ offset:0 atIndex:3];
+        [encoder setBuffer:coupled_growth_rates_ offset:0 atIndex:4];
+        [encoder setBuffer:coupled_cell_types_ offset:0 atIndex:5];
+        [encoder setBuffer:coupled_instructions_ offset:0 atIndex:6];
+        [encoder setBuffer:coupled_species_outputs_ offset:0 atIndex:7];
+        [encoder setBuffer:coupled_signal_outputs_ offset:0 atIndex:8];
+        [encoder setBuffer:coupled_workspace_ offset:0 atIndex:9];
+        [encoder setBuffer:coupled_grid_levels_ offset:0 atIndex:10];
+        [encoder setBuffer:coupled_cell_signal_rates_ offset:0 atIndex:11];
+        [encoder setBuffer:coupled_error_ offset:0 atIndex:12];
+        [encoder setBytes:&shape length:sizeof(shape) atIndex:13];
+        [encoder setBytes:&origin length:sizeof(origin) atIndex:14];
+        [encoder setBytes:&spacing length:sizeof(spacing) atIndex:15];
+        [encoder setBytes:&dt length:sizeof(dt) atIndex:16];
+        [encoder setBytes:&species_count length:sizeof(species_count) atIndex:17];
+        [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:18];
+        [encoder setBytes:&instruction_count length:sizeof(instruction_count) atIndex:19];
+        [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:20];
+        dispatch_1d(encoder, coupled_cells_pipeline_, cell_count);
+        [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      }
+
+      [encoder setComputePipelineState:coupled_grid_pipeline_];
+      [encoder setBuffer:coupled_grid_levels_ offset:0 atIndex:0];
+      [encoder setBuffer:coupled_grid_output_ offset:0 atIndex:1];
+      [encoder setBuffer:coupled_diffusion_ offset:0 atIndex:2];
+      [encoder setBuffer:coupled_advection_ offset:0 atIndex:3];
+      [encoder setBuffer:coupled_fixed_values_ offset:0 atIndex:4];
+      [encoder setBuffer:coupled_centers_ offset:0 atIndex:5];
+      [encoder setBuffer:coupled_cell_signal_rates_ offset:0 atIndex:6];
+      [encoder setBuffer:coupled_error_ offset:0 atIndex:7];
+      [encoder setBytes:boundary_kinds.data()
+                 length:boundary_kinds.size() * sizeof(std::uint32_t)
+                atIndex:8];
+      [encoder setBytes:&shape length:sizeof(shape) atIndex:9];
+      [encoder setBytes:&origin length:sizeof(origin) atIndex:10];
+      [encoder setBytes:&spacing length:sizeof(spacing) atIndex:11];
+      [encoder setBytes:&dt length:sizeof(dt) atIndex:12];
+      [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:13];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:14];
+      [encoder setBytes:&level_count length:sizeof(level_count) atIndex:15];
+      dispatch_1d(encoder, coupled_grid_pipeline_, level_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal coupled-rate command failed");
+    }
+
+    const auto error = *static_cast<const std::uint32_t*>(coupled_error_.contents);
+    if (error != 0) {
+      throw std::domain_error("Metal coupled-rate kernel produced an invalid value");
+    }
+    const auto* output = static_cast<const float*>(coupled_grid_output_.contents);
+    std::vector<float> next_grid(output, output + grid_level_count);
+    SignalGridCheckpoint{.spec = spec, .levels = next_grid}.validate();
+    if (!species_state.levels.empty()) {
+      std::memcpy(species_state.levels.data(), coupled_species_levels_.contents,
+                  species_state.levels.size_bytes());
+    }
+    grid.replace_levels(std::move(next_grid));
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -731,6 +910,81 @@ class MetalBackend final : public ComputeBackend {
     if (signal_error_ == nil) {
       signal_error_ =
           allocate_shared_buffer(device_, sizeof(std::uint32_t), "signal-grid error flag");
+    }
+  }
+
+  void ensure_coupled_capacity(std::size_t cell_count, std::size_t species_level_count,
+                               std::size_t instruction_count, std::size_t species_count,
+                               std::size_t signal_count, std::size_t workspace_count,
+                               std::size_t cell_signal_count, std::size_t grid_level_count) {
+    const auto at_least_one = [](std::size_t count) { return std::max<std::size_t>(count, 1); };
+    const auto requested_cells = at_least_one(cell_count);
+    if (requested_cells > coupled_cell_capacity_) {
+      coupled_cell_capacity_ = std::bit_ceil(requested_cells);
+      coupled_previous_lengths_ = allocate_shared_buffer(
+          device_, coupled_cell_capacity_ * sizeof(float), "coupled previous lengths");
+      coupled_centers_ = allocate_shared_buffer(
+          device_, coupled_cell_capacity_ * sizeof(MetalFloat4), "coupled cell centers");
+      coupled_geometry_ = allocate_shared_buffer(
+          device_, coupled_cell_capacity_ * sizeof(MetalFloat4), "coupled cell geometry");
+      coupled_growth_rates_ = allocate_shared_buffer(
+          device_, coupled_cell_capacity_ * sizeof(float), "coupled growth rates");
+      coupled_cell_types_ = allocate_shared_buffer(
+          device_, coupled_cell_capacity_ * sizeof(std::int32_t), "coupled cell types");
+    }
+    const auto requested_species_levels = at_least_one(species_level_count);
+    if (requested_species_levels > coupled_species_level_capacity_) {
+      coupled_species_level_capacity_ = std::bit_ceil(requested_species_levels);
+      coupled_species_levels_ = allocate_shared_buffer(
+          device_, coupled_species_level_capacity_ * sizeof(float), "coupled species levels");
+    }
+    const auto requested_instructions = at_least_one(instruction_count);
+    if (requested_instructions > coupled_instruction_capacity_) {
+      coupled_instruction_capacity_ = std::bit_ceil(requested_instructions);
+      coupled_instructions_ = allocate_shared_buffer(
+          device_, coupled_instruction_capacity_ * sizeof(MetalRateInstruction),
+          "coupled rate instructions");
+    }
+    const auto requested_species_outputs = at_least_one(species_count);
+    if (requested_species_outputs > coupled_species_output_capacity_) {
+      coupled_species_output_capacity_ = std::bit_ceil(requested_species_outputs);
+      coupled_species_outputs_ =
+          allocate_shared_buffer(device_, coupled_species_output_capacity_ * sizeof(std::uint32_t),
+                                 "coupled species outputs");
+    }
+    const auto requested_signal_outputs = at_least_one(signal_count);
+    if (requested_signal_outputs > coupled_signal_output_capacity_) {
+      coupled_signal_output_capacity_ = std::bit_ceil(requested_signal_outputs);
+      coupled_signal_outputs_ =
+          allocate_shared_buffer(device_, coupled_signal_output_capacity_ * sizeof(std::uint32_t),
+                                 "coupled signal outputs");
+      coupled_diffusion_ = allocate_shared_buffer(
+          device_, coupled_signal_output_capacity_ * sizeof(float), "coupled diffusion");
+      coupled_advection_ = allocate_shared_buffer(
+          device_, coupled_signal_output_capacity_ * sizeof(MetalFloat4), "coupled advection");
+      coupled_fixed_values_ = allocate_shared_buffer(
+          device_, 6 * coupled_signal_output_capacity_ * sizeof(float), "coupled boundary values");
+    }
+    const auto requested_workspace = at_least_one(workspace_count);
+    if (requested_workspace > coupled_workspace_capacity_) {
+      coupled_workspace_capacity_ = std::bit_ceil(requested_workspace);
+      coupled_workspace_ = allocate_shared_buffer(
+          device_, coupled_workspace_capacity_ * sizeof(float), "coupled workspace");
+    }
+    const auto requested_cell_signals = at_least_one(cell_signal_count);
+    if (requested_cell_signals > coupled_cell_signal_capacity_) {
+      coupled_cell_signal_capacity_ = std::bit_ceil(requested_cell_signals);
+      coupled_cell_signal_rates_ = allocate_shared_buffer(
+          device_, coupled_cell_signal_capacity_ * sizeof(float), "coupled cell signal rates");
+    }
+    if (grid_level_count > coupled_grid_level_capacity_) {
+      coupled_grid_level_capacity_ = std::bit_ceil(grid_level_count);
+      const auto byte_count = coupled_grid_level_capacity_ * sizeof(float);
+      coupled_grid_levels_ = allocate_shared_buffer(device_, byte_count, "coupled grid levels");
+      coupled_grid_output_ = allocate_shared_buffer(device_, byte_count, "coupled grid output");
+    }
+    if (coupled_error_ == nil) {
+      coupled_error_ = allocate_shared_buffer(device_, sizeof(std::uint32_t), "coupled error flag");
     }
   }
 
@@ -1439,6 +1693,8 @@ class MetalBackend final : public ComputeBackend {
   id<MTLComputePipelineState> growth_pipeline_{nil};
   id<MTLComputePipelineState> species_pipeline_{nil};
   id<MTLComputePipelineState> signals_pipeline_{nil};
+  id<MTLComputePipelineState> coupled_cells_pipeline_{nil};
+  id<MTLComputePipelineState> coupled_grid_pipeline_{nil};
   id<MTLComputePipelineState> contact_count_pipeline_{nil};
   id<MTLComputePipelineState> contact_scan_pipeline_{nil};
   id<MTLComputePipelineState> contact_fill_pipeline_{nil};
@@ -1483,6 +1739,32 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> signal_error_{nil};
   std::size_t signal_level_capacity_{0};
   std::size_t signal_count_capacity_{0};
+
+  id<MTLBuffer> coupled_species_levels_{nil};
+  id<MTLBuffer> coupled_previous_lengths_{nil};
+  id<MTLBuffer> coupled_centers_{nil};
+  id<MTLBuffer> coupled_geometry_{nil};
+  id<MTLBuffer> coupled_growth_rates_{nil};
+  id<MTLBuffer> coupled_cell_types_{nil};
+  id<MTLBuffer> coupled_instructions_{nil};
+  id<MTLBuffer> coupled_species_outputs_{nil};
+  id<MTLBuffer> coupled_signal_outputs_{nil};
+  id<MTLBuffer> coupled_workspace_{nil};
+  id<MTLBuffer> coupled_cell_signal_rates_{nil};
+  id<MTLBuffer> coupled_grid_levels_{nil};
+  id<MTLBuffer> coupled_grid_output_{nil};
+  id<MTLBuffer> coupled_diffusion_{nil};
+  id<MTLBuffer> coupled_advection_{nil};
+  id<MTLBuffer> coupled_fixed_values_{nil};
+  id<MTLBuffer> coupled_error_{nil};
+  std::size_t coupled_cell_capacity_{0};
+  std::size_t coupled_species_level_capacity_{0};
+  std::size_t coupled_instruction_capacity_{0};
+  std::size_t coupled_species_output_capacity_{0};
+  std::size_t coupled_signal_output_capacity_{0};
+  std::size_t coupled_workspace_capacity_{0};
+  std::size_t coupled_cell_signal_capacity_{0};
+  std::size_t coupled_grid_level_capacity_{0};
 
   id<MTLBuffer> contact_ids_{nil};
   id<MTLBuffer> contact_centers_{nil};

@@ -76,6 +76,10 @@ support.
 The shared fixture uses 513 heterogeneous cells, two signals, three species,
 anisotropic transport, fractional samples, and repeated scatter destinations;
 native implementations compare every committed value with the CPU reference.
+The native Metal stage passes that fixture on Apple GPU hardware. It evaluates
+cells and gathers grid sources in two MSL kernels within one command buffer;
+the grid-thread gather is deterministic and avoids a floating-point atomic
+requirement while keeping intermediate samples and rates device-resident.
 
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an

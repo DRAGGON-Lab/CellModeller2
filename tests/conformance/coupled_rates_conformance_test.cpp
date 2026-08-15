@@ -23,6 +23,12 @@ cm2::Simulation make_reference() {
   grid.spacing = {0.75F, 1.25F, 2.0F};
   grid.diffusion = {0.08F, 0.03F};
   grid.advection = {{0.05F, -0.02F, 0.01F}, {-0.03F, 0.04F, -0.01F}};
+  grid.x_lower.kind = cm2::GridBoundaryKind::periodic;
+  grid.x_upper.kind = cm2::GridBoundaryKind::periodic;
+  grid.z_lower.kind = cm2::GridBoundaryKind::fixed;
+  grid.z_lower.values = {0.9F, 1.1F};
+  grid.z_upper.kind = cm2::GridBoundaryKind::fixed;
+  grid.z_upper.values = {1.2F, 1.0F};
   std::vector<float> levels(grid.level_count());
   for (std::size_t index = 0; index < levels.size(); ++index) {
     levels[index] = 1.0F + (0.002F * static_cast<float>(index % 113));

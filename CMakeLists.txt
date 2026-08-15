@@ -52,6 +52,7 @@ if(CM2_ENABLE_METAL)
   set(CM2_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
   set(CM2_METAL_GROWTH_HEADER "${CM2_GENERATED_DIR}/cm2/metal/growth_source.hpp")
   set(CM2_METAL_CONTACTS_HEADER "${CM2_GENERATED_DIR}/cm2/metal/contacts_source.hpp")
+  set(CM2_METAL_COUPLED_RATES_HEADER "${CM2_GENERATED_DIR}/cm2/metal/coupled_rates_source.hpp")
   set(CM2_METAL_MECHANICS_HEADER "${CM2_GENERATED_DIR}/cm2/metal/mechanics_source.hpp")
   set(CM2_METAL_SIGNALS_HEADER "${CM2_GENERATED_DIR}/cm2/metal/signals_source.hpp")
   set(CM2_METAL_SPECIES_HEADER "${CM2_GENERATED_DIR}/cm2/metal/species_source.hpp")
@@ -76,6 +77,18 @@ if(CM2_ENABLE_METAL)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMetalSource.cmake"
     DEPENDS
       cpp/metal/kernels/contacts.metal
+      cmake/EmbedMetalSource.cmake
+    VERBATIM
+  )
+  add_custom_command(
+    OUTPUT "${CM2_METAL_COUPLED_RATES_HEADER}"
+    COMMAND "${CMAKE_COMMAND}"
+      "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/cpp/metal/kernels/coupled_rates.metal"
+      "-DOUTPUT=${CM2_METAL_COUPLED_RATES_HEADER}"
+      "-DSYMBOL=coupled_rates_source"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMetalSource.cmake"
+    DEPENDS
+      cpp/metal/kernels/coupled_rates.metal
       cmake/EmbedMetalSource.cmake
     VERBATIM
   )
@@ -119,6 +132,7 @@ if(CM2_ENABLE_METAL)
   target_sources(cm2_core PRIVATE
     cpp/metal/metal_backend.mm
     "${CM2_METAL_CONTACTS_HEADER}"
+    "${CM2_METAL_COUPLED_RATES_HEADER}"
     "${CM2_METAL_GROWTH_HEADER}"
     "${CM2_METAL_MECHANICS_HEADER}"
     "${CM2_METAL_SIGNALS_HEADER}"
