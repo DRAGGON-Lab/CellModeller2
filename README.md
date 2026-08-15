@@ -307,3 +307,6 @@ The trusted one-way snapshot boundary is specified in the
 The independent interactive-viewer boundary is specified in
 [ADR 0012](docs/architecture/0012-viewer-boundary.md) and grounded in the
 [legacy viewer audit](docs/compatibility/legacy-viewer-audit.md).
+The columnar analysis boundary is specified in
+[ADR 0013](docs/architecture/0013-analysis-datasets.md) and grounded in the
+[legacy analysis audit](docs/compatibility/legacy-analysis-audit.md).
