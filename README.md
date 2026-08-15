@@ -125,6 +125,23 @@ The importer uses libSBML for parsing and consistency diagnostics. It accepts
 the explicit subset in [ADR 0011](docs/architecture/0011-sbml-import.md) and
 fails on unsupported semantics; it never generates or evaluates source code.
 
+## Export a viewer scene
+
+Capture presentation data without exposing engine or device memory to the
+viewer:
+
+```python
+from cellmodeller2 import capture_scene, save_scene
+
+frame = capture_scene(simulation)
+save_scene(frame, "colony.cm2.scene.json")
+```
+
+Scene v1 preserves rods, stable IDs and active lineage parents, scalar cell
+fields, every species channel, and an optional signaling grid. It is strict,
+integrity-checked JSON and intentionally cannot resume a simulation. The
+[scene format](docs/formats/scene-v1.md) defines its complete wire layout.
+
 `backend_device_count(kind)` enumerates native devices and every `Simulation`
 constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
 not inherit mutable process-thread device selection, and Metal does not

@@ -62,10 +62,29 @@ from .runner import (
     run_simulation,
 )
 from .sbml import SBMLImportError, SBMLRateModel, load_sbml, parse_sbml
+from .scene import (
+    MAX_SCENE_BYTES,
+    SCENE_FORMAT,
+    SCENE_VERSION,
+    SceneBackend,
+    SceneCell,
+    SceneError,
+    SceneFrame,
+    SceneGridBoundary,
+    SceneSignalGrid,
+    capture_scene,
+    dumps_scene,
+    load_scene,
+    parse_scene,
+    save_scene,
+)
 
 __all__ = [
     "CHECKPOINT_FORMAT",
     "CHECKPOINT_VERSION",
+    "MAX_SCENE_BYTES",
+    "SCENE_FORMAT",
+    "SCENE_VERSION",
     "BackendFeature",
     "BackendInfo",
     "BackendKind",
@@ -104,6 +123,12 @@ __all__ = [
     "RunnableModel",
     "SBMLImportError",
     "SBMLRateModel",
+    "SceneBackend",
+    "SceneCell",
+    "SceneError",
+    "SceneFrame",
+    "SceneGridBoundary",
+    "SceneSignalGrid",
     "SignalGridSpec",
     "SignalIntegrationKind",
     "SignalSolveParameters",
@@ -120,14 +145,19 @@ __all__ = [
     "backend_device_count",
     "build_legacy_model",
     "build_model",
+    "capture_scene",
+    "dumps_scene",
     "import_legacy_pickle",
     "load_checkpoint",
     "load_checkpoint_bundle",
     "load_sbml",
+    "load_scene",
     "parse_sbml",
+    "parse_scene",
     "resume_legacy_model",
     "run_simulation",
     "save_checkpoint",
+    "save_scene",
 ]
 
 __version__ = "0.1.0"

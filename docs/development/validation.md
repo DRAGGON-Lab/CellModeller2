@@ -49,6 +49,13 @@ unresolved valid SBML symbols. These tests validate the semantic compiler;
 the existing 513-cell species fixture remains the scaling and native-device
 interpreter gate.
 
+Scene fixtures capture the same rod, lineage, species, and signal-grid state
+from every available backend and compare the presentation semantics after
+normalizing the expected backend identity fields. Format tests cover exact
+round trips, atomic writes, SHA-256 tamper detection, closed schemas, malformed
+input, float32 geometry invariants, grid cardinality, and unsigned 64-bit IDs
+beyond JavaScript's exact integer range.
+
 Checkpoint fixtures compare every persisted field exactly before taking a
 resumed step. They then continue the same typed species model on each available
 backend and compare with a fresh CPU restore under the species tolerance. File
