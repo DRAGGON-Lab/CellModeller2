@@ -222,18 +222,24 @@ CellId WorldState::add_cell(const CellInit& cell) {
   return id;
 }
 
-std::pair<CellId, CellId> WorldState::divide_equal(CellId parent_id) {
+std::pair<CellId, CellId> WorldState::divide(CellId parent_id, float first_fraction) {
+  if (!std::isfinite(first_fraction) || first_fraction <= 0.0F || first_fraction >= 1.0F) {
+    throw std::invalid_argument("first daughter fraction must be finite and between zero and one");
+  }
   const auto parent = cell(parent_id);
-  const auto daughter_length = (parent.length * 0.5F) - parent.radius;
-  if (!(daughter_length >= 0.0F)) {
+  const auto available_length = parent.length - (2.0F * parent.radius);
+  if (!(available_length >= 0.0F)) {
     throw std::domain_error("parent is too short to divide into valid daughters");
   }
 
-  const auto offset = parent.direction * ((daughter_length * 0.5F) + parent.radius);
-  CellInit daughter{
-      .position = parent.position - offset,
+  const auto first_length = available_length * first_fraction;
+  const auto second_length = available_length - first_length;
+  const auto first_offset = parent.direction * ((parent.length - first_length) * 0.5F);
+  const auto second_offset = parent.direction * ((parent.length - second_length) * 0.5F);
+  CellInit first_daughter{
+      .position = parent.position - first_offset,
       .direction = parent.direction,
-      .length = daughter_length,
+      .length = first_length,
       .radius = parent.radius,
       .growth_rate = parent.growth_rate,
       .cell_type = parent.cell_type,
@@ -245,12 +251,18 @@ std::pair<CellId, CellId> WorldState::divide_equal(CellId parent_id) {
   const auto parent_slot = parent.slot;
 
   id_to_slot_.erase(parent_id);
-  replace(parent_slot, first_id, daughter);
-  daughter.position = parent.position + offset;
-  append(second_id, daughter);
+  replace(parent_slot, first_id, first_daughter);
+  auto second_daughter = first_daughter;
+  second_daughter.position = parent.position + second_offset;
+  second_daughter.length = second_length;
+  append(second_id, second_daughter);
   lineage_[first_id] = parent_id;
   lineage_[second_id] = parent_id;
   return {first_id, second_id};
+}
+
+std::pair<CellId, CellId> WorldState::divide_equal(CellId parent_id) {
+  return divide(parent_id, 0.5F);
 }
 
 void WorldState::advance_growth(float dt) {

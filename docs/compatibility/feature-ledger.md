@@ -6,7 +6,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | Priority | Feature | Legacy source | Intended CellModeller2 behavior | Status |
 |---|---|---|---|---|
 | P0 | Stable IDs and compact slots | `Simulator` | IDs never alias slots; division records lineage | CPU and Metal conformant; CUDA hardware validation pending |
-| P0 | Cell creation and division | `Simulator`, `CLBacterium` | deterministic equal division first; asymmetric and jitter policies follow | equal division conformant on CPU and Metal; CUDA hardware validation pending |
+| P0 | Cell creation and division | `Simulator`, `CLBacterium` | deterministic equal and fractional division with explicit jitter policy | equal and asymmetric division conformant on CPU and Metal; CUDA hardware validation pending |
 | P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | CPU and Metal conformant; CUDA hardware validation pending |
 | P0 | 2D/3D rod mechanics | `CLBacterium` | typed contact graph, diagnosed solve, and bounded correction integration | CPU and Metal solve/integration conformant; CUDA builds with hardware validation pending |
 | P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic incidence graph; no silent contact cap | CPU and Metal exhaustive geometry conformant; CUDA builds with hardware validation pending; scalable broad phase pending |

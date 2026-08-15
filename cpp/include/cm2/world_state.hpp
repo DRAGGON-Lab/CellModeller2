@@ -95,6 +95,7 @@ class WorldState {
   [[nodiscard]] std::size_t species_count() const noexcept;
 
   CellId add_cell(const CellInit& cell);
+  std::pair<CellId, CellId> divide(CellId parent_id, float first_fraction);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void advance_growth(float dt);
   void set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, float length);

@@ -41,9 +41,12 @@ randomized founder construction cannot consume future runtime draws. Mutable
 module globals other than this controlled random binding are not checkpointed;
 evolving model state must live on cells or in native arrays. Callback attempts
 to mutate position, direction, length, or radius fail explicitly.
-Equal division is supported, including an explicitly seeded compatibility
-policy for the legacy per-daughter direction jitter; asymmetric division fails
-explicitly until its native lifecycle contract is implemented.
+Equal and asymmetric division are supported, including an explicitly seeded
+compatibility policy for the legacy per-daughter direction jitter. The adapter
+normalizes the two positive `cell.asymm` weights into the native daughter
+fraction. This implements the legacy API's dormant intent; the old
+`CLBacterium` accepted `f1` and `f2` but discarded them before geometry was
+updated.
 
 OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not accepted or
 translated. Those models must express equations as `SpeciesRatePlan` or

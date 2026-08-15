@@ -89,6 +89,19 @@ void run_lifecycle_scenario(cm2::BackendKind backend) {
   assert(std::abs(simulation.time() - expected_time) <= 1.0e-12);
   assert(simulation.backend_info().kind == backend);
   simulation.validate();
+
+  cm2::Simulation asymmetric(backend);
+  initial.length = 6.0F;
+  initial.radius = 0.5F;
+  const auto asymmetric_parent = asymmetric.add_cell(initial);
+  const auto [short_daughter, long_daughter] = asymmetric.divide(asymmetric_parent, 0.25F);
+  assert(close(asymmetric.cell(short_daughter).length, 1.25F));
+  assert(close(asymmetric.cell(long_daughter).length, 3.75F));
+  assert(close(asymmetric.cell(short_daughter).position.x, -0.375F));
+  assert(close(asymmetric.cell(long_daughter).position.x, 3.125F));
+  assert(asymmetric.lineage_parent(short_daughter) == asymmetric_parent);
+  assert(asymmetric.lineage_parent(long_daughter) == asymmetric_parent);
+  asymmetric.validate();
 }
 
 }  // namespace

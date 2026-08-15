@@ -196,5 +196,7 @@ The command-line model and batch-run contract is specified in
 The grid transport and conservative cell-coupling contract is specified in
 [ADR 0006](docs/architecture/0006-grid-signaling.md) and grounded in the
 [legacy signaling audit](docs/compatibility/legacy-signaling-audit.md).
+The equal and asymmetric lifecycle geometry is specified in
+[ADR 0007](docs/architecture/0007-division.md).
 The host callback compatibility boundary is grounded in the
 [legacy Python model audit](docs/compatibility/legacy-python-models.md).

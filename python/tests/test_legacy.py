@@ -101,7 +101,7 @@ def test_legacy_callback_changes_are_validated_before_native_updates() -> None:
     assert simulation.cell(cell_id).growth_rate == 1.0
 
 
-def test_legacy_adapter_rejects_geometry_mutation_and_asymmetric_division() -> None:
+def test_legacy_adapter_rejects_geometry_mutation() -> None:
     def initialize(cell: LegacyCell) -> None:
         cell.targetVol = 1.0
 
@@ -115,19 +115,6 @@ def test_legacy_adapter_rejects_geometry_mutation_and_asymmetric_division() -> N
     adapter.add_cell(CellInit())
     with pytest.raises(LegacyCompatibilityError, match="may not mutate"):
         adapter.step(0.1)
-
-    def request_asymmetry(cells: dict[int, LegacyCell]) -> None:
-        cell = next(iter(cells.values()))
-        cell.divideFlag = True
-        cell.asymm = [0.8, 1.0]
-
-    second_simulation = Simulation()
-    second_adapter = LegacyModelAdapter(
-        second_simulation, init=initialize, update=request_asymmetry, mechanics=False
-    )
-    second_adapter.add_cell(CellInit())
-    with pytest.raises(LegacyCompatibilityError, match="asymmetric"):
-        second_adapter.step(0.1)
 
 
 def test_legacy_division_jitter_is_explicit_and_seeded() -> None:
@@ -215,3 +202,51 @@ def test_legacy_controller_state_resumes_attributes_and_random_stream(tmp_path: 
         assert original_cell.direction.x == restored_cell.direction.x
         assert original_cell.direction.y == restored_cell.direction.y
         assert original_cell.direction.z == restored_cell.direction.z
+
+
+def test_legacy_asymm_weights_drive_native_division() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.asymm = [1.0, 3.0]
+
+    def divide_immediately(cells: dict[int, LegacyCell]) -> None:
+        next(iter(cells.values())).divideFlag = True
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=divide_immediately,
+        mechanics=False,
+    )
+    initial = CellInit()
+    initial.length = 6.0
+    adapter.add_cell(initial)
+    adapter.step(0.0)
+
+    daughters = simulation.cells()
+    assert [cell.length for cell in daughters] == [1.25, 3.75]
+    assert math.isclose(daughters[0].position.x, -2.375)
+    assert math.isclose(daughters[1].position.x, 1.125)
+
+
+def test_legacy_asymm_weights_fail_explicitly() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.asymm = [0.0, 1.0]
+
+    def divide_immediately(cells: dict[int, LegacyCell]) -> None:
+        next(iter(cells.values())).divideFlag = True
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=divide_immediately,
+        mechanics=False,
+    )
+    initial = CellInit()
+    initial.length = 6.0
+    adapter.add_cell(initial)
+
+    with pytest.raises(LegacyCompatibilityError, match="positive weights"):
+        adapter.step(0.0)
+    assert simulation.cell_count == 1

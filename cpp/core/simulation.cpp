@@ -155,6 +155,10 @@ void Simulation::set_signal_levels(std::span<const float> levels) {
   signal_grid_->set_levels(levels);
 }
 
+std::pair<CellId, CellId> Simulation::divide(CellId parent_id, float first_fraction) {
+  return state_.divide(parent_id, first_fraction);
+}
+
 std::pair<CellId, CellId> Simulation::divide_equal(CellId parent_id) {
   return state_.divide_equal(parent_id);
 }

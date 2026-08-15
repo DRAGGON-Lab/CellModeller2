@@ -67,6 +67,59 @@ void test_division_reuses_slot_but_not_identity() {
   simulation.validate();
 }
 
+void test_asymmetric_division_preserves_capsule_extent() {
+  cm2::Simulation simulation(cm2::BackendKind::cpu, 0, 2);
+  cm2::CellInit initial;
+  initial.position = {2.0F, 3.0F, 0.0F};
+  initial.direction = {2.0F, 0.0F, 0.0F};
+  initial.length = 6.0F;
+  initial.radius = 0.5F;
+  initial.species = {2.0F, 3.0F};
+
+  const auto parent = simulation.add_cell(initial);
+  const auto [first, second] = simulation.divide(parent, 0.25F);
+  const auto first_cell = simulation.cell(first);
+  const auto second_cell = simulation.cell(second);
+
+  assert(close(first_cell.length, 1.25F));
+  assert(close(second_cell.length, 3.75F));
+  assert(close(first_cell.position.x, -0.375F));
+  assert(close(second_cell.position.x, 3.125F));
+  assert(first_cell.species == initial.species);
+  assert(second_cell.species == initial.species);
+  assert(close(first_cell.position.x - (first_cell.length * 0.5F), -1.0F));
+  assert(close(second_cell.position.x + (second_cell.length * 0.5F), 5.0F));
+  assert(close(
+      (second_cell.position.x - (second_cell.length * 0.5F)) -
+          (first_cell.position.x + (first_cell.length * 0.5F)),
+      1.0F));
+  assert(simulation.lineage_parent(first) == parent);
+  assert(simulation.lineage_parent(second) == parent);
+  simulation.validate();
+}
+
+void test_invalid_division_fraction_is_atomic() {
+  cm2::Simulation simulation;
+  cm2::CellInit initial;
+  initial.length = 6.0F;
+  const auto parent = simulation.add_cell(initial);
+
+  for (const auto fraction : {0.0F, 1.0F, -0.25F, 1.25F,
+                              std::numeric_limits<float>::quiet_NaN()}) {
+    bool rejected = false;
+    try {
+      static_cast<void>(simulation.divide(parent, fraction));
+    } catch (const std::invalid_argument&) {
+      rejected = true;
+    }
+    assert(rejected);
+    assert(simulation.cell_count() == 1);
+    assert(simulation.cell(parent).slot == 0);
+    assert(close(simulation.cell(parent).length, 6.0F));
+  }
+  simulation.validate();
+}
+
 void test_invalid_state_fails_explicitly() {
   cm2::Simulation simulation;
   cm2::CellInit invalid;
@@ -162,6 +215,8 @@ void test_unavailable_backends_do_not_fall_back() {
 int main() {
   test_growth_uses_stable_ids();
   test_division_reuses_slot_but_not_identity();
+  test_asymmetric_division_preserves_capsule_extent();
+  test_invalid_division_fraction_is_atomic();
   test_invalid_state_fails_explicitly();
   test_mutable_cell_attributes_keep_stable_identity();
   test_geometry_can_be_updated_by_stable_id();

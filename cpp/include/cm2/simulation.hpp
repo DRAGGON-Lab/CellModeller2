@@ -39,6 +39,7 @@ class Simulation {
   void clear_coupled_rate_plan() noexcept;
   void configure_signal_grid(const SignalGridSpec& spec, std::vector<float> levels = {});
   void set_signal_levels(std::span<const float> levels);
+  std::pair<CellId, CellId> divide(CellId parent_id, float first_fraction);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void step(float dt);
   [[nodiscard]] ContactGraph find_cell_contacts(

@@ -71,6 +71,47 @@ def test_growth_and_division_preserve_declared_semantics(backend: BackendKind) -
 
 
 @pytest.mark.parametrize("backend", list(BackendKind))
+def test_asymmetric_division_preserves_capsule_extent(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+
+    simulation = Simulation(backend)
+    initial = CellInit()
+    initial.position = Vec3(2.0, 3.0, 0.0)
+    initial.direction = Vec3(2.0, 0.0, 0.0)
+    initial.length = 6.0
+    initial.radius = 0.5
+    parent = simulation.add_cell(initial)
+
+    first, second = simulation.divide(parent, 0.25)
+    first_cell = simulation.cell(first)
+    second_cell = simulation.cell(second)
+    assert math.isclose(first_cell.length, 1.25)
+    assert math.isclose(second_cell.length, 3.75)
+    assert math.isclose(first_cell.position.x, -0.375)
+    assert math.isclose(second_cell.position.x, 3.125)
+    assert math.isclose(
+        (second_cell.position.x - second_cell.length * 0.5)
+        - (first_cell.position.x + first_cell.length * 0.5),
+        2.0 * initial.radius,
+    )
+    simulation.validate()
+
+
+@pytest.mark.parametrize("fraction", [0.0, 1.0, -0.1, 1.1, math.nan, math.inf])
+def test_asymmetric_division_rejects_invalid_fraction_atomically(fraction: float) -> None:
+    simulation = Simulation()
+    initial = CellInit()
+    initial.length = 6.0
+    parent = simulation.add_cell(initial)
+
+    with pytest.raises(ValueError, match="fraction"):
+        simulation.divide(parent, fraction)
+    assert simulation.cell_count == 1
+    assert simulation.cell(parent).length == 6.0
+
+
+@pytest.mark.parametrize("backend", list(BackendKind))
 def test_unavailable_backend_fails_instead_of_falling_back(backend: BackendKind) -> None:
     if backend_available(backend):
         Simulation(backend)

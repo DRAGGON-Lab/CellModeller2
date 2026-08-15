@@ -407,6 +407,7 @@ NB_MODULE(_core, module) {
             simulation.set_signal_levels(levels);
           },
           "levels"_a)
+      .def("divide", &cm2::Simulation::divide, "parent_id"_a, "first_fraction"_a)
       .def("divide_equal", &cm2::Simulation::divide_equal, "parent_id"_a)
       .def("step", &cm2::Simulation::step, "dt"_a)
       .def("find_cell_contacts", &cm2::Simulation::find_cell_contacts,

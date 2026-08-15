@@ -92,6 +92,33 @@ def _ends(
     )
 
 
+def _division_fraction(value: object) -> float:
+    try:
+        weights = list(cast(Any, value))
+    except TypeError as error:
+        raise LegacyCompatibilityError("legacy asymm must contain two positive weights") from error
+    if len(weights) != 2:
+        raise LegacyCompatibilityError("legacy asymm must contain two positive weights")
+    try:
+        first = float(weights[0])
+        second = float(weights[1])
+    except (TypeError, ValueError, OverflowError) as error:
+        raise LegacyCompatibilityError("legacy asymm must contain two positive weights") from error
+    total = first + second
+    if (
+        not math.isfinite(first)
+        or not math.isfinite(second)
+        or not math.isfinite(total)
+        or first <= 0.0
+        or second <= 0.0
+    ):
+        raise LegacyCompatibilityError("legacy asymm must contain two finite positive weights")
+    fraction = first / total
+    if fraction <= 0.0 or fraction >= 1.0:
+        raise LegacyCompatibilityError("legacy asymm weights cannot produce a valid split")
+    return fraction
+
+
 def _encoded(value: object, path: str) -> JSONValue:
     if value is None or isinstance(value, str | bool | int):
         return value
@@ -485,10 +512,9 @@ class LegacyModelAdapter:
 
     def _divide_cell(self, parent_id: int) -> None:
         parent = self._cells[parent_id]
-        if list(parent.asymm) != [1.0, 1.0]:
-            raise LegacyCompatibilityError("asymmetric legacy division is not implemented")
+        first_fraction = _division_fraction(parent.asymm)
         parent.divideFlag = False
-        first_id, second_id = self.simulation.divide_equal(parent_id)
+        first_id, second_id = self.simulation.divide(parent_id, first_fraction)
         self._apply_division_jitter(first_id)
         self._apply_division_jitter(second_id)
         first = copy.deepcopy(parent)
