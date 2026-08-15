@@ -23,7 +23,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | implemented as deterministic backend-neutral graph views |
 | P2 | Fixed-position cells | `CLFixedPosition` | persistent fixed rod state with projected mechanics and continuing biology | legacy point-volume model audited; CPU and native Metal mechanics conformant; native CUDA builds with hardware validation pending |
 | Retired | Neighbor diffusion | `NeighbourDiffusion` | do not port dead, dimensionally unspecified graph loop; require a new typed contact-flux proposal | audited and explicitly retired; no backend parity requirement |
-| P2 | SBML import | `SBMLImport` | libSBML to typed reaction model; no generated Python source | redesign needed |
+| P2 | SBML import | `SBMLImport` | bounded libSBML Core subset compiled to typed species-rate IR; no generated source | legacy generator audited and semantic subset specified; importer pending |
 | P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | redesign needed |
 | P2 | Analysis scripts | `Scripts` | replace with documented Parquet/Zarr workflows | inventory needed |
 
