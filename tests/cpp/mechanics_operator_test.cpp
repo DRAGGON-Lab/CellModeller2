@@ -53,6 +53,17 @@ float residual_rms(const std::vector<cm2::CellCorrection>& residual) {
   return std::sqrt(correction_dot(residual, residual) / static_cast<float>(residual.size()));
 }
 
+void assert_correction_close(const cm2::CellCorrection& actual,
+                             const cm2::CellCorrection& expected) {
+  assert(close(actual.translation.x, expected.translation.x));
+  assert(close(actual.translation.y, expected.translation.y));
+  assert(close(actual.translation.z, expected.translation.z));
+  assert(close(actual.rotation.x, expected.rotation.x));
+  assert(close(actual.rotation.y, expected.rotation.y));
+  assert(close(actual.rotation.z, expected.rotation.z));
+  assert(close(actual.length, expected.length));
+}
+
 void test_contact_free_operator_is_declared_regularizer() {
   cm2::WorldState state;
   add_capsule(state, {}, {1.0F, 0.0F, 0.0F});
@@ -239,6 +250,40 @@ void test_invalid_inputs_are_rejected() {
   assert(rejected);
 }
 
+void test_fixed_cells_are_projected_out_of_cpu_mechanics() {
+  cm2::WorldState state;
+  const auto fixed_id =
+      add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  add_capsule(state, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  state.set_cell_fixed(fixed_id, true);
+  const auto contacts = cm2::find_cell_contacts_cpu(state);
+  assert(!contacts.empty());
+
+  const cm2::CellCorrection fixed_input{
+      .translation = {0.4F, -0.3F, 0.2F},
+      .rotation = {-0.1F, 0.5F, 0.7F},
+      .length = 0.25F,
+  };
+  const cm2::CellCorrection free_input{
+      .translation = {-0.2F, 0.6F, 0.3F},
+      .rotation = {0.8F, -0.4F, 0.1F},
+      .length = -0.15F,
+  };
+  const std::vector with_fixed_input{fixed_input, free_input};
+  const std::vector with_zero_fixed{cm2::CellCorrection{}, free_input};
+  const auto applied = cm2::apply_mechanics_operator_cpu(state, contacts, with_fixed_input);
+  const auto applied_zero = cm2::apply_mechanics_operator_cpu(state, contacts, with_zero_fixed);
+  assert_correction_close(applied[0], fixed_input);
+  assert_correction_close(applied[1], applied_zero[1]);
+
+  const auto rhs = cm2::build_mechanics_rhs_cpu(state, contacts);
+  assert_correction_close(rhs[0], cm2::CellCorrection{});
+  const auto solution = cm2::solve_cell_mechanics_cpu(state, contacts);
+  assert(solution.report.status == cm2::SolverStatus::converged);
+  assert_correction_close(solution.corrections[0], cm2::CellCorrection{});
+  assert(solution.corrections[1].translation.y > 0.0F);
+}
+
 void test_simulation_exposes_cpu_mechanics_capability() {
   cm2::Simulation simulation;
   cm2::CellInit first;
@@ -263,6 +308,7 @@ int main() {
   test_sphere_rows_drive_cells_toward_the_allowed_region();
   test_iteration_limit_and_breakdown_are_diagnosed();
   test_invalid_inputs_are_rejected();
+  test_fixed_cells_are_projected_out_of_cpu_mechanics();
   test_simulation_exposes_cpu_mechanics_capability();
   return 0;
 }

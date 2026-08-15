@@ -53,6 +53,7 @@ WorldState::WorldState(std::size_t reserved_capacity, std::size_t species_count)
   radius_.reserve(reserved_capacity);
   growth_rate_.reserve(reserved_capacity);
   cell_type_.reserve(reserved_capacity);
+  fixed_.reserve(reserved_capacity);
   species_.reserve(reserved_capacity * species_count);
   id_to_slot_.reserve(reserved_capacity);
   lineage_.reserve(reserved_capacity);
@@ -94,6 +95,7 @@ void WorldStateCheckpoint::validate() const {
             .radius = cell.radius,
             .growth_rate = cell.growth_rate,
             .cell_type = cell.cell_type,
+            .fixed = cell.fixed,
             .species = cell.species,
         },
         species_count);
@@ -131,6 +133,7 @@ WorldState::WorldState(const WorldStateCheckpoint& checkpoint)
     radius_.push_back(cell.radius);
     growth_rate_.push_back(cell.growth_rate);
     cell_type_.push_back(cell.cell_type);
+    fixed_.push_back(static_cast<std::uint8_t>(cell.fixed));
     species_.insert(species_.end(), cell.species.begin(), cell.species.end());
     id_to_slot_.emplace(cell.id, cell.slot);
   }
@@ -181,6 +184,7 @@ void WorldState::append(CellId id, const CellInit& cell) {
   radius_.push_back(cell.radius);
   growth_rate_.push_back(cell.growth_rate);
   cell_type_.push_back(cell.cell_type);
+  fixed_.push_back(static_cast<std::uint8_t>(cell.fixed));
   if (cell.species.empty()) {
     species_.insert(species_.end(), species_count_, 0.0F);
   } else {
@@ -207,6 +211,7 @@ void WorldState::replace(Slot slot, CellId id, const CellInit& cell) {
   radius_[index] = cell.radius;
   growth_rate_[index] = cell.growth_rate;
   cell_type_[index] = cell.cell_type;
+  fixed_[index] = static_cast<std::uint8_t>(cell.fixed);
   const auto species_begin = species_.begin() + static_cast<std::ptrdiff_t>(index * species_count_);
   if (cell.species.empty()) {
     std::fill_n(species_begin, species_count_, 0.0F);
@@ -243,6 +248,7 @@ std::pair<CellId, CellId> WorldState::divide(CellId parent_id, float first_fract
       .radius = parent.radius,
       .growth_rate = parent.growth_rate,
       .cell_type = parent.cell_type,
+      .fixed = parent.fixed,
       .species = parent.species,
   };
 
@@ -286,6 +292,7 @@ void WorldState::set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, flo
       .radius = radius_[index],
       .growth_rate = growth_rate_[index],
       .cell_type = cell_type_[index],
+      .fixed = fixed_[index] != 0,
       .species = {},
   };
   validate_cell(candidate, species_count_);
@@ -310,6 +317,10 @@ void WorldState::set_cell_attributes(CellId id, float growth_rate, std::int32_t 
   const auto index = static_cast<std::size_t>(slot_for(id));
   growth_rate_[index] = growth_rate;
   cell_type_[index] = cell_type;
+}
+
+void WorldState::set_cell_fixed(CellId id, bool fixed) {
+  fixed_[static_cast<std::size_t>(slot_for(id))] = static_cast<std::uint8_t>(fixed);
 }
 
 void WorldState::set_species(CellId id, std::span<const float> levels) {
@@ -348,6 +359,7 @@ CellAttributeView WorldState::cell_attributes() const noexcept {
   return {
       .growth_rates = growth_rate_,
       .cell_types = cell_type_,
+      .fixed = fixed_,
   };
 }
 
@@ -380,6 +392,7 @@ CellSnapshot WorldState::cell(CellId id) const {
       .radius = radius_[index],
       .growth_rate = growth_rate_[index],
       .cell_type = cell_type_[index],
+      .fixed = fixed_[index] != 0,
       .species = std::vector<float>(
           species_.begin() + static_cast<std::ptrdiff_t>(species_offset),
           species_.begin() + static_cast<std::ptrdiff_t>(species_offset + species_count_)),
@@ -425,7 +438,7 @@ void WorldState::validate() const {
   const std::array sizes{
       position_x_.size(),  position_y_.size(),  position_z_.size(), direction_x_.size(),
       direction_y_.size(), direction_z_.size(), length_.size(),     radius_.size(),
-      growth_rate_.size(), cell_type_.size(),
+      growth_rate_.size(), cell_type_.size(), fixed_.size(),
   };
   if (!std::ranges::all_of(sizes, [expected](std::size_t size) { return size == expected; })) {
     throw std::logic_error("world state arrays have inconsistent lengths");
@@ -464,11 +477,15 @@ void WorldState::validate() const {
         .radius = radius_[index],
         .growth_rate = growth_rate_[index],
         .cell_type = cell_type_[index],
+        .fixed = fixed_[index] != 0,
         .species = {},
     };
     validate_cell(value, species_count_);
     if (std::abs(norm(value.direction) - 1.0F) > 1.0e-5F) {
       throw std::logic_error("cell direction is not normalized");
+    }
+    if (fixed_[index] > 1) {
+      throw std::logic_error("cell fixed flag is invalid");
     }
   }
   for (const auto& [child, parent] : lineage_) {

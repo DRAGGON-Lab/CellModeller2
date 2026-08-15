@@ -41,7 +41,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 
 CHECKPOINT_FORMAT = "cellmodeller2-checkpoint"
-CHECKPOINT_VERSION = 5
+CHECKPOINT_VERSION = 6
 MAX_CHECKPOINT_BYTES = 1 << 30
 _NATIVE_CHECKPOINT_VERSION = 3
 
@@ -209,6 +209,7 @@ def _simulation_to_json(checkpoint: _SimulationCheckpoint) -> dict[str, JSONValu
                 "radius": cell.radius,
                 "growth_rate": cell.growth_rate,
                 "cell_type": cell.cell_type,
+                "fixed": cell.fixed,
                 "species": list(cell.species),
             }
         )
@@ -399,6 +400,12 @@ def _integer(value: object, path: str, minimum: int, maximum: int) -> int:
     return value
 
 
+def _boolean(value: object, path: str) -> bool:
+    if not isinstance(value, bool):
+        _fail(path, "expected a boolean")
+    return value
+
+
 def _number(value: object, path: str, *, float32: bool = False) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         _fail(path, "expected a number")
@@ -424,22 +431,25 @@ def _vec3(value: object, path: str) -> Vec3:
     )
 
 
-def _cell(value: object, path: str) -> CellSnapshot:
+def _cell(value: object, path: str, schema_version: int) -> CellSnapshot:
     data = _object(value, path)
+    required = {
+        "id",
+        "slot",
+        "position",
+        "direction",
+        "length",
+        "radius",
+        "growth_rate",
+        "cell_type",
+        "species",
+    }
+    if schema_version >= 6:
+        required.add("fixed")
     _keys(
         data,
         path,
-        {
-            "id",
-            "slot",
-            "position",
-            "direction",
-            "length",
-            "radius",
-            "growth_rate",
-            "cell_type",
-            "species",
-        },
+        required,
     )
     cell = CellSnapshot()
     cell.id = _integer(data["id"], f"{path}.id", 1, _UINT64_MAX)
@@ -450,6 +460,7 @@ def _cell(value: object, path: str) -> CellSnapshot:
     cell.radius = _number(data["radius"], f"{path}.radius", float32=True)
     cell.growth_rate = _number(data["growth_rate"], f"{path}.growth_rate", float32=True)
     cell.cell_type = _integer(data["cell_type"], f"{path}.cell_type", _INT32_MIN, _INT32_MAX)
+    cell.fixed = _boolean(data["fixed"], f"{path}.fixed") if schema_version >= 6 else False
     cell.species = [
         _number(item, f"{path}.species[{index}]", float32=True)
         for index, item in enumerate(_array(data["species"], f"{path}.species"))
@@ -675,7 +686,7 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     )
     world.next_id = _integer(world_data["next_id"], "$.simulation.world.next_id", 1, _UINT64_MAX)
     world.cells = [
-        _cell(item, f"$.simulation.world.cells[{index}]")
+        _cell(item, f"$.simulation.world.cells[{index}]", schema_version)
         for index, item in enumerate(_array(world_data["cells"], "$.simulation.world.cells"))
     ]
     world.lineage = [
@@ -784,7 +795,7 @@ def load_checkpoint_bundle(
     if "version" not in root:
         _fail("$", "missing keys ['version']")
     schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
-    supported_versions = {1, 2, 3, 4, CHECKPOINT_VERSION}
+    supported_versions = {1, 2, 3, 4, 5, CHECKPOINT_VERSION}
     if schema_version not in supported_versions:
         _fail("$.version", f"unsupported checkpoint version {schema_version}")
     required = {

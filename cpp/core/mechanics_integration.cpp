@@ -71,10 +71,13 @@ void integrate_mechanics_result(WorldState& state, const MechanicsSolveResult& r
     if (!std::isfinite(desired_increment) || desired_increment < 0.0F) {
       throw std::invalid_argument("desired length increments must be finite and non-negative");
     }
-    const auto applied_length_increment = std::max(0.0F, desired_increment + correction.length);
-    const auto new_position = cell.position + correction.translation;
+    const auto applied_length_increment =
+        cell.fixed ? desired_increment : std::max(0.0F, desired_increment + correction.length);
+    const auto new_position = cell.fixed ? cell.position : cell.position + correction.translation;
     const auto new_direction =
-        rotate_axis_angle(cell.direction, correction.rotation, parameters.max_rotation_radians);
+        cell.fixed ? cell.direction
+                   : rotate_axis_angle(cell.direction, correction.rotation,
+                                       parameters.max_rotation_radians);
     const auto new_length = cell.length + applied_length_increment;
     if (!finite(new_position) || !finite(new_direction) || !std::isfinite(new_length)) {
       throw std::overflow_error("mechanics integration produced non-finite geometry");

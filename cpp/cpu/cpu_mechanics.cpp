@@ -122,6 +122,7 @@ class CpuMechanicsSystem {
                      const ExternalContactGraph& external_contacts,
                      const MechanicsParameters& parameters)
       : geometry_(state.geometry_state()), parameters_(parameters) {
+    fixed_ = state.cell_attributes().fixed;
     state.validate();
     validate_mechanics_parameters(parameters_);
     if (contacts.cell_count() != geometry_.size()) {
@@ -188,12 +189,18 @@ class CpuMechanicsSystem {
   [[nodiscard]] std::size_t cell_count() const noexcept { return geometry_.size(); }
 
   void apply(const DofVector& input, DofVector& output) const {
+    auto projected = input;
+    for (std::size_t index = 0; index < cell_count(); ++index) {
+      if (fixed_[index] != 0) {
+        projected[index] = {};
+      }
+    }
     output.assign(cell_count(), Dofs{});
     for (const auto& row : rows_) {
       const auto first = static_cast<std::size_t>(row.first_slot);
-      auto row_value = dof_dot(row.first, input[first]);
+      auto row_value = dof_dot(row.first, projected[first]);
       if (row.second_slot != invalid_slot) {
-        row_value -= dof_dot(row.second, input[static_cast<std::size_t>(row.second_slot)]);
+        row_value -= dof_dot(row.second, projected[static_cast<std::size_t>(row.second_slot)]);
       }
       add_scaled(output[first], row.first, row_value);
       if (row.second_slot != invalid_slot) {
@@ -203,6 +210,10 @@ class CpuMechanicsSystem {
 
     const auto regularization = 1.0F / parameters_.gamma;
     for (std::size_t index = 0; index < cell_count(); ++index) {
+      if (fixed_[index] != 0) {
+        output[index] = input[index];
+        continue;
+      }
       const Vec3 axis{geometry_.direction_x[index], geometry_.direction_y[index],
                       geometry_.direction_z[index]};
       const Vec3 rotation{input[index][3], input[index][4], input[index][5]};
@@ -236,11 +247,17 @@ class CpuMechanicsSystem {
                    -row.right_hand_side);
       }
     }
+    for (std::size_t index = 0; index < cell_count(); ++index) {
+      if (fixed_[index] != 0) {
+        result[index] = {};
+      }
+    }
     return result;
   }
 
  private:
   CellGeometryView geometry_;
+  std::span<const std::uint8_t> fixed_;
   MechanicsParameters parameters_;
   std::vector<ContactRow> rows_;
 };

@@ -58,7 +58,7 @@ produce the same serialized simulation state.
 Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
 reservoir values, periodic upwind advection, reduced-dimensional and 3D
 trilinear samples, paired-periodic validation, explicit stability rejection,
-checkpoint round trips, v1-through-v4 migration, and diagnosed Crank-Nicolson
+checkpoint round trips, v1-through-v5 migration, and diagnosed Crank-Nicolson
 convergence. The shared anisotropic 630-value scenario executes both Forward
 Euler and Crank-Nicolson through native MSL transport on Apple GPU hardware and
 compares them with the CPU reference at `5e-6`. The independent
@@ -96,3 +96,10 @@ NVIDIA device. `backend_available` reports runtime device availability, while
 
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.
+
+Fixed-cell CPU fixtures verify stable-ID mutation, division inheritance,
+checkpoint v6 persistence, migration of v1-through-v5 cells to movable state,
+the projected mechanics operator and right-hand side, and integration that
+rejects contact correction while retaining declared growth. The corresponding
+native GPU mechanics cases remain required before Metal or CUDA fixed-cell
+support is claimed.

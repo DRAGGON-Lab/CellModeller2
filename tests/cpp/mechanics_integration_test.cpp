@@ -75,6 +75,34 @@ void test_validation_is_atomic_and_requires_convergence() {
   assert(close(state.cell(id).position.x, 0.0F));
 }
 
+void test_fixed_cell_integration_only_applies_declared_growth() {
+  cm2::WorldState state;
+  cm2::CellInit cell;
+  cell.position = {1.0F, 2.0F, 3.0F};
+  cell.direction = {1.0F, 0.0F, 0.0F};
+  cell.length = 4.0F;
+  cell.fixed = true;
+  const auto id = state.add_cell(cell);
+
+  cm2::MechanicsSolveResult result;
+  result.corrections = {cm2::CellCorrection{
+      .translation = {8.0F, 7.0F, 6.0F},
+      .rotation = {0.0F, 0.0F, 1.0F},
+      .length = -2.0F,
+  }};
+  const float desired_increments[] = {0.5F};
+  cm2::integrate_mechanics_result(state, result, {}, desired_increments);
+
+  const auto integrated = state.cell(id);
+  assert(close(integrated.position.x, 1.0F));
+  assert(close(integrated.position.y, 2.0F));
+  assert(close(integrated.position.z, 3.0F));
+  assert(close(integrated.direction.x, 1.0F));
+  assert(close(integrated.direction.y, 0.0F));
+  assert(close(integrated.direction.z, 0.0F));
+  assert(close(integrated.length, 4.5F));
+}
+
 void test_simulation_relaxation_reduces_penetration() {
   cm2::Simulation simulation;
   cm2::CellInit first;
@@ -103,6 +131,7 @@ void test_simulation_relaxation_reduces_penetration() {
 int main() {
   test_integration_applies_declared_geometry_semantics();
   test_validation_is_atomic_and_requires_convergence();
+  test_fixed_cell_integration_only_applies_declared_growth();
   test_simulation_relaxation_reduces_penetration();
   return 0;
 }

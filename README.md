@@ -17,6 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
+- persistent fixed rod cells with continuing biological state and projected CPU mechanics;
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
@@ -79,8 +80,10 @@ toolkit; the shared fixture still requires execution on NVIDIA hardware.
 Checkpoints preserve compact slot order, stable identity allocation, complete
 lineage, constraints, species rates, signal-grid geometry and levels,
 concentrations, cell geometry, coupled rates, and simulation time. Schema v5
-adds the signal integration and solver configuration; the reader explicitly
-migrates v1 through v4, using Forward Euler defaults for older signal grids. Files
+adds the signal integration and solver configuration, and schema v6 adds the
+persistent fixed-cell attribute. The reader explicitly migrates v1 through v5,
+using Forward Euler defaults for older signal grids and movable cells for older
+cell records. Files
 contain data only: loading never imports a model or evaluates source text.
 Writes use an atomic replace and each file carries a SHA-256 digest over the
 simulation payload.

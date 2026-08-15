@@ -15,13 +15,13 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Species Euler integration | `CLEulerIntegrator` | typed rate plan and growth dilution | CPU and native Metal conformant; native CUDA builds with hardware validation pending |
 | P0 | Grid signaling | `GridDiffusion` | diffusion, optional advection, declared boundaries | CPU and native Metal conformant and checkpointed; native CUDA builds with hardware validation pending |
 | P0 | Coupled cell/grid rates | signal integrators | device-resident sample, rate, scatter, and update | CPU and native Metal conformant with exact checkpoint state; native CUDA builds with hardware validation pending |
-| P0 | Checkpoint and exact resume | pickle output | versioned, non-executable checkpoint with provenance | JSON v5 native and authenticated controller state with explicit v1-v4 migration; CPU and Metal continuation conformant; CUDA hardware validation pending |
+| P0 | Checkpoint and exact resume | pickle output | versioned, non-executable checkpoint with provenance | JSON v6 native and authenticated controller state with explicit v1-v5 migration; CPU and Metal continuation conformant; CUDA hardware validation pending |
 | P0 | Batch execution | batch scripts | `cm2 run`, backend/device/seed selection | implemented with deterministic construction, collision preflight, periodic checkpoints, and provenance |
 | P1 | Legacy Python model adapter | module regulator | adapter for maintained `setup/init/update/divide` models | growth/mechanics callbacks, setup facade, and exact batch resume implemented; signaling models require typed-plan migration |
 | P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | trusted native-state importer implemented with explicit loss provenance |
 | P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | CPU and native Metal standalone/coupled solvers conformant; native CUDA builds with NVIDIA hardware validation pending |
 | P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | implemented as deterministic backend-neutral graph views |
-| P2 | Fixed-position cells | `CLFixedPosition` | reference and native growth-only state | audit needed |
+| P2 | Fixed-position cells | `CLFixedPosition` | persistent fixed rod state with projected mechanics and continuing biology | legacy point-volume model audited; state, checkpoint migration, and CPU mechanics implemented; Metal/CUDA pending |
 | P2 | Neighbor diffusion | `NeighbourDiffusion` | retain only after model and attribute audit | dormant/ambiguous |
 | P2 | SBML import | `SBMLImport` | libSBML to typed reaction model; no generated Python source | redesign needed |
 | P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | redesign needed |

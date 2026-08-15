@@ -163,6 +163,7 @@ NB_MODULE(_core, module) {
       .def_rw("radius", &cm2::CellInit::radius)
       .def_rw("growth_rate", &cm2::CellInit::growth_rate)
       .def_rw("cell_type", &cm2::CellInit::cell_type)
+      .def_rw("fixed", &cm2::CellInit::fixed)
       .def_rw("species", &cm2::CellInit::species);
 
   nb::class_<cm2::CellSnapshot>(module, "CellSnapshot")
@@ -175,6 +176,7 @@ NB_MODULE(_core, module) {
       .def_rw("radius", &cm2::CellSnapshot::radius)
       .def_rw("growth_rate", &cm2::CellSnapshot::growth_rate)
       .def_rw("cell_type", &cm2::CellSnapshot::cell_type)
+      .def_rw("fixed", &cm2::CellSnapshot::fixed)
       .def_rw("species", &cm2::CellSnapshot::species);
 
   nb::class_<cm2::LineageEntry>(module, "_LineageEntry")
@@ -409,6 +411,7 @@ NB_MODULE(_core, module) {
            "direction"_a, "length"_a)
       .def("set_cell_attributes", &cm2::Simulation::set_cell_attributes, "id"_a, "growth_rate"_a,
            "cell_type"_a)
+      .def("set_cell_fixed", &cm2::Simulation::set_cell_fixed, "id"_a, "fixed"_a)
       .def(
           "set_species",
           [](cm2::Simulation& simulation, cm2::CellId id, const std::vector<float>& levels) {

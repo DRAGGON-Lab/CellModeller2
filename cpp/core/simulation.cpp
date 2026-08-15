@@ -116,6 +116,8 @@ void Simulation::set_cell_attributes(CellId id, float growth_rate, std::int32_t 
   state_.set_cell_attributes(id, growth_rate, cell_type);
 }
 
+void Simulation::set_cell_fixed(CellId id, bool fixed) { state_.set_cell_fixed(id, fixed); }
+
 void Simulation::set_species(CellId id, std::span<const float> levels) {
   state_.set_species(id, levels);
 }

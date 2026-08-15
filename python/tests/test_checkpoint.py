@@ -82,6 +82,7 @@ def _make_simulation() -> tuple[Simulation, int, int]:
     first.radius = 0.4
     first.growth_rate = 0.2
     first.cell_type = 7
+    first.fixed = True
     first.species = [3.0, 1.5]
     first_id = simulation.add_cell(first)
 
@@ -113,7 +114,9 @@ def _make_simulation() -> tuple[Simulation, int, int]:
     return simulation, daughter_a, daughter_b
 
 
-def _assert_cells_exact(actual: Simulation, expected: Simulation) -> None:
+def _assert_cells_exact(
+    actual: Simulation, expected: Simulation, *, compare_fixed: bool = True
+) -> None:
     assert actual.time == expected.time
     assert actual.species_count == expected.species_count
     assert actual.signal_count == expected.signal_count
@@ -141,6 +144,8 @@ def _assert_cells_exact(actual: Simulation, expected: Simulation) -> None:
         assert left.radius == right.radius
         assert left.growth_rate == right.growth_rate
         assert left.cell_type == right.cell_type
+        if compare_fixed:
+            assert left.fixed == right.fixed
         assert left.species == right.species
 
 
@@ -159,6 +164,11 @@ def _rewrite_with_state_digest(path: Path, document: dict[str, Any]) -> None:
     ).encode("utf-8")
     document["integrity"]["simulation"] = hashlib.sha256(canonical).hexdigest()
     path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _remove_fixed_fields(document: dict[str, Any]) -> None:
+    for cell in document["simulation"]["world"]["cells"]:
+        del cell["fixed"]
 
 
 def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
@@ -205,6 +215,7 @@ def test_version_one_checkpoint_migrates_to_an_empty_signal_state(tmp_path: Path
     del document["integrity"]["controller"]
     del document["simulation"]["signal_grid"]
     del document["simulation"]["coupled_rate_plan"]
+    _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -224,6 +235,7 @@ def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) 
     del document["simulation"]["coupled_rate_plan"]
     del document["simulation"]["signal_grid"]["spec"]["integration"]
     del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -242,12 +254,14 @@ def test_version_three_checkpoint_migrates_without_controller_state(tmp_path: Pa
     del document["integrity"]["controller"]
     del document["simulation"]["signal_grid"]["spec"]["integration"]
     del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
     bundle = load_checkpoint_bundle(path)
     assert isinstance(bundle, CheckpointBundle)
     assert bundle.controller is None
-    _assert_cells_exact(bundle.simulation, simulation)
+    assert all(not cell.fixed for cell in bundle.simulation.cells())
+    _assert_cells_exact(bundle.simulation, simulation, compare_fixed=False)
 
 
 def test_version_four_signal_grid_migrates_to_forward_euler(tmp_path: Path) -> None:
@@ -258,12 +272,26 @@ def test_version_four_signal_grid_migrates_to_forward_euler(tmp_path: Path) -> N
     document["version"] = 4
     del document["simulation"]["signal_grid"]["spec"]["integration"]
     del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
     restored.step(0.25)
     simulation.step(0.25)
     assert restored.signal_levels == simulation.signal_levels
+
+
+def test_version_five_cells_migrate_to_movable(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v5.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 5
+    _remove_fixed_fields(document)
+    _rewrite_with_state_digest(path, document)
+
+    restored = load_checkpoint(path)
+    assert all(not cell.fixed for cell in restored.cells())
 
 
 def test_crank_nicolson_signal_configuration_round_trips(tmp_path: Path) -> None:

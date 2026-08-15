@@ -98,6 +98,22 @@ def test_asymmetric_division_preserves_capsule_extent(backend: BackendKind) -> N
     simulation.validate()
 
 
+def test_fixed_attribute_is_mutable_and_inherited() -> None:
+    simulation = Simulation()
+    initial = CellInit()
+    initial.length = 4.0
+    initial.fixed = True
+    parent = simulation.add_cell(initial)
+    assert simulation.cell(parent).fixed
+
+    simulation.set_cell_fixed(parent, False)
+    assert not simulation.cell(parent).fixed
+    simulation.set_cell_fixed(parent, True)
+    first, second = simulation.divide_equal(parent)
+    assert simulation.cell(first).fixed
+    assert simulation.cell(second).fixed
+
+
 @pytest.mark.parametrize("fraction", [0.0, 1.0, -0.1, 1.1, math.nan, math.inf])
 def test_asymmetric_division_rejects_invalid_fraction_atomically(fraction: float) -> None:
     simulation = Simulation()

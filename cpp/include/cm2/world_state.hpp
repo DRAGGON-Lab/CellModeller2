@@ -19,6 +19,7 @@ struct CellInit {
   float radius{0.5F};
   float growth_rate{1.0F};
   std::int32_t cell_type{0};
+  bool fixed{false};
   std::vector<float> species;
 };
 
@@ -31,6 +32,7 @@ struct CellSnapshot {
   float radius{0.0F};
   float growth_rate{0.0F};
   std::int32_t cell_type{0};
+  bool fixed{false};
   std::vector<float> species;
 };
 
@@ -70,6 +72,7 @@ struct CellGeometryView {
 struct CellAttributeView {
   std::span<const float> growth_rates;
   std::span<const std::int32_t> cell_types;
+  std::span<const std::uint8_t> fixed;
 };
 
 struct SpeciesStateView {
@@ -101,6 +104,7 @@ class WorldState {
   void set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, float length);
   void set_cell_geometry(CellId id, Vec3 position, Vec3 direction, float length);
   void set_cell_attributes(CellId id, float growth_rate, std::int32_t cell_type);
+  void set_cell_fixed(CellId id, bool fixed);
   void set_species(CellId id, std::span<const float> levels);
   [[nodiscard]] GrowthStateView growth_state() noexcept;
   [[nodiscard]] CellGeometryView geometry_state() const noexcept;
@@ -134,6 +138,7 @@ class WorldState {
   std::vector<float> radius_;
   std::vector<float> growth_rate_;
   std::vector<std::int32_t> cell_type_;
+  std::vector<std::uint8_t> fixed_;
   std::vector<float> species_;
   std::unordered_map<CellId, Slot> id_to_slot_;
   std::unordered_map<CellId, CellId> lineage_;

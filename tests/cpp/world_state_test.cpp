@@ -180,6 +180,31 @@ void test_geometry_can_be_updated_by_stable_id() {
   assert(close(updated.length, 4.0F));
 }
 
+void test_fixed_state_is_mutable_persistent_and_inherited() {
+  cm2::Simulation simulation;
+  cm2::CellInit initial;
+  initial.length = 4.0F;
+  initial.growth_rate = 0.25F;
+  initial.fixed = true;
+  const auto parent = simulation.add_cell(initial);
+
+  assert(simulation.cell(parent).fixed);
+  simulation.set_cell_fixed(parent, false);
+  assert(!simulation.cell(parent).fixed);
+  simulation.set_cell_fixed(parent, true);
+  simulation.step(0.5F);
+  assert(close(simulation.cell(parent).length, 4.5F));
+
+  const auto [first, second] = simulation.divide_equal(parent);
+  assert(simulation.cell(first).fixed);
+  assert(simulation.cell(second).fixed);
+  const auto checkpoint = simulation.checkpoint();
+  cm2::Simulation restored(cm2::BackendKind::cpu, checkpoint);
+  assert(restored.cell(first).fixed);
+  assert(restored.cell(second).fixed);
+  restored.validate();
+}
+
 void test_unavailable_backends_do_not_fall_back() {
   assert(cm2::backend_device_count(cm2::BackendKind::cpu) == 1);
   assert(cm2::backend_available(cm2::BackendKind::cpu, 0));
@@ -220,6 +245,7 @@ int main() {
   test_invalid_state_fails_explicitly();
   test_mutable_cell_attributes_keep_stable_identity();
   test_geometry_can_be_updated_by_stable_id();
+  test_fixed_state_is_mutable_persistent_and_inherited();
   test_unavailable_backends_do_not_fall_back();
   return 0;
 }
