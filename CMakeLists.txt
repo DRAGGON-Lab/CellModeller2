@@ -159,6 +159,7 @@ if(CM2_ENABLE_CUDA)
   target_sources(cm2_core PRIVATE
     cpp/cuda/cuda_backend.cu
     cpp/cuda/kernels/contacts.cu
+    cpp/cuda/kernels/coupled_rates.cu
     cpp/cuda/kernels/growth.cu
     cpp/cuda/kernels/mechanics.cu
     cpp/cuda/kernels/signals.cu

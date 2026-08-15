@@ -69,7 +69,8 @@ trilinear scatter, and simultaneous commit contract. Metal runs cell and grid
 kernels in one command buffer and passes the shared 513-cell hardware gate on
 Apple GPU hardware. Its deterministic grid-thread gather is the correctness
 path; a sparse source reduction remains a scaling optimization. Native CUDA
-coupling remains pending.
+now implements the same two-kernel operation and compiles with the 12.8
+toolkit; the shared fixture still requires execution on NVIDIA hardware.
 
 Checkpoints preserve compact slot order, stable identity allocation, complete
 lineage, constraints, species rates, signal-grid geometry and levels,

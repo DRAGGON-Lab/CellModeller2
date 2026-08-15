@@ -80,6 +80,11 @@ The native Metal stage passes that fixture on Apple GPU hardware. It evaluates
 cells and gathers grid sources in two MSL kernels within one command buffer;
 the grid-thread gather is deterministic and avoids a floating-point atomic
 requirement while keeping intermediate samples and rates device-resident.
+The independent CUDA C++ stage uses the same two-launch stream ordering and
+compiles and links for `sm_75` with the CUDA 12.8.1 toolkit. Driverless tests
+exercise only the CPU paths because no CUDA device can be constructed; the
+513-cell fixture, empty-colony path, and failed-source atomicity check remain
+mandatory on NVIDIA hardware before CUDA conformance is claimed.
 
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an

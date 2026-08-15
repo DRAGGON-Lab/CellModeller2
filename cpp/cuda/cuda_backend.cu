@@ -16,6 +16,7 @@
 
 #include "cm2/backend.hpp"
 #include "kernels/contacts.cuh"
+#include "kernels/coupled_rates.cuh"
 #include "kernels/growth.cuh"
 #include "kernels/mechanics.cuh"
 #include "kernels/signals.cuh"
@@ -117,7 +118,8 @@ class CudaBackend final : public ComputeBackend {
     return feature == BackendFeature::growth || feature == BackendFeature::species ||
            feature == BackendFeature::cell_contacts ||
            feature == BackendFeature::external_constraints ||
-           feature == BackendFeature::cell_mechanics || feature == BackendFeature::signals;
+           feature == BackendFeature::cell_mechanics || feature == BackendFeature::signals ||
+           feature == BackendFeature::coupled_rates;
   }
 
   void advance_growth(WorldState& state, float dt) override {
@@ -343,9 +345,185 @@ class CudaBackend final : public ComputeBackend {
     grid.replace_levels(std::move(output));
   }
 
-  void advance_coupled(WorldState&, SignalGrid&, const CoupledRatePlan&, std::span<const float>,
-                       float) override {
-    throw std::runtime_error("CUDA coupled rates are not implemented");
+  void advance_coupled(WorldState& state, SignalGrid& grid, const CoupledRatePlan& plan,
+                       std::span<const float> previous_lengths, float dt) override {
+    activate_device();
+    validate_coupled_step(state, grid, plan, previous_lengths, dt);
+    const auto checked_product = [](std::size_t left, std::size_t right, const char* name) {
+      if (right != 0 && left > std::numeric_limits<std::size_t>::max() / right) {
+        throw std::overflow_error(std::string("CUDA coupled ") + name + " size overflow");
+      }
+      return left * right;
+    };
+    const auto cell_count_size = state.size();
+    const auto species_count_size = state.species_count();
+    const auto signal_count_size = plan.signal_count();
+    const auto instruction_count_size = plan.instructions().size();
+    const auto species_level_count =
+        checked_product(cell_count_size, species_count_size, "species level");
+    const auto workspace_count =
+        checked_product(cell_count_size, instruction_count_size, "workspace");
+    const auto cell_signal_count =
+        checked_product(cell_count_size, signal_count_size, "cell signal");
+    const auto grid_level_count = grid.levels().size();
+    for (const auto count :
+         {cell_count_size, species_count_size, signal_count_size, instruction_count_size,
+          species_level_count, workspace_count, cell_signal_count, grid_level_count}) {
+      if (count > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::overflow_error("CUDA coupled launch exceeds the uint32 index space");
+      }
+    }
+
+    coupled_species_levels_.reserve(species_level_count, "coupled species levels");
+    coupled_previous_lengths_.reserve(cell_count_size, "coupled previous lengths");
+    coupled_centers_.reserve(cell_count_size, "coupled cell centers");
+    coupled_geometry_.reserve(cell_count_size, "coupled cell geometry");
+    coupled_growth_rates_.reserve(cell_count_size, "coupled growth rates");
+    coupled_cell_types_.reserve(cell_count_size, "coupled cell types");
+    coupled_instructions_.reserve(instruction_count_size, "coupled rate instructions");
+    coupled_species_outputs_.reserve(species_count_size, "coupled species outputs");
+    coupled_signal_outputs_.reserve(signal_count_size, "coupled signal outputs");
+    coupled_workspace_.reserve(workspace_count, "coupled rate workspace");
+    coupled_cell_signal_rates_.reserve(cell_signal_count, "coupled cell signal rates");
+    coupled_grid_levels_.reserve(grid_level_count, "coupled grid levels");
+    coupled_grid_output_.reserve(grid_level_count, "coupled grid output");
+    coupled_diffusion_.reserve(signal_count_size, "coupled diffusion");
+    coupled_advection_.reserve(signal_count_size, "coupled advection");
+    coupled_fixed_values_.reserve(6 * signal_count_size, "coupled boundary values");
+    coupled_error_.reserve(1, "coupled error flag");
+
+    const auto geometry = state.geometry_state();
+    const auto attributes = state.cell_attributes();
+    auto species_state = state.species_state();
+    const auto& spec = grid.spec();
+    std::vector<float4> centers(cell_count_size);
+    std::vector<float4> shapes(cell_count_size);
+    for (std::size_t index = 0; index < cell_count_size; ++index) {
+      centers[index] = make_float4(geometry.position_x[index], geometry.position_y[index],
+                                   geometry.position_z[index], 0.0F);
+      shapes[index] = make_float4(geometry.lengths[index], geometry.radii[index], 0.0F, 0.0F);
+    }
+    std::vector<cuda::RateInstructionGpu> instructions;
+    instructions.reserve(instruction_count_size);
+    for (const auto& instruction : plan.instructions()) {
+      instructions.push_back({
+          .operation = static_cast<std::uint32_t>(instruction.operation),
+          .first = instruction.first,
+          .second = instruction.second,
+          .third = instruction.third,
+          .value = instruction.value,
+      });
+    }
+    std::vector<float4> advection;
+    advection.reserve(signal_count_size);
+    for (const auto velocity : spec.advection) {
+      advection.push_back(make_float4(velocity.x, velocity.y, velocity.z, 0.0F));
+    }
+    const std::array<const GridBoundary*, 6> boundary_records{
+        &spec.x_lower, &spec.x_upper, &spec.y_lower, &spec.y_upper, &spec.z_lower, &spec.z_upper,
+    };
+    std::vector<float> fixed_values(6 * signal_count_size, 0.0F);
+    for (std::size_t face = 0; face < boundary_records.size(); ++face) {
+      if (boundary_records[face]->kind == GridBoundaryKind::fixed) {
+        std::copy(boundary_records[face]->values.begin(), boundary_records[face]->values.end(),
+                  fixed_values.begin() + static_cast<std::ptrdiff_t>(face * signal_count_size));
+      }
+    }
+    const std::vector<float> species_levels(species_state.levels.begin(),
+                                            species_state.levels.end());
+    const std::vector<float> previous_values(previous_lengths.begin(), previous_lengths.end());
+    const std::vector<float> growth_values(attributes.growth_rates.begin(),
+                                           attributes.growth_rates.end());
+    const std::vector<std::int32_t> cell_type_values(attributes.cell_types.begin(),
+                                                     attributes.cell_types.end());
+    const std::vector<std::uint32_t> species_outputs(plan.species_outputs().begin(),
+                                                     plan.species_outputs().end());
+    const std::vector<std::uint32_t> signal_outputs(plan.signal_outputs().begin(),
+                                                    plan.signal_outputs().end());
+    const std::vector<float> grid_levels(grid.levels().begin(), grid.levels().end());
+
+    if (!species_levels.empty()) {
+      copy_to_device(coupled_species_levels_, species_levels,
+                     "failed to upload CUDA coupled species levels");
+    }
+    if (!previous_values.empty()) {
+      copy_to_device(coupled_previous_lengths_, previous_values,
+                     "failed to upload CUDA coupled previous lengths");
+      copy_to_device(coupled_centers_, centers, "failed to upload CUDA coupled cell centers");
+      copy_to_device(coupled_geometry_, shapes, "failed to upload CUDA coupled cell geometry");
+      copy_to_device(coupled_growth_rates_, growth_values,
+                     "failed to upload CUDA coupled growth rates");
+      copy_to_device(coupled_cell_types_, cell_type_values,
+                     "failed to upload CUDA coupled cell types");
+    }
+    copy_to_device(coupled_instructions_, instructions,
+                   "failed to upload CUDA coupled instructions");
+    if (!species_outputs.empty()) {
+      copy_to_device(coupled_species_outputs_, species_outputs,
+                     "failed to upload CUDA coupled species outputs");
+    }
+    copy_to_device(coupled_signal_outputs_, signal_outputs,
+                   "failed to upload CUDA coupled signal outputs");
+    copy_to_device(coupled_grid_levels_, grid_levels, "failed to upload CUDA coupled grid levels");
+    copy_to_device(coupled_diffusion_, spec.diffusion, "failed to upload CUDA coupled diffusion");
+    copy_to_device(coupled_advection_, advection, "failed to upload CUDA coupled advection");
+    copy_to_device(coupled_fixed_values_, fixed_values,
+                   "failed to upload CUDA coupled boundary values");
+    check_cuda(cudaMemsetAsync(coupled_error_.data(), 0, sizeof(std::uint32_t), stream_),
+               "failed to clear the CUDA coupled error flag");
+
+    const cuda::SignalGridBoundariesGpu boundaries{
+        .x_lower = static_cast<std::uint32_t>(spec.x_lower.kind),
+        .x_upper = static_cast<std::uint32_t>(spec.x_upper.kind),
+        .y_lower = static_cast<std::uint32_t>(spec.y_lower.kind),
+        .y_upper = static_cast<std::uint32_t>(spec.y_upper.kind),
+        .z_lower = static_cast<std::uint32_t>(spec.z_lower.kind),
+        .z_upper = static_cast<std::uint32_t>(spec.z_upper.kind),
+    };
+    const cuda::SignalGridShapeGpu shape{
+        .x = spec.shape.x,
+        .y = spec.shape.y,
+        .z = spec.shape.z,
+        .sites = static_cast<std::uint32_t>(spec.site_count()),
+    };
+    check_cuda(
+        cuda::launch_advance_coupled(
+            coupled_species_levels_.data(), coupled_previous_lengths_.data(),
+            coupled_centers_.data(), coupled_geometry_.data(), coupled_growth_rates_.data(),
+            coupled_cell_types_.data(), coupled_instructions_.data(),
+            coupled_species_outputs_.data(), coupled_signal_outputs_.data(),
+            coupled_workspace_.data(), coupled_grid_levels_.data(), coupled_grid_output_.data(),
+            coupled_diffusion_.data(), coupled_advection_.data(), coupled_fixed_values_.data(),
+            coupled_cell_signal_rates_.data(), coupled_error_.data(), boundaries, shape,
+            make_float4(spec.origin.x, spec.origin.y, spec.origin.z, 0.0F),
+            make_float4(spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F), dt,
+            static_cast<std::uint32_t>(species_count_size),
+            static_cast<std::uint32_t>(signal_count_size),
+            static_cast<std::uint32_t>(instruction_count_size),
+            static_cast<std::uint32_t>(cell_count_size),
+            static_cast<std::uint32_t>(grid_level_count), stream_),
+        "failed to launch the CUDA coupled kernels");
+
+    std::uint32_t error = 0;
+    check_cuda(cudaMemcpyAsync(&error, coupled_error_.data(), sizeof(error), cudaMemcpyDeviceToHost,
+                               stream_),
+               "failed to download the CUDA coupled error flag");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA coupled execution failed");
+    if (error != 0) {
+      throw std::domain_error("CUDA coupled kernels produced an invalid value");
+    }
+
+    std::vector<float> next_species(species_level_count);
+    std::vector<float> next_grid(grid_level_count);
+    if (!next_species.empty()) {
+      copy_to_host(next_species, coupled_species_levels_,
+                   "failed to download CUDA coupled species levels");
+    }
+    copy_to_host(next_grid, coupled_grid_output_, "failed to download CUDA coupled grid levels");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA coupled download failed");
+    SignalGridCheckpoint{.spec = spec, .levels = next_grid}.validate();
+    std::ranges::copy(next_species, species_state.levels.begin());
+    grid.replace_levels(std::move(next_grid));
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -1095,6 +1273,24 @@ class CudaBackend final : public ComputeBackend {
   CudaBuffer<float4> signal_advection_;
   CudaBuffer<float> signal_fixed_values_;
   CudaBuffer<std::uint32_t> signal_error_;
+
+  CudaBuffer<float> coupled_species_levels_;
+  CudaBuffer<float> coupled_previous_lengths_;
+  CudaBuffer<float4> coupled_centers_;
+  CudaBuffer<float4> coupled_geometry_;
+  CudaBuffer<float> coupled_growth_rates_;
+  CudaBuffer<std::int32_t> coupled_cell_types_;
+  CudaBuffer<cuda::RateInstructionGpu> coupled_instructions_;
+  CudaBuffer<std::uint32_t> coupled_species_outputs_;
+  CudaBuffer<std::uint32_t> coupled_signal_outputs_;
+  CudaBuffer<float> coupled_workspace_;
+  CudaBuffer<float> coupled_cell_signal_rates_;
+  CudaBuffer<float> coupled_grid_levels_;
+  CudaBuffer<float> coupled_grid_output_;
+  CudaBuffer<float> coupled_diffusion_;
+  CudaBuffer<float4> coupled_advection_;
+  CudaBuffer<float> coupled_fixed_values_;
+  CudaBuffer<std::uint32_t> coupled_error_;
 
   CudaBuffer<std::uint64_t> contact_ids_;
   CudaBuffer<float4> contact_centers_;
