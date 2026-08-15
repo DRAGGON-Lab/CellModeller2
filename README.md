@@ -56,4 +56,6 @@ uv run pytest
   kernels remain explicitly native and independently optimized.
 
 See [ADR 0001](docs/architecture/0001-native-backends.md) and the
-[feature ledger](docs/compatibility/feature-ledger.md).
+[feature ledger](docs/compatibility/feature-ledger.md). The contact/mechanics
+redesign is specified in [ADR 0002](docs/architecture/0002-contact-mechanics.md)
+and grounded in the [legacy mechanics audit](docs/compatibility/legacy-mechanics-audit.md).
