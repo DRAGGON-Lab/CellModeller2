@@ -8,15 +8,15 @@ claim agreement with a recorded legacy trajectory.
 
 | Legacy example | Equation family | CellModeller2 model | Status |
 |---|---|---|---|
-| `ACS2012/EdgeDetectorChamber.py` | five species, one diffusive signal | `examples/legacy/ACS2012/EdgeDetectorChamber.py` | pending |
+| `ACS2012/EdgeDetectorChamber.py` | five species, one diffusive signal | `examples/legacy/ACS2012/EdgeDetectorChamber.py` | migrated and CPU/Metal exercised |
 | `Tutorial_2/Tutorial_2a.py` | one constitutively produced species | `examples/legacy/Tutorial_2/Tutorial_2a.py` | migrated and CPU/Metal exercised |
 | `Tutorial_2/Tutorial_2b.py` | two-species nonlinear feedback | `examples/legacy/Tutorial_2/Tutorial_2b.py` | migrated and CPU/Metal exercised |
-| `Tutorial_3/Tutorial_3.py` | two species coupled to two diffusive signals | `examples/legacy/Tutorial_3/Tutorial_3.py` | pending |
+| `Tutorial_3/Tutorial_3.py` | two species coupled to two diffusive signals | `examples/legacy/Tutorial_3/Tutorial_3.py` | migrated and CPU/Metal exercised |
 | `ex2_constGene.py` | one constitutively produced species | `examples/legacy/ex2_constGene.py` | migrated and CPU/Metal exercised |
 | `ex2a_dilution.py` | one species with growth dilution only | `examples/legacy/ex2a_dilution.py` | migrated and CPU/Metal exercised |
 | `ex2b_diluteRepression.py` | dilution plus Hill repression | `examples/legacy/ex2b_diluteRepression.py` | migrated and CPU/Metal exercised |
-| `ex3_simpleSignal.py` | one species coupled to one diffusive signal | `examples/legacy/ex3_simpleSignal.py` | pending |
-| `ex4_simpleCellCellSignaling.py` | three species coupled to one diffusive signal | `examples/legacy/ex4_simpleCellCellSignaling.py` | pending |
+| `ex3_simpleSignal.py` | one species coupled to one diffusive signal | `examples/legacy/ex3_simpleSignal.py` | migrated and CPU/Metal exercised |
+| `ex4_simpleCellCellSignaling.py` | three species coupled to one diffusive signal | `examples/legacy/ex4_simpleCellCellSignaling.py` | migrated and CPU/Metal exercised |
 
 ## Shared migration decisions
 
@@ -41,3 +41,26 @@ decision remains gated on colony-level trajectory evidence. Legacy renderer
 colors are also not encoded into simulation state. Their preserve/replace/retire
 decision belongs to the renderer-family audit rather than the biochemical
 equation port.
+
+## Coupled-rate translation
+
+The legacy signaling callbacks expose extracellular derivatives as
+concentration rates and divide cell exchange by the `4 * 4 * 4 = 64` voxel
+volume before returning them. CellModeller2 coupled plans expose extracellular
+*amount* rates; the native scatter operation performs the voxel-volume division.
+The migrated signal outputs therefore return the unscaled exchange amount.
+Intracellular equations that explicitly used `area / gridVolume` retain their
+division by 64.
+
+The migrations use conventional diffusion coefficients rather than preserving
+the legacy implementation's accidental extra factor of one sixth. They retain
+the declared no-flux boundary behavior and integration choice: forward Euler
+for `ex3_simpleSignal.py`, and Crank-Nicolson for the other three models.
+The Crank-Nicolson ports set an absolute residual tolerance of `1e-12`; the
+engine default would accept a zero field while these models' initially small
+signal sources remained below its absolute threshold.
+
+`EdgeDetectorChamber.py` initialized `targetVol` but tested the absent
+`target_volume` attribute against 3.0. Its migration restores the evident
+intended uniform division threshold of 3.5 to 4.0. This is an explicit repair,
+not a claim that the original typo's behavior was reproduced.
