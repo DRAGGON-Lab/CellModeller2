@@ -26,8 +26,8 @@ rate, cell type, effective volume, and effective surface area. They compose
 those values with arithmetic, elementary functions, comparisons, and a typed
 select. Every operand must refer to an earlier instruction and the plan has one
 declared output per species. This representation is directly inspectable and
-serializable, and each native backend interprets the same validated data with
-its own C++, MSL, or CUDA C++ implementation.
+serializable, and each native backend is designed to interpret the same
+validated data with its own C++, MSL, or CUDA C++ implementation.
 
 For one biological step:
 

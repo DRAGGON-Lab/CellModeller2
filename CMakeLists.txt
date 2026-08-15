@@ -49,6 +49,7 @@ if(CM2_ENABLE_METAL)
   set(CM2_METAL_GROWTH_HEADER "${CM2_GENERATED_DIR}/cm2/metal/growth_source.hpp")
   set(CM2_METAL_CONTACTS_HEADER "${CM2_GENERATED_DIR}/cm2/metal/contacts_source.hpp")
   set(CM2_METAL_MECHANICS_HEADER "${CM2_GENERATED_DIR}/cm2/metal/mechanics_source.hpp")
+  set(CM2_METAL_SPECIES_HEADER "${CM2_GENERATED_DIR}/cm2/metal/species_source.hpp")
   add_custom_command(
     OUTPUT "${CM2_METAL_GROWTH_HEADER}"
     COMMAND "${CMAKE_COMMAND}"
@@ -85,12 +86,25 @@ if(CM2_ENABLE_METAL)
       cmake/EmbedMetalSource.cmake
     VERBATIM
   )
+  add_custom_command(
+    OUTPUT "${CM2_METAL_SPECIES_HEADER}"
+    COMMAND "${CMAKE_COMMAND}"
+      "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/cpp/metal/kernels/species.metal"
+      "-DOUTPUT=${CM2_METAL_SPECIES_HEADER}"
+      "-DSYMBOL=species_source"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMetalSource.cmake"
+    DEPENDS
+      cpp/metal/kernels/species.metal
+      cmake/EmbedMetalSource.cmake
+    VERBATIM
+  )
 
   target_sources(cm2_core PRIVATE
     cpp/metal/metal_backend.mm
     "${CM2_METAL_CONTACTS_HEADER}"
     "${CM2_METAL_GROWTH_HEADER}"
     "${CM2_METAL_MECHANICS_HEADER}"
+    "${CM2_METAL_SPECIES_HEADER}"
   )
   target_include_directories(cm2_core PRIVATE "${CM2_GENERATED_DIR}")
   target_compile_definitions(cm2_core PRIVATE CM2_HAS_METAL=1)

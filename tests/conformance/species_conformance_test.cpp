@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #include "cm2/simulation.hpp"
@@ -26,23 +27,46 @@ cm2::SpeciesRatePlan make_plan() {
                               {
                                   {.operation = species, .first = 0},
                                   {.operation = species, .first = 1},
+                                  {.operation = species, .first = 2},
                                   {.operation = constant, .value = 0.25F},
-                                  {.operation = multiply, .first = 0, .second = 1},
-                                  {.operation = add, .first = 3, .second = 2},
-                                  {.operation = cell_type},
-                                  {.operation = constant, .value = 1.0F},
-                                  {.operation = equal, .first = 5, .second = 6},
+                                  {.operation = position_x},
+                                  {.operation = position_y},
+                                  {.operation = position_z},
+                                  {.operation = cell_length},
+                                  {.operation = cell_radius},
                                   {.operation = growth_rate},
-                                  {.operation = negate, .first = 8},
-                                  {.operation = constant, .value = 0.0F},
-                                  {.operation = select, .first = 7, .second = 9, .third = 10},
+                                  {.operation = cell_type},
                                   {.operation = cell_volume},
                                   {.operation = cell_surface_area},
-                                  {.operation = divide, .first = 13, .second = 12},
-                                  {.operation = position_x},
-                                  {.operation = add, .first = 14, .second = 15},
+                                  {.operation = add, .first = 0, .second = 1},
+                                  {.operation = subtract, .first = 13, .second = 2},
+                                  {.operation = multiply, .first = 14, .second = 3},
+                                  {.operation = constant, .value = 2.0F},
+                                  {.operation = divide, .first = 15, .second = 16},
+                                  {.operation = power, .first = 8, .second = 16},
+                                  {.operation = minimum, .first = 17, .second = 18},
+                                  {.operation = maximum, .first = 19, .second = 3},
+                                  {.operation = negate, .first = 9},
+                                  {.operation = exponential, .first = 21},
+                                  {.operation = constant, .value = 1.0F},
+                                  {.operation = add, .first = 0, .second = 23},
+                                  {.operation = logarithm, .first = 24},
+                                  {.operation = less, .first = 4, .second = 7},
+                                  {.operation = less_equal, .first = 5, .second = 6},
+                                  {.operation = greater, .first = 7, .second = 8},
+                                  {.operation = greater_equal, .first = 10, .second = 3},
+                                  {.operation = equal, .first = 10, .second = 16},
+                                  {.operation = select, .first = 30, .second = 22, .third = 25},
+                                  {.operation = add, .first = 20, .second = 31},
+                                  {.operation = select, .first = 26, .second = 27, .third = 28},
+                                  {.operation = select, .first = 29, .second = 33, .third = 30},
+                                  {.operation = divide, .first = 12, .second = 11},
+                                  {.operation = add, .first = 35, .second = 4},
+                                  {.operation = add, .first = 36, .second = 5},
+                                  {.operation = add, .first = 37, .second = 6},
+                                  {.operation = add, .first = 38, .second = 18},
                               },
-                              {4, 11, 16});
+                              {32, 34, 39});
 }
 
 void populate(cm2::Simulation& simulation) {
@@ -94,6 +118,31 @@ void run_scenario(cm2::BackendKind backend) {
   candidate.validate();
 }
 
+void run_non_finite_rejection(cm2::BackendKind backend) {
+  cm2::Simulation simulation(backend, 1, 1);
+  cm2::CellInit cell;
+  cell.growth_rate = 0.0F;
+  cell.species = {1.0F};
+  const auto id = simulation.add_cell(cell);
+  using enum cm2::RateOp;
+  simulation.set_species_rate_plan(
+      cm2::SpeciesRatePlan(1,
+                           {
+                               {.operation = constant, .value = 0.0F},
+                               {.operation = divide, .first = 0, .second = 0},
+                           },
+                           {1}));
+  bool rejected = false;
+  try {
+    simulation.step(0.1F);
+  } catch (const std::domain_error&) {
+    rejected = true;
+  }
+  assert(rejected);
+  assert(simulation.time() == 0.0);
+  assert(simulation.cell(id).species == cell.species);
+}
+
 }  // namespace
 
 int main() {
@@ -105,6 +154,7 @@ int main() {
     cm2::Simulation probe(backend);
     if (probe.supports(cm2::BackendFeature::species)) {
       run_scenario(backend);
+      run_non_finite_rejection(backend);
     }
   }
   return 0;

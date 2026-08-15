@@ -84,8 +84,13 @@ def test_invalid_time_step_is_rejected() -> None:
         simulation.step(-0.1)
 
 
-def test_cpu_species_step_dilutes_then_evaluates_typed_rates() -> None:
-    simulation = Simulation(species_count=2)
+@pytest.mark.parametrize("backend", list(BackendKind))
+def test_species_step_dilutes_then_evaluates_typed_rates(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+    simulation = Simulation(backend, species_count=2)
+    if not simulation.supports(BackendFeature.SPECIES):
+        pytest.skip("backend does not implement species integration")
     cell = CellInit()
     cell.length = 2.0
     cell.radius = 0.5

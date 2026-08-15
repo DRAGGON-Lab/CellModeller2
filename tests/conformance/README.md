@@ -23,9 +23,10 @@ reference implementation, but says nothing about GPU conformance.
 The species scenario uses 513 cells, three concentrations, heterogeneous
 geometry and cell types, and a typed plan that reads concentrations and cell
 attributes. It checks growth dilution, post-dilution rate evaluation,
-simultaneous explicit Euler updates, zero-length time steps, stable identity,
-and cell-major schema preservation. Levels and lengths use absolute and
-relative tolerances of `2e-5`; identities and shapes are exact.
+simultaneous explicit Euler updates, every declared instruction operation,
+zero-length time steps, stable identity, and cell-major schema preservation.
+Levels and lengths use absolute and relative tolerances of `2e-5`; identities
+and shapes are exact.
 
 ## Lifecycle conformance scenario
 

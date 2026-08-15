@@ -19,6 +19,7 @@
 #include "cm2/metal/contacts_source.hpp"
 #include "cm2/metal/growth_source.hpp"
 #include "cm2/metal/mechanics_source.hpp"
+#include "cm2/metal/species_source.hpp"
 
 namespace cm2 {
 namespace {
@@ -55,6 +56,16 @@ struct alignas(16) MetalExternalConstraint {
 };
 
 static_assert(sizeof(MetalExternalConstraint) == 48);
+
+struct MetalRateInstruction {
+  std::uint32_t operation;
+  std::uint32_t first;
+  std::uint32_t second;
+  std::uint32_t third;
+  float value;
+};
+
+static_assert(sizeof(MetalRateInstruction) == 20);
 
 [[noreturn]] void throw_metal_error(const char* operation, NSError* error) {
   const char* detail = error == nil ? "unknown Metal error" : error.localizedDescription.UTF8String;
@@ -132,6 +143,11 @@ class MetalBackend final : public ComputeBackend {
       growth_pipeline_ = compile_pipeline(device_, growth_library, @"advance_growth",
                                           "failed to create the Metal growth pipeline");
 
+      const auto species_library =
+          compile_library(device_, metal::species_source, "failed to compile Metal species");
+      species_pipeline_ = compile_pipeline(device_, species_library, @"advance_species",
+                                           "failed to create the Metal species pipeline");
+
       const auto contacts_library =
           compile_library(device_, metal::contacts_source, "failed to compile Metal contacts");
       contact_count_pipeline_ =
@@ -195,8 +211,8 @@ class MetalBackend final : public ComputeBackend {
   }
 
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
-    return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts ||
-           feature == BackendFeature::cell_mechanics ||
+    return feature == BackendFeature::growth || feature == BackendFeature::species ||
+           feature == BackendFeature::cell_contacts || feature == BackendFeature::cell_mechanics ||
            feature == BackendFeature::external_constraints;
   }
 
@@ -238,9 +254,112 @@ class MetalBackend final : public ComputeBackend {
     std::memcpy(view.lengths.data(), lengths_.contents, byte_count);
   }
 
-  void advance_species(WorldState&, const SpeciesRatePlan&, std::span<const float>,
-                       float) override {
-    throw std::runtime_error("Metal species integration is not implemented in this build");
+  void advance_species(WorldState& state, const SpeciesRatePlan& plan,
+                       std::span<const float> previous_lengths, float dt) override {
+    if (!std::isfinite(dt) || dt < 0.0F) {
+      throw std::invalid_argument("species time step must be finite and non-negative");
+    }
+    state.validate();
+    plan.validate();
+    if (plan.species_count() != state.species_count()) {
+      throw std::invalid_argument("species rate plan and world state species counts disagree");
+    }
+    if (previous_lengths.size() != state.size()) {
+      throw std::invalid_argument("previous cell lengths and world state cell counts disagree");
+    }
+    if (state.empty() || state.species_count() == 0) {
+      return;
+    }
+    if (state.size() > std::numeric_limits<std::uint32_t>::max() ||
+        state.species_count() > std::numeric_limits<std::uint32_t>::max() ||
+        plan.instructions().size() > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::overflow_error("Metal species launch exceeds the uint32 index space");
+    }
+    if (!std::ranges::all_of(previous_lengths,
+                             [](float value) { return std::isfinite(value) && value >= 0.0F; })) {
+      throw std::invalid_argument("previous cell lengths must be finite and non-negative");
+    }
+    if (state.size() > std::numeric_limits<std::size_t>::max() / state.species_count() ||
+        state.size() > std::numeric_limits<std::size_t>::max() / plan.instructions().size()) {
+      throw std::overflow_error("Metal species buffer size overflow");
+    }
+
+    const auto level_count = state.size() * state.species_count();
+    const auto workspace_count = state.size() * plan.instructions().size();
+    if (level_count > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
+        workspace_count > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
+        plan.instructions().size() >
+            std::numeric_limits<std::size_t>::max() / sizeof(MetalRateInstruction)) {
+      throw std::overflow_error("Metal species allocation size overflow");
+    }
+    ensure_species_capacity(state.size(), level_count, plan.instructions().size(),
+                            state.species_count(), workspace_count);
+
+    const auto geometry = state.geometry_state();
+    const auto attributes = state.cell_attributes();
+    auto species_state = state.species_state();
+    std::memcpy(species_levels_.contents, species_state.levels.data(),
+                species_state.levels.size_bytes());
+    std::memcpy(species_previous_lengths_.contents, previous_lengths.data(),
+                previous_lengths.size_bytes());
+    std::memcpy(species_growth_rates_.contents, attributes.growth_rates.data(),
+                attributes.growth_rates.size_bytes());
+    std::memcpy(species_cell_types_.contents, attributes.cell_types.data(),
+                attributes.cell_types.size_bytes());
+    auto* centers = static_cast<MetalFloat4*>(species_centers_.contents);
+    auto* shapes = static_cast<MetalFloat4*>(species_geometry_.contents);
+    for (std::size_t index = 0; index < state.size(); ++index) {
+      centers[index] = {geometry.position_x[index], geometry.position_y[index],
+                        geometry.position_z[index], 0.0F};
+      shapes[index] = {geometry.lengths[index], geometry.radii[index], 0.0F, 0.0F};
+    }
+    auto* instructions = static_cast<MetalRateInstruction*>(species_instructions_.contents);
+    for (std::size_t index = 0; index < plan.instructions().size(); ++index) {
+      const auto& instruction = plan.instructions()[index];
+      instructions[index] = {
+          .operation = static_cast<std::uint32_t>(instruction.operation),
+          .first = instruction.first,
+          .second = instruction.second,
+          .third = instruction.third,
+          .value = instruction.value,
+      };
+    }
+    std::memcpy(species_outputs_.contents, plan.outputs().data(), plan.outputs().size_bytes());
+    *static_cast<std::uint32_t*>(species_error_.contents) = 0;
+
+    const auto cell_count = static_cast<std::uint32_t>(state.size());
+    const auto species_count = static_cast<std::uint32_t>(state.species_count());
+    const auto instruction_count = static_cast<std::uint32_t>(plan.instructions().size());
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal species command");
+      }
+      [encoder setComputePipelineState:species_pipeline_];
+      [encoder setBuffer:species_levels_ offset:0 atIndex:0];
+      [encoder setBuffer:species_previous_lengths_ offset:0 atIndex:1];
+      [encoder setBuffer:species_centers_ offset:0 atIndex:2];
+      [encoder setBuffer:species_geometry_ offset:0 atIndex:3];
+      [encoder setBuffer:species_growth_rates_ offset:0 atIndex:4];
+      [encoder setBuffer:species_cell_types_ offset:0 atIndex:5];
+      [encoder setBuffer:species_instructions_ offset:0 atIndex:6];
+      [encoder setBuffer:species_outputs_ offset:0 atIndex:7];
+      [encoder setBuffer:species_workspace_ offset:0 atIndex:8];
+      [encoder setBuffer:species_error_ offset:0 atIndex:9];
+      [encoder setBytes:&dt length:sizeof(dt) atIndex:10];
+      [encoder setBytes:&species_count length:sizeof(species_count) atIndex:11];
+      [encoder setBytes:&instruction_count length:sizeof(instruction_count) atIndex:12];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:13];
+      dispatch_1d(encoder, species_pipeline_, cell_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal species command failed");
+    }
+    if (*static_cast<const std::uint32_t*>(species_error_.contents) != 0) {
+      throw std::domain_error("Metal species kernel produced a non-finite value");
+    }
+    std::memcpy(species_state.levels.data(), species_levels_.contents,
+                species_state.levels.size_bytes());
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -433,6 +552,48 @@ class MetalBackend final : public ComputeBackend {
     const auto byte_count = growth_capacity_ * sizeof(float);
     lengths_ = allocate_shared_buffer(device_, byte_count, "growth lengths");
     growth_rates_ = allocate_shared_buffer(device_, byte_count, "growth rates");
+  }
+
+  void ensure_species_capacity(std::size_t cell_count, std::size_t level_count,
+                               std::size_t instruction_count, std::size_t species_count,
+                               std::size_t workspace_count) {
+    if (cell_count > species_cell_capacity_) {
+      species_cell_capacity_ = std::bit_ceil(cell_count);
+      species_previous_lengths_ = allocate_shared_buffer(
+          device_, species_cell_capacity_ * sizeof(float), "species previous lengths");
+      species_centers_ = allocate_shared_buffer(
+          device_, species_cell_capacity_ * sizeof(MetalFloat4), "species cell centers");
+      species_geometry_ = allocate_shared_buffer(
+          device_, species_cell_capacity_ * sizeof(MetalFloat4), "species cell geometry");
+      species_growth_rates_ = allocate_shared_buffer(
+          device_, species_cell_capacity_ * sizeof(float), "species growth rates");
+      species_cell_types_ = allocate_shared_buffer(
+          device_, species_cell_capacity_ * sizeof(std::int32_t), "species cell types");
+    }
+    if (level_count > species_level_capacity_) {
+      species_level_capacity_ = std::bit_ceil(level_count);
+      species_levels_ = allocate_shared_buffer(device_, species_level_capacity_ * sizeof(float),
+                                               "species levels");
+    }
+    if (instruction_count > species_instruction_capacity_) {
+      species_instruction_capacity_ = std::bit_ceil(instruction_count);
+      species_instructions_ = allocate_shared_buffer(
+          device_, species_instruction_capacity_ * sizeof(MetalRateInstruction),
+          "species rate instructions");
+    }
+    if (species_count > species_output_capacity_) {
+      species_output_capacity_ = std::bit_ceil(species_count);
+      species_outputs_ = allocate_shared_buffer(
+          device_, species_output_capacity_ * sizeof(std::uint32_t), "species rate outputs");
+    }
+    if (workspace_count > species_workspace_capacity_) {
+      species_workspace_capacity_ = std::bit_ceil(workspace_count);
+      species_workspace_ = allocate_shared_buffer(
+          device_, species_workspace_capacity_ * sizeof(float), "species rate workspace");
+    }
+    if (species_error_ == nil) {
+      species_error_ = allocate_shared_buffer(device_, sizeof(std::uint32_t), "species error flag");
+    }
   }
 
   void ensure_contact_cell_capacity(std::size_t count) {
@@ -1137,6 +1298,7 @@ class MetalBackend final : public ComputeBackend {
   id<MTLDevice> device_{nil};
   id<MTLCommandQueue> queue_{nil};
   id<MTLComputePipelineState> growth_pipeline_{nil};
+  id<MTLComputePipelineState> species_pipeline_{nil};
   id<MTLComputePipelineState> contact_count_pipeline_{nil};
   id<MTLComputePipelineState> contact_scan_pipeline_{nil};
   id<MTLComputePipelineState> contact_fill_pipeline_{nil};
@@ -1156,6 +1318,22 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> lengths_{nil};
   id<MTLBuffer> growth_rates_{nil};
   std::size_t growth_capacity_{0};
+
+  id<MTLBuffer> species_levels_{nil};
+  id<MTLBuffer> species_previous_lengths_{nil};
+  id<MTLBuffer> species_centers_{nil};
+  id<MTLBuffer> species_geometry_{nil};
+  id<MTLBuffer> species_growth_rates_{nil};
+  id<MTLBuffer> species_cell_types_{nil};
+  id<MTLBuffer> species_instructions_{nil};
+  id<MTLBuffer> species_outputs_{nil};
+  id<MTLBuffer> species_workspace_{nil};
+  id<MTLBuffer> species_error_{nil};
+  std::size_t species_cell_capacity_{0};
+  std::size_t species_level_capacity_{0};
+  std::size_t species_instruction_capacity_{0};
+  std::size_t species_output_capacity_{0};
+  std::size_t species_workspace_capacity_{0};
 
   id<MTLBuffer> contact_ids_{nil};
   id<MTLBuffer> contact_centers_{nil};
