@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import math
 import random
+from pathlib import Path
+from typing import Protocol, cast
 
+import numpy as np
 import pytest
 from cellmodeller2 import (
     BackendKind,
@@ -12,7 +15,16 @@ from cellmodeller2 import (
     LegacyModelAdapter,
     Simulation,
     backend_available,
+    load_checkpoint_bundle,
+    save_checkpoint,
 )
+
+
+class _ArrayView(Protocol):
+    @property
+    def dtype(self) -> object: ...
+
+    def tolist(self) -> list[float]: ...
 
 
 @pytest.mark.parametrize("backend", list(BackendKind))
@@ -144,3 +156,62 @@ def test_legacy_division_jitter_is_explicit_and_seeded() -> None:
     assert directions[1] != [1.0, 0.0, 0.0]
     assert directions[0][2] == 0.0
     assert directions[1][2] == 0.0
+
+
+def test_legacy_controller_state_resumes_attributes_and_random_stream(tmp_path: Path) -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.metadata = {"line": (1, 2), "weights": [0.25, 0.75]}
+        cell.color = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
+
+    def divide_every_step(cells: dict[int, LegacyCell]) -> None:
+        for cell in cells.values():
+            cell.divideFlag = True
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=divide_every_step,
+        mechanics=False,
+        division_jitter_z=True,
+        rng=random.Random(91),
+    )
+    initial = CellInit()
+    initial.length = 9.0
+    adapter.add_cell(initial)
+    adapter.step(0.0)
+
+    path = tmp_path / "legacy.cm2.json"
+    save_checkpoint(simulation, path, controller=adapter.controller_state())
+    bundle = load_checkpoint_bundle(path)
+    restored = LegacyModelAdapter.from_controller_state(
+        bundle.simulation,
+        bundle.controller,
+        init=initialize,
+        update=divide_every_step,
+    )
+
+    restored_first = next(iter(restored.cells.values()))
+    assert restored_first.metadata == {"line": (1, 2), "weights": [0.25, 0.75]}
+    raw_color: object = restored_first.color
+    assert isinstance(raw_color, np.ndarray)
+    color = cast(_ArrayView, raw_color)
+    assert str(color.dtype) == "float32"
+    assert all(
+        math.isclose(actual, expected, abs_tol=1.0e-7)
+        for actual, expected in zip(color.tolist(), [0.1, 0.2, 0.3], strict=True)
+    )
+
+    adapter.step(0.0)
+    restored.step(0.0)
+    for original_cell, restored_cell in zip(
+        adapter.simulation.cells(), restored.simulation.cells(), strict=True
+    ):
+        assert original_cell.id == restored_cell.id
+        assert original_cell.slot == restored_cell.slot
+        assert original_cell.position.x == restored_cell.position.x
+        assert original_cell.position.y == restored_cell.position.y
+        assert original_cell.position.z == restored_cell.position.z
+        assert original_cell.direction.x == restored_cell.direction.x
+        assert original_cell.direction.y == restored_cell.direction.y
+        assert original_cell.direction.z == restored_cell.direction.z

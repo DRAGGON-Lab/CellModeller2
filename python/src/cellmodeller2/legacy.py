@@ -9,6 +9,8 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import Any, cast
 
+import numpy as np
+
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendFeature,
     CellInit,
@@ -17,6 +19,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     Simulation,
     Vec3,
 )
+from .checkpoint import JSONValue
 
 
 class LegacyCompatibilityError(RuntimeError):
@@ -89,6 +92,111 @@ def _ends(
     )
 
 
+def _encoded(value: object, path: str) -> JSONValue:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise LegacyCompatibilityError(f"{path} must be finite")
+        return value
+    if isinstance(value, np.generic):
+        scalar = cast(Any, value)
+        return _encoded(cast(object, scalar.item()), path)
+    if isinstance(value, np.ndarray):
+        array = cast(Any, value)
+        if array.dtype.kind not in "biuf":
+            raise LegacyCompatibilityError(f"{path} has unsupported NumPy dtype {array.dtype}")
+        if array.dtype.kind == "f" and not bool(np.isfinite(array).all()):
+            raise LegacyCompatibilityError(f"{path} must contain finite values")
+        return {
+            "$type": "ndarray",
+            "dtype": cast(str, array.dtype.str),
+            "shape": cast(list[JSONValue], list(array.shape)),
+            "items": _encoded(cast(object, array.tolist()), f"{path}.items"),
+        }
+    if isinstance(value, list):
+        sequence = cast(list[object], value)
+        return {
+            "$type": "list",
+            "items": [
+                _encoded(item, f"{path}[{index}]") for index, item in enumerate(sequence)
+            ],
+        }
+    if isinstance(value, tuple):
+        sequence = cast(tuple[object, ...], value)
+        return {
+            "$type": "tuple",
+            "items": [
+                _encoded(item, f"{path}[{index}]") for index, item in enumerate(sequence)
+            ],
+        }
+    if isinstance(value, dict):
+        mapping = cast(dict[object, object], value)
+        items: list[JSONValue] = []
+        for key, item in mapping.items():
+            if not isinstance(key, str):
+                raise LegacyCompatibilityError(f"{path} dictionary keys must be strings")
+            items.append([key, _encoded(item, f"{path}[{key!r}]")])
+        return {"$type": "dict", "items": items}
+    raise LegacyCompatibilityError(f"{path} has unsupported value type {type(value).__name__}")
+
+
+def _decoded(value: JSONValue, path: str) -> Any:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise LegacyCompatibilityError(f"{path} must be finite")
+        return value
+    if not isinstance(value, dict):
+        raise LegacyCompatibilityError(f"{path} is not a tagged legacy value")
+    kind = value.get("$type")
+    if kind in {"list", "tuple"}:
+        if set(value) != {"$type", "items"} or not isinstance(value["items"], list):
+            raise LegacyCompatibilityError(f"{path} has an invalid {kind} encoding")
+        items = [
+            _decoded(item, f"{path}.items[{index}]")
+            for index, item in enumerate(value["items"])
+        ]
+        return items if kind == "list" else tuple(items)
+    if kind == "dict":
+        if set(value) != {"$type", "items"} or not isinstance(value["items"], list):
+            raise LegacyCompatibilityError(f"{path} has an invalid dictionary encoding")
+        result: dict[str, Any] = {}
+        for index, entry in enumerate(value["items"]):
+            if (
+                not isinstance(entry, list)
+                or len(entry) != 2
+                or not isinstance(entry[0], str)
+                or entry[0] in result
+            ):
+                raise LegacyCompatibilityError(f"{path}.items[{index}] is invalid")
+            result[entry[0]] = _decoded(entry[1], f"{path}[{entry[0]!r}]")
+        return result
+    if kind == "ndarray":
+        if set(value) != {"$type", "dtype", "shape", "items"}:
+            raise LegacyCompatibilityError(f"{path} has an invalid NumPy encoding")
+        dtype_value = value["dtype"]
+        shape_value = value["shape"]
+        if not isinstance(dtype_value, str) or not isinstance(shape_value, list):
+            raise LegacyCompatibilityError(f"{path} has invalid NumPy metadata")
+        if not all(
+            isinstance(item, int) and not isinstance(item, bool) and item >= 0
+            for item in shape_value
+        ):
+            raise LegacyCompatibilityError(f"{path} has an invalid NumPy shape")
+        shape = [cast(int, item) for item in shape_value]
+        try:
+            dtype = np.dtype(dtype_value)
+            if dtype.kind not in "biuf":
+                raise LegacyCompatibilityError(f"{path} has unsupported NumPy dtype {dtype}")
+            array = cast(Any, np.asarray(_decoded(value["items"], f"{path}.items"), dtype=dtype))
+            return array.reshape(tuple(shape))
+        except (TypeError, ValueError, OverflowError) as error:
+            raise LegacyCompatibilityError(f"{path} has invalid NumPy data") from error
+    raise LegacyCompatibilityError(f"{path} has an unknown tagged value type")
+
+
 class LegacyModelAdapter:
     """Drive maintained ``init/update/divide`` callbacks over a native simulation."""
 
@@ -107,6 +215,32 @@ class LegacyModelAdapter:
     ) -> None:
         if simulation.cell_count != 0:
             raise LegacyCompatibilityError("legacy adapter requires an empty simulation")
+        self._configure(
+            simulation,
+            init=init,
+            update=update,
+            divide=divide,
+            mechanics=mechanics,
+            compute_neighbors=compute_neighbors,
+            division_jitter_z=division_jitter_z,
+            rng=rng,
+            mechanics_parameters=mechanics_parameters,
+        )
+        self._cells: dict[int, LegacyCell] = {}
+
+    def _configure(
+        self,
+        simulation: Simulation,
+        *,
+        init: InitCallback,
+        update: UpdateCallback,
+        divide: DivideCallback | None,
+        mechanics: bool,
+        compute_neighbors: bool,
+        division_jitter_z: bool | None,
+        rng: random.Random | None,
+        mechanics_parameters: MechanicsParameters | None,
+    ) -> None:
         if mechanics and not simulation.supports(BackendFeature.CELL_MECHANICS):
             raise LegacyCompatibilityError("backend does not implement cell mechanics")
         if compute_neighbors and not simulation.supports(BackendFeature.CELL_CONTACTS):
@@ -124,7 +258,175 @@ class LegacyModelAdapter:
         self._division_jitter_z = division_jitter_z
         self._rng = rng
         self._mechanics_parameters = mechanics_parameters or MechanicsParameters()
-        self._cells: dict[int, LegacyCell] = {}
+
+    def controller_state(self) -> dict[str, JSONValue]:
+        """Return complete data-only callback and random-stream state."""
+
+        snapshots = self.simulation.cells()
+        if {snapshot.id for snapshot in snapshots} != self._cells.keys():
+            raise LegacyCompatibilityError("legacy cells and native simulation identities disagree")
+        cells: list[JSONValue] = []
+        for snapshot in snapshots:
+            cell = self._cells[snapshot.id]
+            attributes = {
+                name: _encoded(value, f"legacy cell {snapshot.id}.{name}")
+                for name, value in vars(cell).items()
+            }
+            cells.append({"id": snapshot.id, "attributes": attributes})
+        parameters = self._mechanics_parameters
+        return {
+            "kind": "cellmodeller2-legacy-python",
+            "version": 1,
+            "options": {
+                "mechanics": self._mechanics,
+                "compute_neighbors": self._compute_neighbors,
+                "division_jitter_z": self._division_jitter_z,
+                "mechanics_parameters": {
+                    "mu_a": parameters.mu_a,
+                    "gamma": parameters.gamma,
+                    "residual_rms_tolerance": parameters.residual_rms_tolerance,
+                    "max_iterations": parameters.max_iterations,
+                },
+            },
+            "random_state": _encoded(self._rng.getstate(), "legacy random state")
+            if self._rng is not None
+            else None,
+            "cells": cells,
+        }
+
+    @classmethod
+    def from_controller_state(
+        cls,
+        simulation: Simulation,
+        controller: JSONValue,
+        *,
+        init: InitCallback,
+        update: UpdateCallback,
+        divide: DivideCallback | None = None,
+        rng: random.Random | None = None,
+    ) -> LegacyModelAdapter:
+        """Restore callback state onto an already-restored native simulation."""
+
+        data = cls._controller_object(controller, "controller")
+        if set(data) != {"kind", "version", "options", "random_state", "cells"}:
+            raise LegacyCompatibilityError("legacy controller has unexpected fields")
+        if data["kind"] != "cellmodeller2-legacy-python" or data["version"] != 1:
+            raise LegacyCompatibilityError("legacy controller kind or version is unsupported")
+        options = cls._controller_object(data["options"], "controller.options")
+        if set(options) != {
+            "mechanics",
+            "compute_neighbors",
+            "division_jitter_z",
+            "mechanics_parameters",
+        }:
+            raise LegacyCompatibilityError("legacy controller options are invalid")
+        mechanics = options["mechanics"]
+        compute_neighbors = options["compute_neighbors"]
+        division_jitter_z = options["division_jitter_z"]
+        if not isinstance(mechanics, bool) or not isinstance(compute_neighbors, bool):
+            raise LegacyCompatibilityError("legacy controller Boolean options are invalid")
+        if division_jitter_z is not None and not isinstance(division_jitter_z, bool):
+            raise LegacyCompatibilityError("legacy division jitter option is invalid")
+        mechanics_data = cls._controller_object(
+            options["mechanics_parameters"], "controller.options.mechanics_parameters"
+        )
+        if set(mechanics_data) != {
+            "mu_a",
+            "gamma",
+            "residual_rms_tolerance",
+            "max_iterations",
+        }:
+            raise LegacyCompatibilityError("legacy mechanics parameters are invalid")
+        parameters = MechanicsParameters()
+        try:
+            parameters.mu_a = float(cast(Any, mechanics_data["mu_a"]))
+            parameters.gamma = float(cast(Any, mechanics_data["gamma"]))
+            parameters.residual_rms_tolerance = float(
+                cast(Any, mechanics_data["residual_rms_tolerance"])
+            )
+            parameters.max_iterations = int(cast(Any, mechanics_data["max_iterations"]))
+        except (TypeError, ValueError, OverflowError) as error:
+            raise LegacyCompatibilityError("legacy mechanics parameters are invalid") from error
+
+        random_state = data["random_state"]
+        restored_rng = rng
+        if random_state is not None:
+            restored_rng = restored_rng or random.Random()
+            decoded_random_state = _decoded(random_state, "controller.random_state")
+            if not isinstance(decoded_random_state, tuple):
+                raise LegacyCompatibilityError("legacy random state is invalid")
+            try:
+                restored_rng.setstate(cast(tuple[Any, ...], decoded_random_state))
+            except (TypeError, ValueError) as error:
+                raise LegacyCompatibilityError("legacy random state is invalid") from error
+
+        instance = cls.__new__(cls)
+        instance._configure(
+            simulation,
+            init=init,
+            update=update,
+            divide=divide,
+            mechanics=mechanics,
+            compute_neighbors=compute_neighbors,
+            division_jitter_z=division_jitter_z,
+            rng=restored_rng,
+            mechanics_parameters=parameters,
+        )
+        instance._cells = instance._restore_cells(data["cells"])
+        return instance
+
+    @staticmethod
+    def _controller_object(value: JSONValue, path: str) -> dict[str, JSONValue]:
+        if not isinstance(value, dict):
+            raise LegacyCompatibilityError(f"{path} must be an object")
+        return value
+
+    def _restore_cells(self, value: JSONValue) -> dict[int, LegacyCell]:
+        if not isinstance(value, list):
+            raise LegacyCompatibilityError("controller.cells must be an array")
+        records: dict[int, dict[str, JSONValue]] = {}
+        for index, item in enumerate(value):
+            record = self._controller_object(item, f"controller.cells[{index}]")
+            if set(record) != {"id", "attributes"}:
+                raise LegacyCompatibilityError(f"controller.cells[{index}] is invalid")
+            cell_id = record["id"]
+            attributes = record["attributes"]
+            if (
+                not isinstance(cell_id, int)
+                or isinstance(cell_id, bool)
+                or cell_id <= 0
+                or cell_id in records
+                or not isinstance(attributes, dict)
+            ):
+                raise LegacyCompatibilityError(f"controller.cells[{index}] is invalid")
+            records[cell_id] = attributes
+        snapshots = self.simulation.cells()
+        if set(records) != {snapshot.id for snapshot in snapshots}:
+            raise LegacyCompatibilityError("legacy controller and native cell identities disagree")
+
+        cells: dict[int, LegacyCell] = {}
+        for snapshot in snapshots:
+            decoded_attributes = {
+                name: _decoded(item, f"controller.cells[{snapshot.id}].attributes.{name}")
+                for name, item in records[snapshot.id].items()
+            }
+            cell = LegacyCell(snapshot)
+            vars(cell).clear()
+            vars(cell).update(decoded_attributes)
+            if cell.id != snapshot.id or cell.idx != snapshot.slot:
+                raise LegacyCompatibilityError("legacy controller cell identity is invalid")
+            self._validate_engine_owned_geometry(cell, snapshot)
+            self._validate_mutable_state(cell)
+            if (
+                float(cell.growthRate) != snapshot.growth_rate
+                or int(cell.cellType) != snapshot.cell_type
+                or [float(item) for item in cell.species] != list(snapshot.species)
+            ):
+                raise LegacyCompatibilityError(
+                    "legacy controller mutable state disagrees with native state"
+                )
+            cells[snapshot.id] = cell
+        return cells
 
     @property
     def cells(self) -> Mapping[int, LegacyCell]:

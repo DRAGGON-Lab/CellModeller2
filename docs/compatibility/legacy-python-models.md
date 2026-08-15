@@ -28,8 +28,11 @@ objects still exist. It requires construction around an empty native
 `Simulation`. `build_legacy_model` supplies an opt-in `setup(sim)` facade and
 temporary import shims for `CLBacterium`, `ModuleRegulator`, and renderer
 declarations; the shims are removed after construction and do not install a
-shadow `CellModeller` package. Batch checkpointing of arbitrary Python
-attributes remains separate work. Geometry remains engine-owned, and callback
+shadow `CellModeller` package. `controller_state` serializes arbitrary JSON-like
+attributes, tuples, numeric NumPy arrays, adapter options, and the exact random
+stream into the authenticated v4 controller payload; `from_controller_state`
+restores that data without executable content. Wiring this state into the batch
+runner remains separate work. Geometry remains engine-owned, and callback
 attempts to mutate position, direction, length, or radius fail explicitly.
 Equal division is supported, including an explicitly seeded compatibility
 policy for the legacy per-daughter direction jitter; asymmetric division fails
