@@ -53,6 +53,10 @@ Run the test suite with:
 uv run pytest
 ```
 
+For a guided progression from colony growth through intracellular dynamics,
+signaling, contact-dependent behavior, analysis, and the SimBOL examples, see
+the [CellModeller2 tutorial suite](docs/tutorials/README.md).
+
 ## Write a model
 
 A native model is trusted Python code that defines `build(context)`. The context constructs the requested backend, exposes the seeded model random stream, and carries JSON parameters supplied by the CLI.
