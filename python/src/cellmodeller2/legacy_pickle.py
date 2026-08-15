@@ -366,7 +366,6 @@ def import_legacy_pickle(
     try:
         world.validate()
         native = _SimulationCheckpoint()
-        native.schema_version = 3
         native.time = physical_time
         native.world = world
         native.constraints = _ConstraintSetCheckpoint()

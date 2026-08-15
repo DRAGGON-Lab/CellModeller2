@@ -83,8 +83,8 @@ float boundary_value(const GridBoundary& boundary, std::size_t signal, float cur
   throw std::logic_error("unknown signal grid boundary kind");
 }
 
-float transport_diagonal(const SignalGridSpec& spec, std::size_t signal, std::uint32_t x,
-                         std::uint32_t y, std::uint32_t z) {
+float signal_operator_diagonal(const SignalGridSpec& spec, std::size_t signal, std::uint32_t x,
+                               std::uint32_t y, std::uint32_t z) {
   const std::array<std::uint32_t, 3> dimensions{spec.shape.x, spec.shape.y, spec.shape.z};
   const std::array<float, 3> spacing{spec.spacing.x, spec.spacing.y, spec.spacing.z};
   const std::array<float, 3> velocity{spec.advection[signal].x, spec.advection[signal].y,
@@ -118,7 +118,35 @@ float transport_diagonal(const SignalGridSpec& spec, std::size_t signal, std::ui
       diagonal += velocity[axis] * inverse_spacing;
     }
   }
+  if (spec.reaction.has_value()) {
+    const auto site = flat_site(spec.shape, x, y, z);
+    diagonal -= spec.reaction->loss_rates[(signal * spec.site_count()) + site];
+  }
   return diagonal;
+}
+
+std::vector<float> signal_grid_operator_rates(const SignalGrid& grid,
+                                              std::span<const float> levels) {
+  auto rates = signal_grid_transport_rates(grid, levels);
+  const auto& reaction = grid.spec().reaction;
+  if (!reaction.has_value()) {
+    return rates;
+  }
+  for (std::size_t index = 0; index < rates.size(); ++index) {
+    rates[index] += reaction->source_rates[index] - (reaction->loss_rates[index] * levels[index]);
+  }
+  return rates;
+}
+
+double max_reaction_loss(const SignalGridSpec& spec, std::size_t signal) {
+  if (!spec.reaction.has_value()) {
+    return 0.0;
+  }
+  const auto sites = spec.site_count();
+  const auto begin = spec.reaction->loss_rates.begin() +
+                     static_cast<std::ptrdiff_t>(signal * sites);
+  return static_cast<double>(
+      *std::max_element(begin, begin + static_cast<std::ptrdiff_t>(sites)));
 }
 
 float rms(std::span<const float> values) {
@@ -187,6 +215,24 @@ void SignalSolveParameters::validate() const {
   }
 }
 
+void SignalGridAffineReaction::validate(std::size_t level_count) const {
+  if (source_rates.size() != level_count || loss_rates.size() != level_count) {
+    throw std::invalid_argument(
+        "signal grid affine reaction arrays must match the grid level count");
+  }
+  for (const auto value : source_rates) {
+    if (!std::isfinite(value) || value < 0.0F) {
+      throw std::invalid_argument(
+          "signal grid affine source rates must be finite and non-negative");
+    }
+  }
+  for (const auto value : loss_rates) {
+    if (!std::isfinite(value) || value < 0.0F) {
+      throw std::invalid_argument("signal grid affine loss rates must be finite and non-negative");
+    }
+  }
+}
+
 std::size_t SignalGridSpec::site_count() const {
   const auto xy = checked_multiply(shape.x, shape.y, "site count");
   return checked_multiply(xy, shape.z, "site count");
@@ -223,6 +269,9 @@ void SignalGridSpec::validate() const {
     if (!finite(velocity)) {
       throw std::invalid_argument("signal advection must be finite");
     }
+  }
+  if (reaction.has_value()) {
+    reaction->validate(level_count());
   }
   switch (integration) {
     case SignalIntegrationKind::forward_euler:
@@ -325,7 +374,8 @@ void SignalGrid::validate_step(float dt) const {
     }
     const auto factor =
         static_cast<double>(dt) *
-        ((2.0 * static_cast<double>(spec_.diffusion[signal]) * inverse_square_sum) + courant_sum);
+        ((2.0 * static_cast<double>(spec_.diffusion[signal]) * inverse_square_sum) + courant_sum +
+         max_reaction_loss(spec_, signal));
     if (!std::isfinite(factor) || factor > 1.0) {
       throw std::invalid_argument("signal grid time step violates the explicit stability bound");
     }
@@ -336,14 +386,14 @@ void SignalGrid::validate() const {
   SignalGridCheckpoint{.spec = spec_, .levels = levels_}.validate();
 }
 
-std::vector<float> signal_grid_transport_candidate(const SignalGrid& grid, float dt) {
+std::vector<float> signal_grid_forward_euler_candidate(const SignalGrid& grid, float dt) {
   grid.validate();
   grid.validate_step(dt);
   if (dt == 0.0F) {
     return std::vector<float>(grid.levels().begin(), grid.levels().end());
   }
   const auto levels = grid.levels();
-  const auto rates = signal_grid_transport_rates(grid, levels);
+  const auto rates = signal_grid_operator_rates(grid, levels);
   std::vector<float> updated(levels.begin(), levels.end());
   for (std::size_t index = 0; index < updated.size(); ++index) {
     const auto candidate = levels[index] + (dt * rates[index]);
@@ -457,7 +507,7 @@ SignalSolveResult signal_grid_crank_nicolson_candidate(const SignalGrid& grid, f
     return {.levels = std::vector<float>(old.begin(), old.end()), .report = {}};
   }
 
-  const auto old_rates = signal_grid_transport_rates(grid, old);
+  const auto old_rates = signal_grid_operator_rates(grid, old);
   const auto half_dt = 0.5F * dt;
   std::vector<float> right_hand_side(old.size());
   for (std::size_t index = 0; index < old.size(); ++index) {
@@ -472,7 +522,7 @@ SignalSolveResult signal_grid_crank_nicolson_candidate(const SignalGrid& grid, f
   std::uint32_t iterations = 0;
 
   for (; iterations <= spec.solver.max_iterations; ++iterations) {
-    const auto rates = signal_grid_transport_rates(grid, current);
+    const auto rates = signal_grid_operator_rates(grid, current);
     for (std::size_t index = 0; index < current.size(); ++index) {
       residual[index] = right_hand_side[index] - current[index] + (half_dt * rates[index]);
     }
@@ -497,7 +547,7 @@ SignalSolveResult signal_grid_crank_nicolson_candidate(const SignalGrid& grid, f
         for (std::uint32_t y = 0; y < spec.shape.y; ++y) {
           for (std::uint32_t z = 0; z < spec.shape.z; ++z) {
             const auto index = (signal * sites) + flat_site(spec.shape, x, y, z);
-            const auto diagonal = transport_diagonal(spec, signal, x, y, z);
+            const auto diagonal = signal_operator_diagonal(spec, signal, x, y, z);
             const auto remainder = rates[index] - (diagonal * current[index]);
             next[index] =
                 (right_hand_side[index] + (half_dt * remainder)) / (1.0F - (half_dt * diagonal));
@@ -515,7 +565,7 @@ SignalSolveResult signal_grid_crank_nicolson_candidate(const SignalGrid& grid, f
 
 SignalSolveReport advance_signal_grid_cpu(SignalGrid& grid, float dt) {
   if (grid.spec().integration == SignalIntegrationKind::forward_euler) {
-    grid.replace_levels(signal_grid_transport_candidate(grid, dt));
+    grid.replace_levels(signal_grid_forward_euler_candidate(grid, dt));
     return {};
   }
   auto result = signal_grid_crank_nicolson_candidate(grid, dt);

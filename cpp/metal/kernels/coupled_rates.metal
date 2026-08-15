@@ -241,7 +241,9 @@ kernel void advance_coupled_grid(
     constant float4& origin [[buffer(10)]], constant float4& spacing [[buffer(11)]],
     constant float& dt [[buffer(12)]], constant uint& signal_count [[buffer(13)]],
     constant uint& cell_count [[buffer(14)]], constant uint& level_count [[buffer(15)]],
-    constant uint& crank_nicolson [[buffer(16)]], uint index [[thread_position_in_grid]]) {
+    constant uint& crank_nicolson [[buffer(16)]],
+    device const float* reaction_source [[buffer(17)]],
+    device const float* reaction_loss [[buffer(18)]], uint index [[thread_position_in_grid]]) {
   if (index >= level_count) {
     return;
   }
@@ -303,6 +305,7 @@ kernel void advance_coupled_grid(
     }
     rate -= (upper_flux - lower_flux) * inverse_spacing;
   }
+  rate += reaction_source[index] - reaction_loss[index] * current;
 
   float source = 0.0f;
   float inverse_voxel_volume = 1.0f / (spacing.x * spacing.y * spacing.z);

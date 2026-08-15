@@ -34,6 +34,52 @@ void assert_close(float actual, float expected) { assert(std::abs(actual - expec
 
 int main() {
   {
+    auto spec = line_spec(1);
+    spec.diffusion = {0.0F};
+    spec.reaction = cm::SignalGridAffineReaction{
+        .source_rates = {2.0F},
+        .loss_rates = {0.5F},
+    };
+    cm::SignalGrid grid(spec, {1.0F});
+    static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.5F));
+    assert_close(grid.levels()[0], 1.75F);
+
+    auto unstable = spec;
+    unstable.reaction->loss_rates = {2.0F};
+    cm::SignalGrid unstable_grid(unstable, {1.0F});
+    assert_throws<std::invalid_argument>(
+        [&] { static_cast<void>(cm::advance_signal_grid_cpu(unstable_grid, 0.51F)); });
+  }
+
+  {
+    auto spec = line_spec(1);
+    spec.diffusion = {0.0F};
+    spec.integration = cm::SignalIntegrationKind::crank_nicolson;
+    spec.reaction = cm::SignalGridAffineReaction{
+        .source_rates = {2.0F},
+        .loss_rates = {0.5F},
+    };
+    cm::SignalGrid grid(spec, {1.0F});
+    const auto report = cm::advance_signal_grid_cpu(grid, 1.0F);
+    assert(report.converged);
+    assert_close(grid.levels()[0], 2.2F);
+  }
+
+  {
+    auto invalid = line_spec(2);
+    invalid.reaction = cm::SignalGridAffineReaction{
+        .source_rates = {1.0F},
+        .loss_rates = {0.0F, 0.0F},
+    };
+    assert_throws<std::invalid_argument>([&] { invalid.validate(); });
+    invalid.reaction->source_rates = {1.0F, -1.0F};
+    assert_throws<std::invalid_argument>([&] { invalid.validate(); });
+    invalid.reaction->source_rates = {1.0F, 1.0F};
+    invalid.reaction->loss_rates = {0.0F, -1.0F};
+    assert_throws<std::invalid_argument>([&] { invalid.validate(); });
+  }
+
+  {
     cm::SignalGrid grid(line_spec(3), {0.0F, 1.0F, 0.0F});
     static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.25F));
     const auto levels = grid.levels();

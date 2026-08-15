@@ -178,9 +178,11 @@ uv run cm view \
 The port retains:
 
 - LuxI, AiiA, and GFP intracellular channels;
-- shared extracellular AHL;
+- shared extracellular AHL and nutrient fields;
 - AHL-activated production with a third-order Hill response;
 - LuxI-dependent AHL production and AiiA-dependent AHL removal;
+- an AHL sink in the channel, nutrient replenishment in the trap, nutrient
+  decay in the channel, and nutrient-limited growth;
 - stochastic daughter perturbations; and
 - the finite trap/channel obstacle geometry, expressed with typed plane and
   outside-sphere constraints.
@@ -190,20 +192,56 @@ genetic clocks,” Nature 463, 326–330 (2010), as cited by the SimBOL model. T
 example equations and constants are a tutorial realization, not a reproduction
 of the paper’s experimental parameter inference.
 
-### Deliberate transport boundary
+### Spatial field reactions
 
 `CM_Danino.py` subclasses the legacy grid to apply an x-dependent AHL sink and
 an x-dependent nutrient source/decay field. It then reads nutrient to regulate
-growth. CellModeller2’s current typed coupled plan supports diffusion,
-advection, boundaries, cell sampling, and cell-scattered sources; it does not
-yet declare arbitrary field-wide reaction masks.
+growth. CellModeller2 represents those terms with the optional affine reaction
+field on `SignalGridSpec`:
 
-The native tutorial therefore ports the core AHL oscillator and trap with
-constant configured growth. It does not emulate the nutrient mask on the host,
-silently drop it while retaining nutrient-dependent growth, or claim numerical
-equivalence to the full custom subclass. A complete follow-up should add a
-typed, checkpointed, backend-conformant grid-reaction representation before
-restoring those terms.
+```text
+dc[channel, x, y, z] / dt += source_rate[channel, x, y, z]
+                              - loss_rate[channel, x, y, z] * c[channel, x, y, z].
+```
+
+The coefficient arrays use the same signal-major, then x/y/z-major order as
+the concentration field. The model builds them once from the physical lattice
+coordinate `origin.x + x * spacing.x`; no Python callback runs during signal
+integration. With `outside = x < -60`, the declared coefficients are:
+
+| Field and region | source rate | loss rate |
+| --- | ---: | ---: |
+| AHL, inside trap | 0 | 0 |
+| AHL, outside in channel | 0 | 5 |
+| nutrient, inside trap | 20 | 2 |
+| nutrient, outside in channel | 0 | 0.5 |
+
+Thus the inside nutrient equation is `dN/dt += 2(10 - N)`, exactly the legacy
+target-and-replenishment form. The outside reaction is `dN/dt += -0.5 N`, and
+the outside AHL reaction is `dA/dt += -5 A`. Both fields begin at zero, so the
+nutrient reservoir develops dynamically rather than being installed as an
+initial condition.
+
+Before each biological step, the controller samples nutrient channel 1 at each
+cell center and applies the legacy saturating growth law:
+
+```text
+growth = nutrient / (5 + nutrient).
+```
+
+The affine coefficients are immutable grid configuration and exact checkpoint
+state. CPU, Metal, and CUDA evaluate the same focused native operator; the
+model does not inject or compile an arbitrary voxel function at runtime.
+
+### Numerical interpretation
+
+Forward Euler evaluates transport, affine field reaction, and cell scatter from
+the old field and commits them together. Its preflight stability bound includes
+the largest local loss rate for each signal. This model selects
+Crank–Nicolson: spatial losses enter the implicit diagonal, fixed sources enter
+both trapezoidal halves, and cell-scattered AHL exchange remains an old-field
+explicit source. A converged negative result is still rejected because
+Crank–Nicolson is not positivity preserving for arbitrarily stiff steps.
 
 ## Exercises
 
@@ -217,4 +255,3 @@ restoring those terms.
   data. The SimBOL defaults are dimensionless tutorial values.
 - Design a versioned SimBOL intermediate schema and fail explicitly on SBOL
   interactions that cannot be compiled to the bounded rate-plan operations.
-

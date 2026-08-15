@@ -61,8 +61,8 @@ well-defined. They deliberately express them through current contracts:
 - `NativeController` or a small explicit controller owns regulation and
   stochastic state;
 - `RatePlanBuilder` replaces runtime OpenCL source injection;
-- `SignalGridSpec` and a `CoupledRatePlan` jointly define transport and
-  cell-grid exchange;
+- `SignalGridSpec`, its optional affine reaction field, and a `CoupledRatePlan`
+  jointly define transport, spatial source/loss terms, and cell-grid exchange;
 - plane and sphere constraints replace encoded obstacle rows;
 - checkpoints replace executable pickle snapshots; and
 - scene and analysis exports replace model-owned renderer and analysis code.

@@ -14,7 +14,7 @@ This ledger defines the scientific and workflow boundary inherited from CellMode
 | P0 | Plane and sphere constraints | `CLBacterium.cl` | Typed constraint records participating in the native mechanics system; no sentinel cell IDs | Complete |
 | P0 | Mechanics solver | `CLBacterium` | Regularized matrix-free CG/PCG with convergence and breakdown diagnostics | Complete |
 | P0 | Species Euler integration | `CLEulerIntegrator` | Typed rate plans, legacy-compatible effective-volume dilution, and simultaneous updates | Complete |
-| P0 | Grid signaling | `GridDiffusion` | Diffusion, optional advection, declared boundaries, explicit stability checks, and checkpointed state | Complete |
+| P0 | Grid signaling | `GridDiffusion` | Diffusion, optional advection, declared boundaries, spatial affine source/loss fields, explicit stability checks, and checkpointed state | Complete |
 | P0 | Coupled cell/grid rates | Signal integrators | Device-resident sample, rate, transport, scatter, and simultaneous commit | Complete |
 | P0 | Checkpoint and exact resume | Pickle output | Versioned non-executable JSON checkpoint with provenance, integrity, schema migration, and authenticated controller state | Complete |
 | P0 | Batch execution | Batch scripts | Deterministic `cm run`, explicit backend/device/seed selection, stopping rules, collision safety, and data-only run manifests | Complete |

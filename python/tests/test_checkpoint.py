@@ -19,6 +19,7 @@ from cellmodeller2 import (
     PlaneConstraintInit,
     RateInstruction,
     RateOp,
+    SignalGridAffineReaction,
     SignalGridSpec,
     SignalIntegrationKind,
     Simulation,
@@ -171,6 +172,12 @@ def _remove_fixed_fields(document: dict[str, Any]) -> None:
         del cell["fixed"]
 
 
+def _remove_affine_reaction(document: dict[str, Any]) -> None:
+    grid = document["simulation"]["signal_grid"]
+    if grid is not None:
+        del grid["spec"]["reaction"]
+
+
 def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
     original, daughter_a, daughter_b = _make_simulation()
     path = tmp_path / "colony.cm2.json"
@@ -256,6 +263,7 @@ def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) 
     del document["simulation"]["coupled_rate_plan"]
     del document["simulation"]["signal_grid"]["spec"]["integration"]
     del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _remove_affine_reaction(document)
     _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
@@ -275,6 +283,7 @@ def test_version_three_checkpoint_migrates_without_controller_state(tmp_path: Pa
     del document["integrity"]["controller"]
     del document["simulation"]["signal_grid"]["spec"]["integration"]
     del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _remove_affine_reaction(document)
     _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
@@ -293,6 +302,7 @@ def test_version_four_signal_grid_migrates_to_forward_euler(tmp_path: Path) -> N
     document["version"] = 4
     del document["simulation"]["signal_grid"]["spec"]["integration"]
     del document["simulation"]["signal_grid"]["spec"]["solver"]
+    _remove_affine_reaction(document)
     _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
@@ -308,11 +318,69 @@ def test_version_five_cells_migrate_to_movable(tmp_path: Path) -> None:
     save_checkpoint(simulation, path)
     document = _document(path)
     document["version"] = 5
+    _remove_affine_reaction(document)
     _remove_fixed_fields(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
     assert all(not cell.fixed for cell in restored.cells())
+
+
+def test_version_six_signal_grid_migrates_without_affine_reactions(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v6.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 6
+    _remove_affine_reaction(document)
+    _rewrite_with_state_digest(path, document)
+
+    restored = load_checkpoint(path)
+    checkpoint = restored._checkpoint()
+    assert checkpoint.signal_grid is not None
+    assert checkpoint.signal_grid.spec.reaction is None
+
+
+def test_affine_grid_reaction_round_trips_exactly(tmp_path: Path) -> None:
+    simulation = Simulation()
+    shape = GridShape()
+    shape.x = 2
+    shape.y = 1
+    shape.z = 1
+    reaction = SignalGridAffineReaction()
+    reaction.source_rates = [2.0, 0.0]
+    reaction.loss_rates = [0.5, 1.0]
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.diffusion = [0.0]
+    grid.advection = [Vec3()]
+    grid.reaction = reaction
+    simulation.configure_signal_grid(grid, [1.0, 2.0])
+    path = tmp_path / "affine-reaction.cm2.json"
+
+    save_checkpoint(simulation, path)
+
+    document = _document(path)
+    assert document["simulation"]["signal_grid"]["spec"]["reaction"] == {
+        "source_rates": [2.0, 0.0],
+        "loss_rates": [0.5, 1.0],
+    }
+    restored = load_checkpoint(path)
+    checkpoint = restored._checkpoint()
+    assert checkpoint.signal_grid is not None
+    restored_reaction = checkpoint.signal_grid.spec.reaction
+    assert restored_reaction is not None
+    assert restored_reaction.source_rates == [2.0, 0.0]
+    assert restored_reaction.loss_rates == [0.5, 1.0]
+    restored.step(0.5)
+    assert restored.signal_levels == [1.75, 1.0]
+
+    invalid = _document(path)
+    invalid["simulation"]["signal_grid"]["spec"]["reaction"]["loss_rates"][0] = -0.5
+    _rewrite_with_state_digest(path, invalid)
+    with pytest.raises(CheckpointError, match="affine loss rates"):
+        load_checkpoint(path)
 
 
 def test_crank_nicolson_signal_configuration_round_trips(tmp_path: Path) -> None:

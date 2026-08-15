@@ -34,6 +34,7 @@ struct TransportPoint {
 
 __device__ TransportPoint transport_point(const float* levels, const float* diffusion,
                                           const float4* advection, const float* fixed_values,
+                                          const float* reaction_source, const float* reaction_loss,
                                           SignalGridBoundariesGpu boundaries,
                                           SignalGridShapeGpu shape, float4 spacing,
                                           std::uint32_t signal_count, std::uint32_t index) {
@@ -111,11 +112,14 @@ __device__ TransportPoint transport_point(const float* levels, const float* diff
       diagonal += velocity[axis] * inverse_spacing;
     }
   }
+  rate += reaction_source[index] - reaction_loss[index] * current;
+  diagonal -= reaction_loss[index];
   return {.rate = rate, .diagonal = diagonal};
 }
 
 __global__ void advance_signal_grid(const float* levels, float* output, const float* diffusion,
                                     const float4* advection, const float* fixed_values,
+                                    const float* reaction_source, const float* reaction_loss,
                                     std::uint32_t* error, SignalGridBoundariesGpu boundaries,
                                     SignalGridShapeGpu shape, float4 spacing, float dt,
                                     std::uint32_t signal_count, std::uint32_t level_count,
@@ -125,8 +129,9 @@ __global__ void advance_signal_grid(const float* levels, float* output, const fl
     return;
   }
 
-  const auto transport = transport_point(levels, diffusion, advection, fixed_values, boundaries,
-                                         shape, spacing, signal_count, index);
+  const auto transport =
+      transport_point(levels, diffusion, advection, fixed_values, reaction_source, reaction_loss,
+                      boundaries, shape, spacing, signal_count, index);
   const auto scale = crank_nicolson ? 0.5F * dt : dt;
   const auto candidate = levels[index] + scale * transport.rate;
   output[index] = candidate;
@@ -144,15 +149,17 @@ __global__ void signal_square_terms(const float* input, float* terms, std::uint3
 
 __global__ void signal_crank_nicolson_jacobi(
     const float* current, float* output, const float* right_hand_side, const float* diffusion,
-    const float4* advection, const float* fixed_values, std::uint32_t* error,
-    SignalGridBoundariesGpu boundaries, SignalGridShapeGpu shape, float4 spacing, float half_dt,
-    std::uint32_t signal_count, std::uint32_t level_count) {
+    const float4* advection, const float* fixed_values, const float* reaction_source,
+    const float* reaction_loss, std::uint32_t* error, SignalGridBoundariesGpu boundaries,
+    SignalGridShapeGpu shape, float4 spacing, float half_dt, std::uint32_t signal_count,
+    std::uint32_t level_count) {
   const auto index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index >= level_count) {
     return;
   }
-  const auto transport = transport_point(current, diffusion, advection, fixed_values, boundaries,
-                                         shape, spacing, signal_count, index);
+  const auto transport =
+      transport_point(current, diffusion, advection, fixed_values, reaction_source, reaction_loss,
+                      boundaries, shape, spacing, signal_count, index);
   const auto remainder = transport.rate - transport.diagonal * current[index];
   const auto candidate =
       (right_hand_side[index] + half_dt * remainder) / (1.0F - half_dt * transport.diagonal);
@@ -164,15 +171,16 @@ __global__ void signal_crank_nicolson_jacobi(
 
 __global__ void signal_crank_nicolson_residual_terms(
     const float* current, const float* right_hand_side, float* terms, const float* diffusion,
-    const float4* advection, const float* fixed_values, SignalGridBoundariesGpu boundaries,
-    SignalGridShapeGpu shape, float4 spacing, float half_dt, std::uint32_t signal_count,
-    std::uint32_t level_count) {
+    const float4* advection, const float* fixed_values, const float* reaction_source,
+    const float* reaction_loss, SignalGridBoundariesGpu boundaries, SignalGridShapeGpu shape,
+    float4 spacing, float half_dt, std::uint32_t signal_count, std::uint32_t level_count) {
   const auto index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index >= level_count) {
     return;
   }
-  const auto transport = transport_point(current, diffusion, advection, fixed_values, boundaries,
-                                         shape, spacing, signal_count, index);
+  const auto transport =
+      transport_point(current, diffusion, advection, fixed_values, reaction_source, reaction_loss,
+                      boundaries, shape, spacing, signal_count, index);
   const auto residual = right_hand_side[index] - current[index] + half_dt * transport.rate;
   terms[index] = residual * residual;
 }
@@ -181,6 +189,7 @@ __global__ void signal_crank_nicolson_residual_terms(
 
 void launch_advance_signal_grid(const float* levels, float* output, const float* diffusion,
                                 const float4* advection, const float* fixed_values,
+                                const float* reaction_source, const float* reaction_loss,
                                 std::uint32_t* error, SignalGridBoundariesGpu boundaries,
                                 SignalGridShapeGpu shape, float4 spacing, float dt,
                                 std::uint32_t signal_count, std::uint32_t level_count,
@@ -188,8 +197,8 @@ void launch_advance_signal_grid(const float* levels, float* output, const float*
   constexpr std::uint32_t threads_per_block = 256;
   const auto block_count = ((level_count - 1) / threads_per_block) + 1;
   advance_signal_grid<<<block_count, threads_per_block, 0, stream>>>(
-      levels, output, diffusion, advection, fixed_values, error, boundaries, shape, spacing, dt,
-      signal_count, level_count, crank_nicolson);
+      levels, output, diffusion, advection, fixed_values, reaction_source, reaction_loss, error,
+      boundaries, shape, spacing, dt, signal_count, level_count, crank_nicolson);
 }
 
 void launch_signal_square_terms(const float* input, float* terms, std::uint32_t level_count,
@@ -202,6 +211,7 @@ void launch_signal_square_terms(const float* input, float* terms, std::uint32_t 
 void launch_signal_crank_nicolson_jacobi(const float* current, float* output,
                                          const float* right_hand_side, const float* diffusion,
                                          const float4* advection, const float* fixed_values,
+                                         const float* reaction_source, const float* reaction_loss,
                                          std::uint32_t* error, SignalGridBoundariesGpu boundaries,
                                          SignalGridShapeGpu shape, float4 spacing, float half_dt,
                                          std::uint32_t signal_count, std::uint32_t level_count,
@@ -209,22 +219,21 @@ void launch_signal_crank_nicolson_jacobi(const float* current, float* output,
   constexpr std::uint32_t threads_per_block = 256;
   const auto block_count = ((level_count - 1) / threads_per_block) + 1;
   signal_crank_nicolson_jacobi<<<block_count, threads_per_block, 0, stream>>>(
-      current, output, right_hand_side, diffusion, advection, fixed_values, error, boundaries,
-      shape, spacing, half_dt, signal_count, level_count);
+      current, output, right_hand_side, diffusion, advection, fixed_values, reaction_source,
+      reaction_loss, error, boundaries, shape, spacing, half_dt, signal_count, level_count);
 }
 
-void launch_signal_crank_nicolson_residual_terms(const float* current, const float* right_hand_side,
-                                                 float* terms, const float* diffusion,
-                                                 const float4* advection, const float* fixed_values,
-                                                 SignalGridBoundariesGpu boundaries,
-                                                 SignalGridShapeGpu shape, float4 spacing,
-                                                 float half_dt, std::uint32_t signal_count,
-                                                 std::uint32_t level_count, cudaStream_t stream) {
+void launch_signal_crank_nicolson_residual_terms(
+    const float* current, const float* right_hand_side, float* terms, const float* diffusion,
+    const float4* advection, const float* fixed_values, const float* reaction_source,
+    const float* reaction_loss, SignalGridBoundariesGpu boundaries, SignalGridShapeGpu shape,
+    float4 spacing, float half_dt, std::uint32_t signal_count, std::uint32_t level_count,
+    cudaStream_t stream) {
   constexpr std::uint32_t threads_per_block = 256;
   const auto block_count = ((level_count - 1) / threads_per_block) + 1;
   signal_crank_nicolson_residual_terms<<<block_count, threads_per_block, 0, stream>>>(
-      current, right_hand_side, terms, diffusion, advection, fixed_values, boundaries, shape,
-      spacing, half_dt, signal_count, level_count);
+      current, right_hand_side, terms, diffusion, advection, fixed_values, reaction_source,
+      reaction_loss, boundaries, shape, spacing, half_dt, signal_count, level_count);
 }
 
 }  // namespace cm::cuda

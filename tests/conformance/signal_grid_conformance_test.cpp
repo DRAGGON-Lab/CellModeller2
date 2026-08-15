@@ -24,6 +24,14 @@ cm::SignalGridSpec make_spec() {
   spec.z_lower.values = {0.25F, 0.5F};
   spec.z_upper.kind = cm::GridBoundaryKind::fixed;
   spec.z_upper.values = {1.0F, 0.75F};
+  cm::SignalGridAffineReaction reaction;
+  reaction.source_rates.resize(spec.level_count());
+  reaction.loss_rates.resize(spec.level_count());
+  for (std::size_t index = 0; index < spec.level_count(); ++index) {
+    reaction.source_rates[index] = 0.01F * static_cast<float>(index % 3);
+    reaction.loss_rates[index] = 0.005F * static_cast<float>(index % 5);
+  }
+  spec.reaction = std::move(reaction);
   return spec;
 }
 

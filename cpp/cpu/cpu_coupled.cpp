@@ -196,7 +196,7 @@ SignalSolveReport advance_coupled_cpu(WorldState& state, SignalGrid& grid,
     }
     next_grid = std::move(result.levels);
   } else {
-    next_grid = signal_grid_transport_candidate(grid, dt);
+    next_grid = signal_grid_forward_euler_candidate(grid, dt);
     for (std::size_t index = 0; index < next_grid.size(); ++index) {
       next_grid[index] += dt * signal_sources[index];
     }

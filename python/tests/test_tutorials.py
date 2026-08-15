@@ -116,14 +116,31 @@ def test_conjugation_tutorial_uses_current_contact_graph() -> None:
     assert model.simulation.cell(acceptor.id).cell_type == 2
 
 
-def test_danino_tutorial_declares_its_one_signal_scope() -> None:
+def test_danino_tutorial_declares_spatial_ahl_and_nutrient_reactions() -> None:
     model, _ = build_model(
         _TUTORIALS / "danino_clock.py",
         ModelContext(BackendKind.CPU, 0, seed=31),
     )
     assert isinstance(model, SimulationController)
     assert model.simulation.species_count == 3
-    assert model.simulation.signal_count == 1
+    assert model.simulation.signal_count == 2
+    checkpoint = model.simulation._checkpoint()
+    assert checkpoint.signal_grid is not None
+    spec = checkpoint.signal_grid.spec
+    assert spec.reaction is not None
+    sites = spec.site_count
+    outside = 0
+    inside = 20 * spec.shape.y * spec.shape.z
+    assert spec.origin.x + 19 * spec.spacing.x < -60.0
+    assert spec.origin.x + 20 * spec.spacing.x == -60.0
+    assert spec.reaction.source_rates[outside] == 0.0
+    assert spec.reaction.loss_rates[outside] == 5.0
+    assert spec.reaction.source_rates[sites + outside] == 0.0
+    assert spec.reaction.loss_rates[sites + outside] == 0.5
+    assert spec.reaction.source_rates[inside] == 0.0
+    assert spec.reaction.loss_rates[inside] == 0.0
+    assert spec.reaction.source_rates[sites + inside] == 20.0
+    assert spec.reaction.loss_rates[sites + inside] == 2.0
 
 
 def test_plasmid_tutorial_resume_is_exact(tmp_path: Path) -> None:

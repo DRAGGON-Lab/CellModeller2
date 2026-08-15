@@ -31,6 +31,14 @@ cm::Simulation make_reference(cm::SignalIntegrationKind integration) {
   grid.z_lower.values = {0.9F, 1.1F};
   grid.z_upper.kind = cm::GridBoundaryKind::fixed;
   grid.z_upper.values = {1.2F, 1.0F};
+  cm::SignalGridAffineReaction reaction;
+  reaction.source_rates.resize(grid.level_count());
+  reaction.loss_rates.resize(grid.level_count());
+  for (std::size_t index = 0; index < grid.level_count(); ++index) {
+    reaction.source_rates[index] = 0.004F * static_cast<float>(index % 7);
+    reaction.loss_rates[index] = 0.003F * static_cast<float>(index % 11);
+  }
+  grid.reaction = std::move(reaction);
   std::vector<float> levels(grid.level_count());
   for (std::size_t index = 0; index < levels.size(); ++index) {
     levels[index] = 1.0F + (0.002F * static_cast<float>(index % 113));

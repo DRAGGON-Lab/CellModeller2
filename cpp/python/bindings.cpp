@@ -128,6 +128,12 @@ NB_MODULE(_core, module) {
       .def_ro("iterations", &cm::SignalSolveReport::iterations)
       .def_ro("residual_rms", &cm::SignalSolveReport::residual_rms);
 
+  nb::class_<cm::SignalGridAffineReaction>(module, "SignalGridAffineReaction")
+      .def(nb::init<>())
+      .def_rw("source_rates", &cm::SignalGridAffineReaction::source_rates)
+      .def_rw("loss_rates", &cm::SignalGridAffineReaction::loss_rates)
+      .def("validate", &cm::SignalGridAffineReaction::validate, "level_count"_a);
+
   nb::class_<cm::SignalGridSpec>(module, "SignalGridSpec")
       .def(nb::init<>())
       .def_rw("signal_count", &cm::SignalGridSpec::signal_count)
@@ -136,6 +142,7 @@ NB_MODULE(_core, module) {
       .def_rw("spacing", &cm::SignalGridSpec::spacing)
       .def_rw("diffusion", &cm::SignalGridSpec::diffusion)
       .def_rw("advection", &cm::SignalGridSpec::advection)
+      .def_rw("reaction", &cm::SignalGridSpec::reaction)
       .def_rw("integration", &cm::SignalGridSpec::integration)
       .def_rw("solver", &cm::SignalGridSpec::solver)
       .def_rw("x_lower", &cm::SignalGridSpec::x_lower)

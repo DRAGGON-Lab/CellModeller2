@@ -23,6 +23,23 @@ The ports follow the pinned Python sources: spacing is four and the single-gene
 production rate is one, despite older prose that respectively says two and
 0.1.
 
+### Optional affine field reactions
+
+A grid may also declare a `SignalGridAffineReaction`. Its `source_rates` and
+`loss_rates` arrays have exactly `grid.level_count` entries in the same
+signal-major layout as the levels. At every lattice site the native signal
+operator adds
+
+```text
+source_rate - loss_rate * concentration.
+```
+
+Both coefficient arrays must be finite and non-negative. A relaxation toward a
+non-negative target `C` at rate `k`, `k(C - c)`, is represented by source
+`k*C` and loss `k`. Coordinate masks are authoring-time operations that fill
+these arrays; they are not runtime callbacks. The complete arrays are validated
+and checkpointed, so backend changes and resume cannot alter which sites react.
+
 ## 1. A signaling gene in a chamber
 
 ```console
@@ -119,9 +136,9 @@ attributing increased intermixing to cooperation.
 
 - Confirm all cells remain inside the closed grid bounds. An out-of-domain cell
   is a model error and fails before mutation.
-- For Forward Euler grids, obey the documented diffusion/advection stability
-  bound. These lessons select Crank–Nicolson transport, but coupled sources are
-  still explicit and can require a smaller `dt`.
+- For Forward Euler grids, obey the documented diffusion/advection/loss
+  stability bound. These lessons select Crank–Nicolson transport, but coupled
+  cell sources are still explicit and can require a smaller `dt`.
 - Export `signals.zarr` and inspect named `(frame, channel, x, y, z)` axes.
   Never infer axis order from flattened storage.
 - Check conservation for a model with production disabled: integrated grid

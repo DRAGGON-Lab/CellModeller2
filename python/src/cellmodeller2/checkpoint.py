@@ -25,6 +25,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     GridShape,
     RateInstruction,
     RateOp,
+    SignalGridAffineReaction,
     SignalGridSpec,
     SignalIntegrationKind,
     Simulation,
@@ -41,9 +42,9 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 
 CHECKPOINT_FORMAT = "cellmodeller2-checkpoint"
-CHECKPOINT_VERSION = 6
+CHECKPOINT_VERSION = 7
 MAX_CHECKPOINT_BYTES = 1 << 30
-_NATIVE_CHECKPOINT_VERSION = 3
+_NATIVE_CHECKPOINT_VERSION = 4
 
 _UINT32_MAX = (1 << 32) - 1
 _UINT64_MAX = (1 << 64) - 1
@@ -165,6 +166,14 @@ def _signal_grid_to_json(checkpoint: _SignalGridCheckpoint | None) -> JSONValue:
             "spacing": _vec3_to_json(spec.spacing),
             "diffusion": list(spec.diffusion),
             "advection": [_vec3_to_json(value) for value in spec.advection],
+            "reaction": (
+                {
+                    "source_rates": list(spec.reaction.source_rates),
+                    "loss_rates": list(spec.reaction.loss_rates),
+                }
+                if spec.reaction is not None
+                else None
+            ),
             "integration": _SIGNAL_INTEGRATION_NAMES[spec.integration],
             "solver": {
                 "max_iterations": spec.solver.max_iterations,
@@ -549,6 +558,23 @@ def _boundary(value: object, path: str) -> GridBoundary:
     return boundary
 
 
+def _affine_reaction(value: object, path: str) -> SignalGridAffineReaction | None:
+    if value is None:
+        return None
+    data = _object(value, path)
+    _keys(data, path, {"source_rates", "loss_rates"})
+    reaction = SignalGridAffineReaction()
+    reaction.source_rates = [
+        _number(item, f"{path}.source_rates[{index}]", float32=True)
+        for index, item in enumerate(_array(data["source_rates"], f"{path}.source_rates"))
+    ]
+    reaction.loss_rates = [
+        _number(item, f"{path}.loss_rates[{index}]", float32=True)
+        for index, item in enumerate(_array(data["loss_rates"], f"{path}.loss_rates"))
+    ]
+    return reaction
+
+
 def _signal_grid(value: object, path: str, schema_version: int) -> _SignalGridCheckpoint | None:
     if value is None:
         return None
@@ -566,6 +592,8 @@ def _signal_grid(value: object, path: str, schema_version: int) -> _SignalGridCh
     }
     if schema_version >= 5:
         spec_keys.update({"integration", "solver"})
+    if schema_version >= 7:
+        spec_keys.add("reaction")
     _keys(
         spec_data,
         f"{path}.spec",
@@ -598,6 +626,8 @@ def _signal_grid(value: object, path: str, schema_version: int) -> _SignalGridCh
         _vec3(item, f"{path}.spec.advection[{index}]")
         for index, item in enumerate(_array(spec_data["advection"], f"{path}.spec.advection"))
     ]
+    if schema_version >= 7:
+        spec.reaction = _affine_reaction(spec_data["reaction"], f"{path}.spec.reaction")
     if schema_version >= 5:
         integration_name = _string(spec_data["integration"], f"{path}.spec.integration")
         if integration_name not in _SIGNAL_INTEGRATIONS:
@@ -808,7 +838,7 @@ def load_checkpoint_bundle(
     if "version" not in root:
         _fail("$", "missing keys ['version']")
     schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
-    supported_versions = {1, 2, 3, 4, 5, CHECKPOINT_VERSION}
+    supported_versions = {1, 2, 3, 4, 5, 6, CHECKPOINT_VERSION}
     if schema_version not in supported_versions:
         _fail("$.version", f"unsupported checkpoint version {schema_version}")
     required = {

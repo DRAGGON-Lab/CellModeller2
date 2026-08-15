@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -53,6 +54,13 @@ struct GridShape {
   std::uint32_t z{1};
 };
 
+struct SignalGridAffineReaction {
+  std::vector<float> source_rates;
+  std::vector<float> loss_rates;
+
+  void validate(std::size_t level_count) const;
+};
+
 struct SignalGridSpec {
   std::uint32_t signal_count{0};
   GridShape shape;
@@ -60,6 +68,7 @@ struct SignalGridSpec {
   Vec3 spacing{1.0F, 1.0F, 1.0F};
   std::vector<float> diffusion;
   std::vector<Vec3> advection;
+  std::optional<SignalGridAffineReaction> reaction;
   SignalIntegrationKind integration{SignalIntegrationKind::forward_euler};
   SignalSolveParameters solver;
   GridBoundary x_lower;
@@ -111,7 +120,8 @@ class SignalGrid {
 };
 
 [[nodiscard]] SignalSolveReport advance_signal_grid_cpu(SignalGrid& grid, float dt);
-[[nodiscard]] std::vector<float> signal_grid_transport_candidate(const SignalGrid& grid, float dt);
+[[nodiscard]] std::vector<float> signal_grid_forward_euler_candidate(const SignalGrid& grid,
+                                                                     float dt);
 [[nodiscard]] std::vector<float> signal_grid_transport_rates(const SignalGrid& grid,
                                                              std::span<const float> levels);
 [[nodiscard]] SignalSolveResult signal_grid_crank_nicolson_candidate(

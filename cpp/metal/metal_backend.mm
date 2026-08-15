@@ -440,6 +440,15 @@ class MetalBackend final : public ComputeBackend {
     std::memcpy(signal_levels_.contents, levels.data(), levels.size_bytes());
     std::memcpy(signal_diffusion_.contents, spec.diffusion.data(),
                 spec.diffusion.size() * sizeof(float));
+    auto* reaction_source = static_cast<float*>(signal_reaction_source_.contents);
+    auto* reaction_loss = static_cast<float*>(signal_reaction_loss_.contents);
+    if (spec.reaction.has_value()) {
+      std::memcpy(reaction_source, spec.reaction->source_rates.data(), levels.size_bytes());
+      std::memcpy(reaction_loss, spec.reaction->loss_rates.data(), levels.size_bytes());
+    } else {
+      std::fill_n(reaction_source, levels.size(), 0.0F);
+      std::fill_n(reaction_loss, levels.size(), 0.0F);
+    }
     auto* advection = static_cast<MetalFloat4*>(signal_advection_.contents);
     for (std::size_t signal = 0; signal < signal_count; ++signal) {
       advection[signal] = {
@@ -492,6 +501,8 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:10];
       [encoder setBytes:&level_count length:sizeof(level_count) atIndex:11];
       [encoder setBytes:&crank_nicolson length:sizeof(crank_nicolson) atIndex:12];
+      [encoder setBuffer:signal_reaction_source_ offset:0 atIndex:13];
+      [encoder setBuffer:signal_reaction_loss_ offset:0 atIndex:14];
       dispatch_1d(encoder, signals_pipeline_, level_count);
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal signal-grid command failed");
@@ -505,8 +516,8 @@ class MetalBackend final : public ComputeBackend {
     if (crank_nicolson != 0) {
       const auto solve = solve_signal_crank_nicolson(
           signal_levels_, signal_output_, signal_diffusion_, signal_advection_,
-          signal_fixed_values_, signal_error_, boundary_kinds, shape, spacing, dt, signal_count,
-          level_count, spec.solver);
+          signal_fixed_values_, signal_reaction_source_, signal_reaction_loss_, signal_error_,
+          boundary_kinds, shape, spacing, dt, signal_count, level_count, spec.solver);
       result_buffer = solve.first;
       report = solve.second;
       if (!report.converged) {
@@ -595,6 +606,15 @@ class MetalBackend final : public ComputeBackend {
     std::memcpy(coupled_grid_levels_.contents, grid_levels.data(), grid_levels.size_bytes());
     std::memcpy(coupled_diffusion_.contents, spec.diffusion.data(),
                 spec.diffusion.size() * sizeof(float));
+    auto* reaction_source = static_cast<float*>(coupled_reaction_source_.contents);
+    auto* reaction_loss = static_cast<float*>(coupled_reaction_loss_.contents);
+    if (spec.reaction.has_value()) {
+      std::memcpy(reaction_source, spec.reaction->source_rates.data(), grid_levels.size_bytes());
+      std::memcpy(reaction_loss, spec.reaction->loss_rates.data(), grid_levels.size_bytes());
+    } else {
+      std::fill_n(reaction_source, grid_level_count, 0.0F);
+      std::fill_n(reaction_loss, grid_level_count, 0.0F);
+    }
     auto* advection = static_cast<MetalFloat4*>(coupled_advection_.contents);
     for (std::size_t signal = 0; signal < signal_count_size; ++signal) {
       advection[signal] = {spec.advection[signal].x, spec.advection[signal].y,
@@ -679,6 +699,8 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:14];
       [encoder setBytes:&level_count length:sizeof(level_count) atIndex:15];
       [encoder setBytes:&crank_nicolson length:sizeof(crank_nicolson) atIndex:16];
+      [encoder setBuffer:coupled_reaction_source_ offset:0 atIndex:17];
+      [encoder setBuffer:coupled_reaction_loss_ offset:0 atIndex:18];
       dispatch_1d(encoder, coupled_grid_pipeline_, level_count);
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal coupled-rate command failed");
@@ -693,8 +715,8 @@ class MetalBackend final : public ComputeBackend {
     if (crank_nicolson != 0) {
       const auto solve = solve_signal_crank_nicolson(
           coupled_grid_levels_, coupled_grid_output_, coupled_diffusion_, coupled_advection_,
-          coupled_fixed_values_, coupled_error_, boundary_kinds, shape, spacing, dt, signal_count,
-          level_count, spec.solver);
+          coupled_fixed_values_, coupled_reaction_source_, coupled_reaction_loss_, coupled_error_,
+          boundary_kinds, shape, spacing, dt, signal_count, level_count, spec.solver);
       result_buffer = solve.first;
       report = solve.second;
       if (!report.converged) {
@@ -956,6 +978,10 @@ class MetalBackend final : public ComputeBackend {
       const auto byte_count = signal_level_capacity_ * sizeof(float);
       signal_levels_ = allocate_shared_buffer(device_, byte_count, "signal-grid levels");
       signal_output_ = allocate_shared_buffer(device_, byte_count, "signal-grid output");
+      signal_reaction_source_ =
+          allocate_shared_buffer(device_, byte_count, "signal-grid affine sources");
+      signal_reaction_loss_ =
+          allocate_shared_buffer(device_, byte_count, "signal-grid affine losses");
     }
     if (signal_count > signal_count_capacity_) {
       signal_count_capacity_ = std::bit_ceil(signal_count);
@@ -1029,6 +1055,7 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> encode_signal_residual(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> current,
                                        id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
                                        id<MTLBuffer> advection, id<MTLBuffer> fixed_values,
+                                       id<MTLBuffer> reaction_source, id<MTLBuffer> reaction_loss,
                                        const std::array<std::uint32_t, 6>& boundary_kinds,
                                        const MetalUInt4& shape, const MetalFloat4& spacing,
                                        float half_dt, std::uint32_t signal_count,
@@ -1048,6 +1075,8 @@ class MetalBackend final : public ComputeBackend {
     [encoder setBytes:&half_dt length:sizeof(half_dt) atIndex:9];
     [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:10];
     [encoder setBytes:&level_count length:sizeof(level_count) atIndex:11];
+    [encoder setBuffer:reaction_source offset:0 atIndex:12];
+    [encoder setBuffer:reaction_loss offset:0 atIndex:13];
     dispatch_1d(encoder, signals_cn_residual_pipeline_, level_count);
     [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
     return encode_signal_reduction(encoder, level_count);
@@ -1055,7 +1084,8 @@ class MetalBackend final : public ComputeBackend {
 
   [[nodiscard]] float signal_residual_rms(id<MTLBuffer> current, id<MTLBuffer> right_hand_side,
                                           id<MTLBuffer> diffusion, id<MTLBuffer> advection,
-                                          id<MTLBuffer> fixed_values,
+                                          id<MTLBuffer> fixed_values, id<MTLBuffer> reaction_source,
+                                          id<MTLBuffer> reaction_loss,
                                           const std::array<std::uint32_t, 6>& boundary_kinds,
                                           const MetalUInt4& shape, const MetalFloat4& spacing,
                                           float half_dt, std::uint32_t signal_count,
@@ -1066,9 +1096,9 @@ class MetalBackend final : public ComputeBackend {
       if (command_buffer == nil || encoder == nil) {
         throw std::runtime_error("failed to create a Metal signal residual command");
       }
-      const auto reduction = encode_signal_residual(encoder, current, right_hand_side, diffusion,
-                                                    advection, fixed_values, boundary_kinds, shape,
-                                                    spacing, half_dt, signal_count, level_count);
+      const auto reduction = encode_signal_residual(
+          encoder, current, right_hand_side, diffusion, advection, fixed_values, reaction_source,
+          reaction_loss, boundary_kinds, shape, spacing, half_dt, signal_count, level_count);
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal signal residual failed");
       const auto sum = *static_cast<const float*>(reduction.contents);
@@ -1078,7 +1108,8 @@ class MetalBackend final : public ComputeBackend {
 
   [[nodiscard]] std::pair<id<MTLBuffer>, SignalSolveReport> solve_signal_crank_nicolson(
       id<MTLBuffer> initial, id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
-      id<MTLBuffer> advection, id<MTLBuffer> fixed_values, id<MTLBuffer> error,
+      id<MTLBuffer> advection, id<MTLBuffer> fixed_values, id<MTLBuffer> reaction_source,
+      id<MTLBuffer> reaction_loss, id<MTLBuffer> error,
       const std::array<std::uint32_t, 6>& boundary_kinds, const MetalUInt4& shape,
       const MetalFloat4& spacing, float dt, std::uint32_t signal_count, std::uint32_t level_count,
       const SignalSolveParameters& parameters) {
@@ -1088,9 +1119,9 @@ class MetalBackend final : public ComputeBackend {
     const auto threshold =
         parameters.absolute_tolerance + (parameters.relative_tolerance * right_hand_side_rms);
     SignalSolveReport report;
-    report.residual_rms =
-        signal_residual_rms(initial, right_hand_side, diffusion, advection, fixed_values,
-                            boundary_kinds, shape, spacing, half_dt, signal_count, level_count);
+    report.residual_rms = signal_residual_rms(
+        initial, right_hand_side, diffusion, advection, fixed_values, reaction_source,
+        reaction_loss, boundary_kinds, shape, spacing, half_dt, signal_count, level_count);
     if (std::isfinite(report.residual_rms) && report.residual_rms <= threshold) {
       return {initial, report};
     }
@@ -1125,11 +1156,13 @@ class MetalBackend final : public ComputeBackend {
         [encoder setBytes:&half_dt length:sizeof(half_dt) atIndex:10];
         [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:11];
         [encoder setBytes:&level_count length:sizeof(level_count) atIndex:12];
+        [encoder setBuffer:reaction_source offset:0 atIndex:13];
+        [encoder setBuffer:reaction_loss offset:0 atIndex:14];
         dispatch_1d(encoder, signals_cn_jacobi_pipeline_, level_count);
         [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
         const auto reduction = encode_signal_residual(
-            encoder, output, right_hand_side, diffusion, advection, fixed_values, boundary_kinds,
-            shape, spacing, half_dt, signal_count, level_count);
+            encoder, output, right_hand_side, diffusion, advection, fixed_values, reaction_source,
+            reaction_loss, boundary_kinds, shape, spacing, half_dt, signal_count, level_count);
         [encoder endEncoding];
         wait_for_command(command_buffer, "Metal signal Jacobi iteration failed");
         const auto sum = *static_cast<const float*>(reduction.contents);
@@ -1220,6 +1253,9 @@ class MetalBackend final : public ComputeBackend {
       const auto byte_count = coupled_grid_level_capacity_ * sizeof(float);
       coupled_grid_levels_ = allocate_shared_buffer(device_, byte_count, "coupled grid levels");
       coupled_grid_output_ = allocate_shared_buffer(device_, byte_count, "coupled grid output");
+      coupled_reaction_source_ =
+          allocate_shared_buffer(device_, byte_count, "coupled affine sources");
+      coupled_reaction_loss_ = allocate_shared_buffer(device_, byte_count, "coupled affine losses");
     }
     if (coupled_error_ == nil) {
       coupled_error_ = allocate_shared_buffer(device_, sizeof(std::uint32_t), "coupled error flag");
@@ -2002,6 +2038,8 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> signal_diffusion_{nil};
   id<MTLBuffer> signal_advection_{nil};
   id<MTLBuffer> signal_fixed_values_{nil};
+  id<MTLBuffer> signal_reaction_source_{nil};
+  id<MTLBuffer> signal_reaction_loss_{nil};
   id<MTLBuffer> signal_error_{nil};
   std::size_t signal_level_capacity_{0};
   std::size_t signal_count_capacity_{0};
@@ -2028,6 +2066,8 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> coupled_diffusion_{nil};
   id<MTLBuffer> coupled_advection_{nil};
   id<MTLBuffer> coupled_fixed_values_{nil};
+  id<MTLBuffer> coupled_reaction_source_{nil};
+  id<MTLBuffer> coupled_reaction_loss_{nil};
   id<MTLBuffer> coupled_error_{nil};
   std::size_t coupled_cell_capacity_{0};
   std::size_t coupled_species_level_capacity_{0};

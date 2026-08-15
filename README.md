@@ -159,7 +159,7 @@ The converter preserves geometry, species, stable identity, and lineage. It reco
 
 ## Signaling and SBML
 
-Signal grids support diffusion, conservative vector upwind advection, no-flux, periodic, and fixed boundaries, trilinear sampling, non-negative concentration updates, and checkpointed Forward Euler or diagnosed Crank-Nicolson integration. Coupled plans compose intracellular rates, sampled extracellular signals, transport, and trilinear source scatter into a simultaneous update contract.
+Signal grids support diffusion, conservative vector upwind advection, no-flux, periodic, and fixed boundaries, spatially varying affine source/loss fields, trilinear sampling, non-negative concentration updates, and checkpointed Forward Euler or diagnosed Crank-Nicolson integration. Coupled plans compose intracellular rates, sampled extracellular signals, transport, affine field reactions, and trilinear source scatter into a simultaneous update contract.
 
 The optional SBML importer compiles a bounded SBML Level 3 Version 2 Core subset into the same typed species-rate representation:
 
@@ -279,6 +279,7 @@ Start with the following design documents:
 - [Checkpoint and resume contract](docs/architecture/0004-checkpoints.md)
 - [Batch execution](docs/architecture/0005-batch-execution.md)
 - [Grid signaling](docs/architecture/0006-grid-signaling.md)
+- [Affine grid reactions](docs/architecture/0015-affine-grid-reactions.md)
 - [Native controllers](docs/architecture/0014-native-controllers.md)
 - [Numerical contract](docs/architecture/numerical-contract.md)
 - [Validation workflow](docs/development/validation.md)

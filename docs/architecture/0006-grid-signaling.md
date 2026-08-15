@@ -26,6 +26,17 @@ Each signal declares a non-negative diffusion coefficient and a finite 3D advect
 
 Periodic faces must occur in opposing pairs on an axis. For diffusion, a no-flux exterior stencil value equals the boundary lattice value. Fixed values are defined at the exterior stencil location one grid spacing beyond the boundary, which removes half-cell ambiguity.
 
+The grid may also carry an immutable affine reaction field with non-negative
+finite source `b[i]` and first-order loss `lambda[i]` for every flattened level:
+
+```text
+R(c)[i] = b[i] - lambda[i] * c[i].
+```
+
+Both arrays use the level ordering above and must match the complete level
+count. Region and coordinate masks are authoring conveniences that materialize
+these arrays before validation; no runtime predicate is part of the grid.
+
 ## Transport discretization
 
 Diffusion uses the conventional centered second difference independently in each non-degenerate axis:
@@ -40,7 +51,8 @@ Forward Euler rejects a step before mutation unless, for every signal,
 
 ```text
 dt * (2 * D * sum_axis(1 / spacing_axis^2)
-      + sum_axis(abs(velocity_axis) / spacing_axis)) <= 1.
+      + sum_axis(abs(velocity_axis) / spacing_axis)
+      + max_site(lambda)) <= 1.
 ```
 
 Degenerate axes contribute zero. Candidate levels must remain finite and non-negative; the engine reports an invalid step rather than silently clamping.
@@ -57,7 +69,7 @@ A typed coupled rate plan extends the existing expression operations with a samp
 
 1. validate the complete step and preserve the old grid field;
 2. advance cell growth and dilute species by old/new effective volume;
-3. compute grid transport from the old field;
+3. compute grid transport and affine reaction from the old field;
 4. sample the old field at current cell positions;
 5. evaluate species and signal outputs from the same diluted species, sampled signals, and post-growth cell geometry;
 6. scatter cell signal amount rates into the grid concentration rate;
@@ -68,7 +80,7 @@ The native backend operation encompasses transport, sample, rate evaluation, sca
 
 ## Checkpoint and lifecycle behavior
 
-Grid specification, levels, and the complete coupled rate plan are exact checkpoint state. Derived weights, indices, rates, and device buffers are reconstructed caches. Division inherits intracellular species as before and does not copy a sampled signal cache; the next coupled stage samples both daughters at their new positions.
+Grid specification, affine reaction coefficients, levels, and the complete coupled rate plan are exact checkpoint state. Derived weights, indices, rates, and device buffers are reconstructed caches. Division inherits intracellular species as before and does not copy a sampled signal cache; the next coupled stage samples both daughters at their new positions.
 
 Changing grid geometry after cells exist is intentionally absent from the initial API. A future remeshing operation must name its interpolation and mass conservation behavior explicitly.
 

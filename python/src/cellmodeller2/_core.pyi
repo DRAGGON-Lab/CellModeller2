@@ -129,6 +129,13 @@ class SignalSolveReport:
     @property
     def residual_rms(self) -> float: ...
 
+class SignalGridAffineReaction:
+    source_rates: list[float]
+    loss_rates: list[float]
+
+    def __init__(self) -> None: ...
+    def validate(self, level_count: int) -> None: ...
+
 class SignalGridSpec:
     signal_count: int
     shape: GridShape
@@ -136,6 +143,7 @@ class SignalGridSpec:
     spacing: Vec3
     diffusion: list[float]
     advection: list[Vec3]
+    reaction: SignalGridAffineReaction | None
     integration: SignalIntegrationKind
     solver: SignalSolveParameters
     x_lower: GridBoundary
