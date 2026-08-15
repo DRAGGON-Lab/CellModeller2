@@ -10,6 +10,11 @@ considered implemented until its scientific behavior is specified, the CPU
 reference is tested, and every advertised GPU backend passes the same
 conformance scenarios without silently falling back to the CPU.
 
+Compatibility is evidence-driven rather than file-count-driven. The legacy
+`NeighbourDiffusion` experiment is explicitly retired because it is
+non-runnable and does not define a physically weighted transport contract; a
+future contact-flux model would be a new cross-backend feature.
+
 ## Current slice
 
 The initial slice establishes:
