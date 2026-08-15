@@ -17,7 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
-- fixed-schema species state and typed CPU/Metal Euler rate plans with growth dilution;
+- fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
 - typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
 - matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
@@ -46,8 +46,9 @@ hardware.
 
 The typed species plan is conformant on CPU and native Metal, including every
 declared instruction, legacy-compatible effective-volume dilution, and
-simultaneous Euler updates. The native CUDA species interpreter is the next
-biological compatibility slice.
+simultaneous Euler updates. CUDA has an independent native interpreter that
+compiles against the 12.8 toolkit; the same shared scenario still needs to run
+on NVIDIA hardware before CUDA species conformance is claimed.
 
 ## Build the C++ reference tests
 

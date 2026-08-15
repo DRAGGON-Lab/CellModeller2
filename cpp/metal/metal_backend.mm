@@ -286,6 +286,10 @@ class MetalBackend final : public ComputeBackend {
 
     const auto level_count = state.size() * state.species_count();
     const auto workspace_count = state.size() * plan.instructions().size();
+    if (level_count > std::numeric_limits<std::uint32_t>::max() ||
+        workspace_count > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::overflow_error("Metal flattened species storage exceeds the uint32 index space");
+    }
     if (level_count > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
         workspace_count > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
         plan.instructions().size() >

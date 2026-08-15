@@ -17,6 +17,7 @@
 #include "kernels/contacts.cuh"
 #include "kernels/growth.cuh"
 #include "kernels/mechanics.cuh"
+#include "kernels/species.cuh"
 
 namespace cm2 {
 namespace {
@@ -100,7 +101,8 @@ class CudaBackend final : public ComputeBackend {
   }
 
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
-    return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts ||
+    return feature == BackendFeature::growth || feature == BackendFeature::species ||
+           feature == BackendFeature::cell_contacts ||
            feature == BackendFeature::external_constraints ||
            feature == BackendFeature::cell_mechanics;
   }
@@ -133,9 +135,116 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaStreamSynchronize(stream_), "CUDA growth execution failed");
   }
 
-  void advance_species(WorldState&, const SpeciesRatePlan&, std::span<const float>,
-                       float) override {
-    throw std::runtime_error("CUDA species integration is not implemented in this build");
+  void advance_species(WorldState& state, const SpeciesRatePlan& plan,
+                       std::span<const float> previous_lengths, float dt) override {
+    if (!std::isfinite(dt) || dt < 0.0F) {
+      throw std::invalid_argument("species time step must be finite and non-negative");
+    }
+    state.validate();
+    plan.validate();
+    if (plan.species_count() != state.species_count()) {
+      throw std::invalid_argument("species rate plan and world state species counts disagree");
+    }
+    if (previous_lengths.size() != state.size()) {
+      throw std::invalid_argument("previous cell lengths and world state cell counts disagree");
+    }
+    if (state.empty() || state.species_count() == 0) {
+      return;
+    }
+    if (state.size() > std::numeric_limits<std::uint32_t>::max() ||
+        state.species_count() > std::numeric_limits<std::uint32_t>::max() ||
+        plan.instructions().size() > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::overflow_error("CUDA species launch exceeds the uint32 index space");
+    }
+    if (!std::ranges::all_of(previous_lengths,
+                             [](float value) { return std::isfinite(value) && value >= 0.0F; })) {
+      throw std::invalid_argument("previous cell lengths must be finite and non-negative");
+    }
+    if (state.size() > std::numeric_limits<std::size_t>::max() / state.species_count() ||
+        state.size() > std::numeric_limits<std::size_t>::max() / plan.instructions().size()) {
+      throw std::overflow_error("CUDA species buffer size overflow");
+    }
+
+    const auto level_count = state.size() * state.species_count();
+    const auto workspace_count = state.size() * plan.instructions().size();
+    if (level_count > std::numeric_limits<std::uint32_t>::max() ||
+        workspace_count > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::overflow_error("CUDA flattened species storage exceeds the uint32 index space");
+    }
+    if (level_count > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
+        workspace_count > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
+        plan.instructions().size() >
+            std::numeric_limits<std::size_t>::max() / sizeof(cuda::RateInstructionGpu)) {
+      throw std::overflow_error("CUDA species allocation size overflow");
+    }
+    ensure_species_capacity(state.size(), level_count, plan.instructions().size(),
+                            state.species_count(), workspace_count);
+
+    const auto geometry = state.geometry_state();
+    const auto attributes = state.cell_attributes();
+    auto species_state = state.species_state();
+    std::vector<float4> centers(state.size());
+    std::vector<float4> shapes(state.size());
+    for (std::size_t index = 0; index < state.size(); ++index) {
+      centers[index] = make_float4(geometry.position_x[index], geometry.position_y[index],
+                                   geometry.position_z[index], 0.0F);
+      shapes[index] = make_float4(geometry.lengths[index], geometry.radii[index], 0.0F, 0.0F);
+    }
+    std::vector<cuda::RateInstructionGpu> instructions;
+    instructions.reserve(plan.instructions().size());
+    for (const auto& instruction : plan.instructions()) {
+      instructions.push_back({
+          .operation = static_cast<std::uint32_t>(instruction.operation),
+          .first = instruction.first,
+          .second = instruction.second,
+          .third = instruction.third,
+          .value = instruction.value,
+      });
+    }
+    const std::vector<float> level_values(species_state.levels.begin(), species_state.levels.end());
+    const std::vector<float> previous_values(previous_lengths.begin(), previous_lengths.end());
+    const std::vector<float> growth_values(attributes.growth_rates.begin(),
+                                           attributes.growth_rates.end());
+    const std::vector<std::int32_t> cell_type_values(attributes.cell_types.begin(),
+                                                     attributes.cell_types.end());
+    const std::vector<std::uint32_t> output_values(plan.outputs().begin(), plan.outputs().end());
+
+    copy_to_device(species_levels_, level_values, "failed to upload CUDA species levels");
+    copy_to_device(species_previous_lengths_, previous_values,
+                   "failed to upload CUDA previous cell lengths");
+    copy_to_device(species_centers_, centers, "failed to upload CUDA species cell centers");
+    copy_to_device(species_geometry_, shapes, "failed to upload CUDA species cell geometry");
+    copy_to_device(species_growth_rates_, growth_values,
+                   "failed to upload CUDA species growth rates");
+    copy_to_device(species_cell_types_, cell_type_values,
+                   "failed to upload CUDA species cell types");
+    copy_to_device(species_instructions_, instructions,
+                   "failed to upload CUDA species rate instructions");
+    copy_to_device(species_outputs_, output_values, "failed to upload CUDA species rate outputs");
+    check_cuda(cudaMemsetAsync(species_error_.data(), 0, sizeof(std::uint32_t), stream_),
+               "failed to clear the CUDA species error flag");
+
+    cuda::launch_advance_species(
+        species_levels_.data(), species_previous_lengths_.data(), species_centers_.data(),
+        species_geometry_.data(), species_growth_rates_.data(), species_cell_types_.data(),
+        species_instructions_.data(), species_outputs_.data(), species_workspace_.data(),
+        species_error_.data(), dt, static_cast<std::uint32_t>(state.species_count()),
+        static_cast<std::uint32_t>(plan.instructions().size()),
+        static_cast<std::uint32_t>(state.size()), stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA species kernel");
+
+    std::uint32_t error = 0;
+    check_cuda(cudaMemcpyAsync(&error, species_error_.data(), sizeof(error), cudaMemcpyDeviceToHost,
+                               stream_),
+               "failed to download the CUDA species error flag");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA species execution failed");
+    if (error != 0) {
+      throw std::domain_error("CUDA species kernel produced a non-finite value");
+    }
+    check_cuda(cudaMemcpyAsync(species_state.levels.data(), species_levels_.data(),
+                               species_state.levels.size_bytes(), cudaMemcpyDeviceToHost, stream_),
+               "failed to download CUDA species levels");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA species download failed");
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -320,6 +429,21 @@ class CudaBackend final : public ComputeBackend {
   }
 
  private:
+  void ensure_species_capacity(std::size_t cell_count, std::size_t level_count,
+                               std::size_t instruction_count, std::size_t species_count,
+                               std::size_t workspace_count) {
+    species_levels_.reserve(level_count, "species levels");
+    species_previous_lengths_.reserve(cell_count, "species previous lengths");
+    species_centers_.reserve(cell_count, "species cell centers");
+    species_geometry_.reserve(cell_count, "species cell geometry");
+    species_growth_rates_.reserve(cell_count, "species growth rates");
+    species_cell_types_.reserve(cell_count, "species cell types");
+    species_instructions_.reserve(instruction_count, "species rate instructions");
+    species_outputs_.reserve(species_count, "species rate outputs");
+    species_workspace_.reserve(workspace_count, "species rate workspace");
+    species_error_.reserve(1, "species error flag");
+  }
+
   void ensure_contact_cell_capacity(std::size_t count) {
     contact_ids_.reserve(count, "contact cell IDs");
     contact_centers_.reserve(count, "contact cell centers");
@@ -845,6 +969,17 @@ class CudaBackend final : public ComputeBackend {
 
   CudaBuffer<float> lengths_;
   CudaBuffer<float> growth_rates_;
+
+  CudaBuffer<float> species_levels_;
+  CudaBuffer<float> species_previous_lengths_;
+  CudaBuffer<float4> species_centers_;
+  CudaBuffer<float4> species_geometry_;
+  CudaBuffer<float> species_growth_rates_;
+  CudaBuffer<std::int32_t> species_cell_types_;
+  CudaBuffer<cuda::RateInstructionGpu> species_instructions_;
+  CudaBuffer<std::uint32_t> species_outputs_;
+  CudaBuffer<float> species_workspace_;
+  CudaBuffer<std::uint32_t> species_error_;
 
   CudaBuffer<std::uint64_t> contact_ids_;
   CudaBuffer<float4> contact_centers_;

@@ -35,7 +35,10 @@ post-dilution rate evaluation, and simultaneous Euler updates. The shared
 513-cell scenario crosses common GPU launch boundaries and compares native
 state with the CPU reference after heterogeneous time steps. A backend does not
 advertise species support until that scenario executes on its hardware.
-The native MSL interpreter passes this gate on Apple GPU hardware.
+The native MSL interpreter passes this gate on Apple GPU hardware. The
+independent CUDA C++ interpreter compiles and links against the CUDA 12.8
+toolkit; execution of this fixture on NVIDIA hardware remains its conformance
+gate.
 
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
