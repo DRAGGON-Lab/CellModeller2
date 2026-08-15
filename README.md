@@ -279,6 +279,6 @@ Start with the following design documents:
 - [Numerical contract](docs/architecture/numerical-contract.md)
 - [Validation workflow](docs/development/validation.md)
 
-## Provenance and license
+## License
 
-CellModeller2 is a clean-slate successor inspired by CellModeller, created by Tim Rudge, PJ Steiner, Jim Haseloff, and contributors at the University of Cambridge. No legacy source code has been copied into this implementation. The project owner has not yet selected a license for new CellModeller2 code; see [NOTICE.md](NOTICE.md) for the full provenance statement.
+CellModeller2 is available under the [MIT License](LICENSE).
