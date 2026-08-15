@@ -113,6 +113,10 @@ CellModeller2 must not reproduce these behaviors:
 8. `ct_overlap` is written but never consumed by mechanics.
 9. Solver parameters named `dt` and `alpha` are passed through but unused.
 
+CellModeller2 resolves item 6 with a finite-radius, full-rank rotational inertia
+tensor. This is a deliberate departure from numerically defined legacy output,
+not an accidental consequence of a backend port.
+
 These differences require explicit fixtures before any claim of legacy parity.
 They are not grounds for silently adopting an accidental result.
 

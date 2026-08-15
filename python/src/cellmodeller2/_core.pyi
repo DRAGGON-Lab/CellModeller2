@@ -8,6 +8,18 @@ class BackendKind(Enum):
 class BackendFeature(Enum):
     GROWTH: BackendFeature
     CELL_CONTACTS: BackendFeature
+    CELL_MECHANICS: BackendFeature
+
+class SolverStatus(Enum):
+    CONVERGED: SolverStatus
+    ITERATION_LIMIT: SolverStatus
+    BREAKDOWN: SolverStatus
+
+class SolverBreakdown(Enum):
+    NONE: SolverBreakdown
+    NON_FINITE_RESIDUAL: SolverBreakdown
+    NON_FINITE_CURVATURE: SolverBreakdown
+    NON_POSITIVE_CURVATURE: SolverBreakdown
 
 def backend_available(backend: BackendKind) -> bool: ...
 
@@ -93,6 +105,40 @@ class ContactGraph:
     def __len__(self) -> int: ...
     def incident_contact_indices(self, slot: int) -> list[int]: ...
 
+class CellCorrection:
+    @property
+    def translation(self) -> Vec3: ...
+    @property
+    def rotation(self) -> Vec3: ...
+    @property
+    def length(self) -> float: ...
+
+class MechanicsParameters:
+    mu_a: float
+    gamma: float
+    residual_rms_tolerance: float
+    max_iterations: int
+
+    def __init__(self) -> None: ...
+
+class SolverReport:
+    @property
+    def status(self) -> SolverStatus: ...
+    @property
+    def breakdown(self) -> SolverBreakdown: ...
+    @property
+    def iterations(self) -> int: ...
+    @property
+    def initial_residual_rms(self) -> float: ...
+    @property
+    def final_residual_rms(self) -> float: ...
+
+class MechanicsSolveResult:
+    @property
+    def corrections(self) -> list[CellCorrection]: ...
+    @property
+    def report(self) -> SolverReport: ...
+
 class Simulation:
     def __init__(
         self,
@@ -110,6 +156,11 @@ class Simulation:
     def divide_equal(self, parent_id: int) -> tuple[int, int]: ...
     def step(self, dt: float) -> None: ...
     def find_cell_contacts(self, parameters: ContactParameters = ...) -> ContactGraph: ...
+    def solve_cell_mechanics(
+        self,
+        mechanics_parameters: MechanicsParameters = ...,
+        contact_parameters: ContactParameters = ...,
+    ) -> MechanicsSolveResult: ...
     def cell(self, id: int) -> CellSnapshot: ...
     def cells(self) -> list[CellSnapshot]: ...
     def lineage_parent(self, id: int) -> int | None: ...

@@ -124,7 +124,9 @@ class MetalBackend final : public ComputeBackend {
     }
   }
 
-  [[nodiscard]] bool supports(BackendFeature) const noexcept override { return true; }
+  [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
+    return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts;
+  }
 
   void advance_growth(WorldState& state, float dt) override {
     auto view = state.growth_state();
@@ -195,6 +197,11 @@ class MetalBackend final : public ComputeBackend {
     ensure_contact_output_capacity(contact_count);
     fill_contacts(static_cast<std::uint32_t>(geometry.size()), parameters);
     return download_contacts(geometry.size(), contact_count);
+  }
+
+  [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(const WorldState&, const ContactGraph&,
+                                                          const MechanicsParameters&) override {
+    throw std::runtime_error("Metal cell mechanics are not implemented in this build");
   }
 
  private:

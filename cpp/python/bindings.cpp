@@ -21,7 +21,19 @@ NB_MODULE(_core, module) {
 
   nb::enum_<cm2::BackendFeature>(module, "BackendFeature")
       .value("GROWTH", cm2::BackendFeature::growth)
-      .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts);
+      .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts)
+      .value("CELL_MECHANICS", cm2::BackendFeature::cell_mechanics);
+
+  nb::enum_<cm2::SolverStatus>(module, "SolverStatus")
+      .value("CONVERGED", cm2::SolverStatus::converged)
+      .value("ITERATION_LIMIT", cm2::SolverStatus::iteration_limit)
+      .value("BREAKDOWN", cm2::SolverStatus::breakdown);
+
+  nb::enum_<cm2::SolverBreakdown>(module, "SolverBreakdown")
+      .value("NONE", cm2::SolverBreakdown::none)
+      .value("NON_FINITE_RESIDUAL", cm2::SolverBreakdown::non_finite_residual)
+      .value("NON_FINITE_CURVATURE", cm2::SolverBreakdown::non_finite_curvature)
+      .value("NON_POSITIVE_CURVATURE", cm2::SolverBreakdown::non_positive_curvature);
 
   nb::class_<cm2::Vec3>(module, "Vec3")
       .def(nb::init<float, float, float>(), "x"_a = 0.0F, "y"_a = 0.0F, "z"_a = 0.0F)
@@ -88,6 +100,29 @@ NB_MODULE(_core, module) {
           },
           "slot"_a);
 
+  nb::class_<cm2::CellCorrection>(module, "CellCorrection")
+      .def_ro("translation", &cm2::CellCorrection::translation)
+      .def_ro("rotation", &cm2::CellCorrection::rotation)
+      .def_ro("length", &cm2::CellCorrection::length);
+
+  nb::class_<cm2::MechanicsParameters>(module, "MechanicsParameters")
+      .def(nb::init<>())
+      .def_rw("mu_a", &cm2::MechanicsParameters::mu_a)
+      .def_rw("gamma", &cm2::MechanicsParameters::gamma)
+      .def_rw("residual_rms_tolerance", &cm2::MechanicsParameters::residual_rms_tolerance)
+      .def_rw("max_iterations", &cm2::MechanicsParameters::max_iterations);
+
+  nb::class_<cm2::SolverReport>(module, "SolverReport")
+      .def_ro("status", &cm2::SolverReport::status)
+      .def_ro("breakdown", &cm2::SolverReport::breakdown)
+      .def_ro("iterations", &cm2::SolverReport::iterations)
+      .def_ro("initial_residual_rms", &cm2::SolverReport::initial_residual_rms)
+      .def_ro("final_residual_rms", &cm2::SolverReport::final_residual_rms);
+
+  nb::class_<cm2::MechanicsSolveResult>(module, "MechanicsSolveResult")
+      .def_ro("corrections", &cm2::MechanicsSolveResult::corrections)
+      .def_ro("report", &cm2::MechanicsSolveResult::report);
+
   nb::class_<cm2::Simulation>(module, "Simulation")
       .def(nb::init<cm2::BackendKind, std::size_t>(), "backend"_a = cm2::BackendKind::cpu,
            "reserved_capacity"_a = 0)
@@ -100,6 +135,9 @@ NB_MODULE(_core, module) {
       .def("step", &cm2::Simulation::step, "dt"_a)
       .def("find_cell_contacts", &cm2::Simulation::find_cell_contacts,
            "parameters"_a = cm2::ContactParameters{})
+      .def("solve_cell_mechanics", &cm2::Simulation::solve_cell_mechanics,
+           "mechanics_parameters"_a = cm2::MechanicsParameters{},
+           "contact_parameters"_a = cm2::ContactParameters{})
       .def("cell", &cm2::Simulation::cell, "id"_a)
       .def("cells", &cm2::Simulation::cells)
       .def("lineage_parent", &cm2::Simulation::lineage_parent, "id"_a)

@@ -8,7 +8,10 @@ from cellmodeller2 import (
     BackendKind,
     CellInit,
     ContactParameters,
+    MechanicsParameters,
     Simulation,
+    SolverBreakdown,
+    SolverStatus,
     Vec3,
     backend_available,
 )
@@ -84,6 +87,29 @@ def test_contact_graph_is_available_through_the_public_api(backend: BackendKind)
         math.isclose(contact.signed_separation, -0.2, abs_tol=1.0e-6)
         for contact in graph.contacts
     )
+
+
+def test_cpu_mechanics_reports_convergence() -> None:
+    simulation = Simulation()
+    first = CellInit()
+    first.length = 4.0
+    second = CellInit()
+    second.position = Vec3(0.0, 0.8, 0.0)
+    second.length = 4.0
+    simulation.add_cell(first)
+    simulation.add_cell(second)
+
+    parameters = MechanicsParameters()
+    parameters.residual_rms_tolerance = 1.0e-6
+    result = simulation.solve_cell_mechanics(parameters)
+
+    assert simulation.supports(BackendFeature.CELL_MECHANICS)
+    assert result.report.status == SolverStatus.CONVERGED
+    assert result.report.breakdown == SolverBreakdown.NONE
+    assert result.report.final_residual_rms <= parameters.residual_rms_tolerance
+    assert len(result.corrections) == 2
+    assert result.corrections[0].translation.y < 0.0
+    assert result.corrections[1].translation.y > 0.0
 
 
 @pytest.mark.parametrize("backend", [BackendKind.METAL, BackendKind.CUDA])

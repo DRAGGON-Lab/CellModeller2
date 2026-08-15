@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "cm2/contact_graph.hpp"
+#include "cm2/mechanics.hpp"
 #include "cm2/types.hpp"
 #include "cm2/world_state.hpp"
 
@@ -17,6 +18,9 @@ class ComputeBackend {
   virtual void advance_growth(WorldState& state, float dt) = 0;
   [[nodiscard]] virtual ContactGraph find_cell_contacts(const WorldState& state,
                                                         const ContactParameters& parameters) = 0;
+  [[nodiscard]] virtual MechanicsSolveResult solve_cell_mechanics(
+      const WorldState& state, const ContactGraph& contacts,
+      const MechanicsParameters& parameters) = 0;
 };
 
 [[nodiscard]] std::unique_ptr<ComputeBackend> make_cpu_backend();

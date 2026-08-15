@@ -76,6 +76,15 @@ ContactGraph Simulation::find_cell_contacts(const ContactParameters& parameters)
   return backend_->find_cell_contacts(state_, parameters);
 }
 
+MechanicsSolveResult Simulation::solve_cell_mechanics(
+    const MechanicsParameters& mechanics_parameters, const ContactParameters& contact_parameters) {
+  if (!backend_->supports(BackendFeature::cell_mechanics)) {
+    throw std::runtime_error("selected backend does not implement cell mechanics");
+  }
+  const auto contacts = backend_->find_cell_contacts(state_, contact_parameters);
+  return backend_->solve_cell_mechanics(state_, contacts, mechanics_parameters);
+}
+
 CellSnapshot Simulation::cell(CellId id) const { return state_.cell(id); }
 
 std::vector<CellSnapshot> Simulation::cells() const { return state_.cells(); }

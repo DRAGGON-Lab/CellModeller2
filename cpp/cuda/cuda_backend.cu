@@ -162,6 +162,11 @@ class CudaBackend final : public ComputeBackend {
     return download_contacts(geometry.size(), contact_count);
   }
 
+  [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(const WorldState&, const ContactGraph&,
+                                                          const MechanicsParameters&) override {
+    throw std::runtime_error("CUDA cell mechanics are not implemented in this build");
+  }
+
  private:
   void ensure_contact_cell_capacity(std::size_t count) {
     contact_ids_.reserve(count, "contact cell IDs");

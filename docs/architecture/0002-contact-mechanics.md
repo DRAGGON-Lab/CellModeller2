@@ -48,6 +48,21 @@ iteration count, initial and final residuals, and a breakdown reason. A backend
 may use native reductions and preconditioning, but it must apply the same
 declared operator and convergence criterion.
 
+For a cell with full capsule length `L = l + 2r`, the reference regularizer
+uses mass `m = mu_a L`, axial inertia `m r^2 / 2`, transverse inertia
+`m (L^2 + 3r^2) / 12`, and length weight `gamma`. The operator adds
+`gamma^-1 M`. This finite-radius tensor intentionally replaces the legacy
+slender-rod tensor's zero-energy axial rotation, making the declared
+seven-DOF operator positive definite for valid cells. Legacy trajectory
+comparisons must identify this as an intentional numerical-model difference.
+
+The reference solver starts from zero and uses unpreconditioned conjugate
+gradient. Residual RMS is `sqrt(dot(r, r) / cell_count)`, preserving the
+legacy normalization, and the default iteration limit is `7 * cell_count`.
+Apparent convergence is checked by recomputing `B^T b - A delta_q`; non-finite
+residuals, non-finite curvature, and non-positive curvature are reported as
+typed breakdowns rather than allowed to contaminate the simulation.
+
 CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal
 compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
