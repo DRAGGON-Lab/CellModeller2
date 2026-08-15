@@ -17,8 +17,15 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     backend_available,
     backend_device_count,
 )
-from .checkpoint import CheckpointError, JSONValue, load_checkpoint, load_checkpoint_bundle
+from .checkpoint import (
+    CheckpointError,
+    JSONValue,
+    load_checkpoint,
+    load_checkpoint_bundle,
+    save_checkpoint,
+)
 from .legacy_loader import build_legacy_model, resume_legacy_model
+from .legacy_pickle import LegacyPickleError, import_legacy_pickle
 from .runner import BatchError, ModelContext, RunProgress, build_model, run_simulation
 
 _BACKENDS = {
@@ -34,6 +41,18 @@ def _parser() -> argparse.ArgumentParser:
 
     devices = commands.add_parser("devices", help="list available native compute devices")
     devices.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+    legacy_pickle = commands.add_parser(
+        "import-legacy-pickle", help="migrate a trusted CellModeller 1 snapshot"
+    )
+    legacy_pickle.add_argument("input", type=Path, help="legacy .pickle snapshot")
+    legacy_pickle.add_argument("--output", type=Path, required=True)
+    time_source = legacy_pickle.add_mutually_exclusive_group(required=True)
+    time_source.add_argument("--time", type=float, help="physical simulation time")
+    time_source.add_argument("--dt", type=float, help="legacy step duration")
+    legacy_pickle.add_argument("--trust-legacy-pickle", action="store_true")
+    legacy_pickle.add_argument("--native-state-only", action="store_true")
+    legacy_pickle.add_argument("--overwrite", action="store_true")
 
     run = commands.add_parser("run", help="run a model or resume a checkpoint")
     source = run.add_mutually_exclusive_group()
@@ -260,6 +279,26 @@ def _run(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _import_legacy_pickle(arguments: argparse.Namespace) -> int:
+    output = cast(Path, arguments.output)
+    if output.exists() and not cast(bool, arguments.overwrite):
+        raise BatchError(f"output already exists: {output}")
+    imported = import_legacy_pickle(
+        cast(Path, arguments.input),
+        time=cast(float | None, arguments.time),
+        dt=cast(float | None, arguments.dt),
+        trusted=cast(bool, arguments.trust_legacy_pickle),
+        native_state_only=cast(bool, arguments.native_state_only),
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_checkpoint(imported.simulation, output, provenance=imported.provenance)
+    print(
+        f"wrote {output} cells={imported.simulation.cell_count} "
+        f"dropped_fields={len(imported.dropped_cell_fields)}"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the ``cm2`` command and return its process status."""
 
@@ -267,7 +306,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.command == "devices":
             return _devices(cast(bool, arguments.json))
+        if arguments.command == "import-legacy-pickle":
+            return _import_legacy_pickle(arguments)
         return _run(arguments)
-    except (BatchError, CheckpointError, IndexError, ValueError, RuntimeError) as error:
+    except (
+        BatchError,
+        CheckpointError,
+        LegacyPickleError,
+        IndexError,
+        ValueError,
+        RuntimeError,
+    ) as error:
         print(f"cm2: {error}", file=sys.stderr)
         return 2

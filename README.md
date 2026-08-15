@@ -157,6 +157,19 @@ Legacy OpenCL rate-source strings are intentionally not accepted. Species and
 signaling models must migrate their equations to the typed rate-plan APIs so
 Metal and CUDA continue to use native kernels.
 
+Trusted CellModeller 1 snapshots have a separate, explicitly lossy one-way
+converter. It preserves native geometry, species, stable identity, and lineage;
+the required flag acknowledges that callback attributes, constraints, random
+state, and rate equations cannot be reconstructed from the old format:
+
+```console
+uv run cm2 import-legacy-pickle data/step-00100.pickle \
+  --output results/step-00100.cm2.json \
+  --dt 0.05 \
+  --trust-legacy-pickle \
+  --native-state-only
+```
+
 ## Build the C++ reference tests
 
 ```console
@@ -200,3 +213,5 @@ The equal and asymmetric lifecycle geometry is specified in
 [ADR 0007](docs/architecture/0007-division.md).
 The host callback compatibility boundary is grounded in the
 [legacy Python model audit](docs/compatibility/legacy-python-models.md).
+The trusted one-way snapshot boundary is specified in the
+[legacy pickle migration audit](docs/compatibility/legacy-pickle-import.md).

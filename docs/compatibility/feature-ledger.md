@@ -18,7 +18,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Checkpoint and exact resume | pickle output | versioned, non-executable checkpoint with provenance | JSON v4 native and authenticated controller state with explicit v1-v3 migration; CPU and Metal continuation conformant; CUDA hardware validation pending |
 | P0 | Batch execution | batch scripts | `cm2 run`, backend/device/seed selection | implemented with deterministic construction, collision preflight, periodic checkpoints, and provenance |
 | P1 | Legacy Python model adapter | module regulator | adapter for maintained `setup/init/update/divide` models | growth/mechanics callbacks, setup facade, and exact batch resume implemented; signaling models require typed-plan migration |
-| P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | audit needed |
+| P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | trusted native-state importer implemented with explicit loss provenance |
 | P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | semantic audit needed |
 | P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | implemented as deterministic backend-neutral graph views |
 | P2 | Fixed-position cells | `CLFixedPosition` | reference and native growth-only state | audit needed |

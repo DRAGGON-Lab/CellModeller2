@@ -48,6 +48,7 @@ from .checkpoint import (
 )
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
 from .legacy_loader import build_legacy_model, resume_legacy_model
+from .legacy_pickle import LegacyPickleError, LegacyPickleImport, import_legacy_pickle
 from .runner import (
     BatchError,
     ModelContext,
@@ -84,6 +85,8 @@ __all__ = [
     "LegacyCell",
     "LegacyCompatibilityError",
     "LegacyModelAdapter",
+    "LegacyPickleError",
+    "LegacyPickleImport",
     "MechanicsIntegrationParameters",
     "MechanicsParameters",
     "MechanicsSolveResult",
@@ -108,6 +111,7 @@ __all__ = [
     "backend_device_count",
     "build_legacy_model",
     "build_model",
+    "import_legacy_pickle",
     "load_checkpoint",
     "load_checkpoint_bundle",
     "resume_legacy_model",
