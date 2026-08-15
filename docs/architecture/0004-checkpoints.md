@@ -32,9 +32,13 @@ The public checkpoint is UTF-8 JSON with the format identifier
 - a SHA-256 digest of the canonical simulation payload.
 
 Version 2 additionally records an optional validated signal-grid specification
-and its complete signal-major concentration field. A v1 file is migrated
-explicitly to v2 native state with no signal grid. Writers emit only v2;
-readers accept v1 and v2 and reject every other version.
+and its complete signal-major concentration field. Version 3 adds the typed
+coupled cell/grid rate plan. Version 4 adds an optional data-only controller
+payload with its own SHA-256 digest. Native checkpoints write a JSON `null`
+controller. A non-null controller cannot be silently discarded by
+`load_checkpoint`; callers use `load_checkpoint_bundle` and restore it with the
+matching controller. Writers emit only v4; readers explicitly migrate v1, v2,
+and v3.
 
 Files are written to a temporary sibling, flushed, and atomically replaced.
 Loading rejects duplicate JSON keys, non-finite numbers, unknown fields for the
@@ -67,7 +71,8 @@ transforms; a reader never guesses the meaning of an unknown schema.
 
 - Checkpoints are portable, inspectable, and safe to parse as data.
 - Allocation counters are first-class state rather than inferred metadata.
-- Exact restart includes lineage and model equations, not only visible cells.
+- Exact restart includes lineage, model equations, and authenticated controller
+  data, not only visible cells.
 - Schema evolution requires a new version and a tested migration path.
 - Legacy pickle ingestion, if added, must be a separate one-way conversion
   tool run under an explicitly untrusted-code policy.

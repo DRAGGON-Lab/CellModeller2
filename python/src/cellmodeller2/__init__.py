@@ -40,8 +40,10 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 from .checkpoint import (
     CHECKPOINT_FORMAT,
     CHECKPOINT_VERSION,
+    CheckpointBundle,
     CheckpointError,
     load_checkpoint,
+    load_checkpoint_bundle,
     save_checkpoint,
 )
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
@@ -59,6 +61,7 @@ __all__ = [
     "CellCorrection",
     "CellInit",
     "CellSnapshot",
+    "CheckpointBundle",
     "CheckpointError",
     "ConstraintContactParameters",
     "ContactGraph",
@@ -97,6 +100,7 @@ __all__ = [
     "build_legacy_model",
     "build_model",
     "load_checkpoint",
+    "load_checkpoint_bundle",
     "run_simulation",
     "save_checkpoint",
 ]

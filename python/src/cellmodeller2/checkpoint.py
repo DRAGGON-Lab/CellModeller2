@@ -11,6 +11,7 @@ import math
 import os
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import NoReturn, cast
@@ -39,8 +40,9 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 
 CHECKPOINT_FORMAT = "cellmodeller2-checkpoint"
-CHECKPOINT_VERSION = 3
+CHECKPOINT_VERSION = 4
 MAX_CHECKPOINT_BYTES = 1 << 30
+_NATIVE_CHECKPOINT_VERSION = 3
 
 _UINT32_MAX = (1 << 32) - 1
 _UINT64_MAX = (1 << 64) - 1
@@ -54,6 +56,15 @@ type JSONValue = JSONScalar | list[JSONValue] | dict[str, JSONValue]
 
 class CheckpointError(ValueError):
     """Raised when a checkpoint cannot be safely decoded or validated."""
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointBundle:
+    """Validated native state plus optional data-only controller state."""
+
+    simulation: Simulation
+    controller: JSONValue
+    provenance: dict[str, JSONValue]
 
 
 _RATE_OP_NAMES = {
@@ -251,6 +262,7 @@ def save_checkpoint(
     path: str | os.PathLike[str],
     *,
     provenance: Mapping[str, JSONValue] | None = None,
+    controller: JSONValue = None,
 ) -> None:
     """Atomically save a complete simulation checkpoint as validated JSON."""
 
@@ -258,6 +270,7 @@ def save_checkpoint(
     checkpoint.validate()
     state = _simulation_to_json(checkpoint)
     digest = hashlib.sha256(_canonical_json(state)).hexdigest()
+    controller_digest = hashlib.sha256(_canonical_json(controller)).hexdigest()
     backend = simulation.backend_info
     document: dict[str, JSONValue] = {
         "format": CHECKPOINT_FORMAT,
@@ -271,8 +284,13 @@ def save_checkpoint(
             "native": backend.native,
         },
         "provenance": dict(provenance) if provenance is not None else {},
-        "integrity": {"algorithm": "sha256", "simulation": digest},
+        "integrity": {
+            "algorithm": "sha256",
+            "simulation": digest,
+            "controller": controller_digest,
+        },
         "simulation": state,
+        "controller": controller,
     }
     try:
         encoded = (
@@ -668,7 +686,7 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     ]
 
     checkpoint = _SimulationCheckpoint()
-    checkpoint.schema_version = CHECKPOINT_VERSION
+    checkpoint.schema_version = _NATIVE_CHECKPOINT_VERSION
     checkpoint.time = _number(data["time"], "$.simulation.time")
     checkpoint.world = world
     checkpoint.constraints = constraints
@@ -690,13 +708,13 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     return checkpoint
 
 
-def load_checkpoint(
+def load_checkpoint_bundle(
     path: str | os.PathLike[str],
     *,
     backend: BackendKind = BackendKind.CPU,
     device_index: int = 0,
-) -> Simulation:
-    """Load and validate a checkpoint without evaluating executable content."""
+) -> CheckpointBundle:
+    """Load native and optional controller state without evaluating executable content."""
 
     source = Path(path)
     try:
@@ -721,30 +739,39 @@ def load_checkpoint(
         raise CheckpointError(f"checkpoint is not valid UTF-8 JSON: {error}") from error
 
     root = _object(cast(object, decoded), "$")
+    if "version" not in root:
+        _fail("$", "missing keys ['version']")
+    schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
+    supported_versions = {1, 2, 3, CHECKPOINT_VERSION}
+    if schema_version not in supported_versions:
+        _fail("$.version", f"unsupported checkpoint version {schema_version}")
+    required = {
+        "format",
+        "version",
+        "producer",
+        "source_backend",
+        "provenance",
+        "integrity",
+        "simulation",
+    }
+    if schema_version >= 4:
+        required.add("controller")
     _keys(
         root,
         "$",
-        {
-            "format",
-            "version",
-            "producer",
-            "source_backend",
-            "provenance",
-            "integrity",
-            "simulation",
-        },
+        required,
     )
     if _string(root["format"], "$.format") != CHECKPOINT_FORMAT:
         _fail("$.format", "not a CellModeller2 checkpoint")
-    schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
-    if schema_version not in {1, 2, CHECKPOINT_VERSION}:
-        _fail("$.version", f"unsupported checkpoint version {schema_version}")
     _object(root["producer"], "$.producer")
     _object(root["source_backend"], "$.source_backend")
-    _object(root["provenance"], "$.provenance")
+    provenance = cast(dict[str, JSONValue], _object(root["provenance"], "$.provenance"))
 
     integrity = _object(root["integrity"], "$.integrity")
-    _keys(integrity, "$.integrity", {"algorithm", "simulation"})
+    integrity_keys = {"algorithm", "simulation"}
+    if schema_version >= 4:
+        integrity_keys.add("controller")
+    _keys(integrity, "$.integrity", integrity_keys)
     if _string(integrity["algorithm"], "$.integrity.algorithm") != "sha256":
         _fail("$.integrity.algorithm", "unsupported integrity algorithm")
     expected_digest = _string(integrity["simulation"], "$.integrity.simulation")
@@ -752,5 +779,34 @@ def load_checkpoint(
     if not hmac.compare_digest(actual_digest, expected_digest):
         _fail("$.integrity.simulation", "state digest does not match")
 
+    controller = cast(JSONValue, root["controller"]) if schema_version >= 4 else None
+    if schema_version >= 4:
+        expected_controller_digest = _string(
+            integrity["controller"], "$.integrity.controller"
+        )
+        actual_controller_digest = hashlib.sha256(_canonical_json(controller)).hexdigest()
+        if not hmac.compare_digest(actual_controller_digest, expected_controller_digest):
+            _fail("$.integrity.controller", "controller digest does not match")
+
     checkpoint = _native_checkpoint(root["simulation"], schema_version)
-    return Simulation(backend, checkpoint, device_index)
+    return CheckpointBundle(
+        simulation=Simulation(backend, checkpoint, device_index),
+        controller=controller,
+        provenance=provenance,
+    )
+
+
+def load_checkpoint(
+    path: str | os.PathLike[str],
+    *,
+    backend: BackendKind = BackendKind.CPU,
+    device_index: int = 0,
+) -> Simulation:
+    """Load a native checkpoint, rejecting controller state that would be discarded."""
+
+    bundle = load_checkpoint_bundle(path, backend=backend, device_index=device_index)
+    if bundle.controller is not None:
+        raise CheckpointError(
+            "checkpoint contains controller state; load it with load_checkpoint_bundle"
+        )
+    return bundle.simulation

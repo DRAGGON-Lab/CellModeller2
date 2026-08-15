@@ -11,6 +11,7 @@ from cellmodeller2 import (
     CHECKPOINT_VERSION,
     BackendKind,
     CellInit,
+    CheckpointBundle,
     CheckpointError,
     CoupledRatePlan,
     GridShape,
@@ -24,8 +25,10 @@ from cellmodeller2 import (
     SphereRegion,
     Vec3,
     load_checkpoint,
+    load_checkpoint_bundle,
     save_checkpoint,
 )
+from cellmodeller2.checkpoint import JSONValue
 
 
 def _instruction(
@@ -196,6 +199,8 @@ def test_version_one_checkpoint_migrates_to_an_empty_signal_state(tmp_path: Path
     save_checkpoint(simulation, path)
     document = _document(path)
     document["version"] = 1
+    del document["controller"]
+    del document["integrity"]["controller"]
     del document["simulation"]["signal_grid"]
     del document["simulation"]["coupled_rate_plan"]
     _rewrite_with_state_digest(path, document)
@@ -212,6 +217,8 @@ def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) 
     save_checkpoint(simulation, path)
     document = _document(path)
     document["version"] = 2
+    del document["controller"]
+    del document["integrity"]["controller"]
     del document["simulation"]["coupled_rate_plan"]
     _rewrite_with_state_digest(path, document)
 
@@ -219,6 +226,52 @@ def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) 
     assert restored.has_signal_grid
     assert not restored.has_coupled_rate_plan
     assert restored.signal_levels == simulation.signal_levels
+
+
+def test_version_three_checkpoint_migrates_without_controller_state(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v3.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 3
+    del document["controller"]
+    del document["integrity"]["controller"]
+    _rewrite_with_state_digest(path, document)
+
+    bundle = load_checkpoint_bundle(path)
+    assert isinstance(bundle, CheckpointBundle)
+    assert bundle.controller is None
+    _assert_cells_exact(bundle.simulation, simulation)
+
+
+def test_controller_state_is_authenticated_and_cannot_be_silently_discarded(
+    tmp_path: Path,
+) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "controlled.cm2.json"
+    controller: dict[str, JSONValue] = {
+        "kind": "test-controller",
+        "cells": {"2": {"threshold": 3.5}},
+    }
+    save_checkpoint(
+        simulation,
+        path,
+        provenance={"model": "controlled-test"},
+        controller=controller,
+    )
+
+    bundle = load_checkpoint_bundle(path)
+    assert bundle.controller == controller
+    assert bundle.provenance == {"model": "controlled-test"}
+    _assert_cells_exact(bundle.simulation, simulation)
+    with pytest.raises(CheckpointError, match="controller state"):
+        load_checkpoint(path)
+
+    document = _document(path)
+    document["controller"]["cells"]["2"]["threshold"] = 4.0
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CheckpointError, match="controller digest"):
+        load_checkpoint_bundle(path)
 
 
 def test_coupled_plan_round_trip_is_exact(tmp_path: Path) -> None:
