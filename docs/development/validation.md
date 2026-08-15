@@ -35,6 +35,16 @@ status, and SHA-256 digest manifest.
 The manual `Metal conformance` workflow routes this command to a self-hosted
 macOS runner with the custom `metal` label and always uploads the evidence.
 
+The same workflow then runs `scripts/run_metal_application_conformance.sh`.
+That gate performs a locked build of the Python extension with Metal explicitly
+enabled, requires a real Metal device, and executes the complete Python suite
+against the pinned legacy checkout. It also runs all 24 executable rows of the
+25-example matrix on CPU and every enumerated Metal device. The application
+workflow test independently composes native-controller batch execution, exact
+checkpoint/resume, live scene generation and reset, and analysis export with
+derived cell and constraint contacts on CPU and each Metal device. Both stages
+publish separate checksummed evidence directories.
+
 External constraint geometry begins with focused CPU fixtures covering plane
 normal normalization, one- and two-endpoint weighting, inside/outside sphere
 orientation, stable typed IDs, and deterministic sphere-center degeneracy.

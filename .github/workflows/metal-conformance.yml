@@ -25,11 +25,33 @@ jobs:
       - name: Run native Metal conformance
         run: scripts/run_metal_conformance.sh build/metal-conformance-report
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Check out pinned CellModeller
+        uses: actions/checkout@v6
+        with:
+          repository: CellModeller/CellModeller
+          ref: 4896f543c6250f053eea2312e628cc3a96bf7408
+          path: build/legacy-cellmodeller
+          clean: true
+          persist-credentials: false
+
+      - name: Run Metal application conformance
+        run: >-
+          scripts/run_metal_application_conformance.sh
+          build/metal-application-report
+          build/legacy-cellmodeller
+
       - name: Upload conformance evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: metal-conformance-${{ github.sha }}
-          path: build/metal-conformance-report
+          path: |
+            build/metal-conformance-report
+            build/metal-application-report
           if-no-files-found: error
           retention-days: 90
