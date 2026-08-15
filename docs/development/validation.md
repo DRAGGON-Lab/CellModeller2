@@ -40,6 +40,15 @@ independent CUDA C++ interpreter compiles and links against the CUDA 12.8
 toolkit; execution of this fixture on NVIDIA hardware remains its conformance
 gate.
 
+SBML fixtures parse Level 3 Version 2 XML through libSBML, compile ordered
+species metadata, local and global parameters, stoichiometry, arithmetic,
+power, exponential, and logarithmic MathML into `SpeciesRatePlan`, and execute
+the result through every available native species backend. Rejection fixtures
+cover malformed input, non-unit compartments, rules, unsupported MathML, and
+unresolved valid SBML symbols. These tests validate the semantic compiler;
+the existing 513-cell species fixture remains the scaling and native-device
+interpreter gate.
+
 Checkpoint fixtures compare every persisted field exactly before taking a
 resumed step. They then continue the same typed species model on each available
 backend and compare with a fresh CPU restore under the species tolerance. File

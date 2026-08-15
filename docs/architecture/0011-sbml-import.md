@@ -23,7 +23,8 @@ CUDA, or OpenCL source.
 
 The first supported contract is intentionally narrow:
 
-- SBML Core models with exactly one compartment whose constant size is one;
+- SBML Level 3 Version 2 Core models with exactly one compartment whose
+  constant size is one;
 - species represented as concentrations, with initial concentration or an
   initial amount that is equivalent in the unit-volume compartment;
 - constant global and kinetic-law-local parameters with explicit finite

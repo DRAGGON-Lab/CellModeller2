@@ -101,6 +101,30 @@ save_checkpoint(simulation, "run.cm2.json", provenance={"model": "colony-a"})
 resumed = load_checkpoint("run.cm2.json")
 ```
 
+## Import a typed SBML rate model
+
+Install the optional `sbml` dependency, then compile a bounded SBML Level 3
+Version 2 Core model into the same data-only rate plan used by native models:
+
+```console
+uv sync --extra sbml
+```
+
+```python
+from cellmodeller2 import CellInit, Simulation, load_sbml
+
+model = load_sbml("model.xml")
+simulation = Simulation(species_count=model.species_count)
+cell = CellInit()
+cell.species = list(model.initial_levels)
+simulation.add_cell(cell)
+simulation.set_species_rate_plan(model.rate_plan)
+```
+
+The importer uses libSBML for parsing and consistency diagnostics. It accepts
+the explicit subset in [ADR 0011](docs/architecture/0011-sbml-import.md) and
+fails on unsupported semantics; it never generates or evaluates source code.
+
 `backend_device_count(kind)` enumerates native devices and every `Simulation`
 constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
 not inherit mutable process-thread device selection, and Metal does not

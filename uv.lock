@@ -10,20 +10,31 @@ dependencies = [
     { name = "numpy" },
 ]
 
+[package.optional-dependencies]
+sbml = [
+    { name = "python-libsbml" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pyright" },
     { name = "pytest" },
+    { name = "python-libsbml" },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "numpy", specifier = ">=2.1,<3" }]
+requires-dist = [
+    { name = "numpy", specifier = ">=2.1,<3" },
+    { name = "python-libsbml", marker = "extra == 'sbml'", specifier = ">=5.21.1,<6" },
+]
+provides-extras = ["sbml"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pyright", specifier = ">=1.1.390,<2" },
     { name = "pytest", specifier = ">=8.3,<9" },
+    { name = "python-libsbml", specifier = ">=5.21.1,<6" },
     { name = "ruff", specifier = ">=0.9,<1" },
 ]
 
@@ -127,6 +138,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750 },
+]
+
+[[package]]
+name = "python-libsbml"
+version = "5.21.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/ba/4009c3ef2b0778a5581f1e0bd0679674728e111235e1e89e4f02278ca210/python_libsbml-5.21.1.tar.gz", hash = "sha256:378077e37a1b5cd32d8c33bf845b23c22b7a6915d217d7ab811e71e022f982ea", size = 41854207 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/de/a12f1948ae34072e3c4efc6447ac2e8736edb995d4076b370318b7bf07ab/python_libsbml-5.21.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:ac6cc430597e4640f805dcb8cef1e3434af3e4461e71071d621870dacffdfd5f", size = 6312256 },
+    { url = "https://files.pythonhosted.org/packages/05/ba/c16e83dff59056e8d287c5592e43607f230e1a419e833a367301d433f18f/python_libsbml-5.21.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:0e8134c3a5934ea1824f1839d4a0ee2cc1614159f931828b83d15867764d9dec", size = 6070271 },
+    { url = "https://files.pythonhosted.org/packages/3c/c7/f345ee8fc45231f055559b26288f2c70dced97b7830d1b04e84b0e332e3b/python_libsbml-5.21.1-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:441c557ad62f27f3baa16bd555530c84b7c102423fdaed2128ce9de766a69daa", size = 7450946 },
+    { url = "https://files.pythonhosted.org/packages/40/cc/eed5aeb1141f53e788bc3acc9bc9f758b3d6ca45a9db85eee053c8166d4b/python_libsbml-5.21.1-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8e0fc4b1e2feb4af0028cffe1e8eff4e448f1124bf1e895e08e987aeeb2d8e55", size = 8049037 },
+    { url = "https://files.pythonhosted.org/packages/17/d8/add9c72917802e02bec66769fd11f1ec7fa82376fdc16945f6d2508f7468/python_libsbml-5.21.1-cp312-cp312-win_amd64.whl", hash = "sha256:84101a40c11a45c996c274a042454600b205d663d48c5a58ee327565e20c890e", size = 5986612 },
+    { url = "https://files.pythonhosted.org/packages/1c/e3/5c2b48b238bfadd00f9c3d0654261a1f82d36d9f2b3d7292f32b3e81caa9/python_libsbml-5.21.1-cp312-cp312-win_arm64.whl", hash = "sha256:5698f5d4216eb0c9d89895346d13a935d9ed7f23f4635076889cf7892fadcbf8", size = 5690450 },
 ]
 
 [[package]]

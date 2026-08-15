@@ -61,6 +61,7 @@ from .runner import (
     build_model,
     run_simulation,
 )
+from .sbml import SBMLImportError, SBMLRateModel, load_sbml, parse_sbml
 
 __all__ = [
     "CHECKPOINT_FORMAT",
@@ -101,6 +102,8 @@ __all__ = [
     "RunProgress",
     "RunSummary",
     "RunnableModel",
+    "SBMLImportError",
+    "SBMLRateModel",
     "SignalGridSpec",
     "SignalIntegrationKind",
     "SignalSolveParameters",
@@ -120,6 +123,8 @@ __all__ = [
     "import_legacy_pickle",
     "load_checkpoint",
     "load_checkpoint_bundle",
+    "load_sbml",
+    "parse_sbml",
     "resume_legacy_model",
     "run_simulation",
     "save_checkpoint",
