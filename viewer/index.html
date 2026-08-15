@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101413" />
+    <meta
+      name="description"
+      content="Inspect immutable CellModeller2 colony scene snapshots."
+    />
+    <title>CellModeller2 Viewer</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand" aria-label="CellModeller2 Viewer">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+          <div>
+            <strong>CellModeller2</strong>
+            <span>Scene viewer</span>
+          </div>
+        </div>
+        <div class="run-summary" aria-live="polite">
+          <span id="backend-chip" class="chip">No scene</span>
+          <span id="time-chip" class="chip">t = —</span>
+          <span id="count-chip" class="chip">0 cells</span>
+        </div>
+        <div class="topbar-actions">
+          <button
+            id="fit-button"
+            class="button button-secondary"
+            type="button"
+            disabled
+          >
+            Fit colony
+          </button>
+          <label class="button button-primary" for="scene-file">
+            Open scene
+          </label>
+          <input
+            id="scene-file"
+            type="file"
+            accept=".json,.cm2.scene.json,application/json"
+          />
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="panel controls-panel" aria-label="Display controls">
+          <section>
+            <div class="section-heading">
+              <h2>Cells</h2>
+              <span id="cell-count">—</span>
+            </div>
+            <label class="field">
+              <span>Color by</span>
+              <select id="color-mode" disabled>
+                <option value="cell-type">Cell type</option>
+                <option value="species">Species</option>
+                <option value="growth-rate">Growth rate</option>
+                <option value="fixed">Fixed state</option>
+              </select>
+            </label>
+            <label id="species-field" class="field" hidden>
+              <span>Species channel</span>
+              <select id="species-channel"></select>
+            </label>
+            <div id="color-legend" class="legend" hidden>
+              <div class="legend-ramp" aria-hidden="true"></div>
+              <div class="legend-labels">
+                <span id="legend-min">—</span>
+                <span id="legend-title">Value</span>
+                <span id="legend-max">—</span>
+              </div>
+            </div>
+          </section>
+
+          <section id="signal-section" hidden>
+            <div class="section-heading">
+              <h2>Signal grid</h2>
+              <label class="switch">
+                <input id="signal-visible" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+                <span class="sr-only">Show signal grid</span>
+              </label>
+            </div>
+            <label class="field">
+              <span>Signal channel</span>
+              <select id="signal-channel"></select>
+            </label>
+            <label class="field">
+              <span>Slice axis</span>
+              <select id="signal-axis">
+                <option value="z">XY plane (Z)</option>
+                <option value="y">XZ plane (Y)</option>
+                <option value="x">YZ plane (X)</option>
+              </select>
+            </label>
+            <label class="field range-field">
+              <span>Slice <output id="slice-value">0</output></span>
+              <input
+                id="signal-slice"
+                type="range"
+                min="0"
+                max="0"
+                step="1"
+                value="0"
+              />
+            </label>
+          </section>
+
+          <section class="scene-notes">
+            <h2>Scene</h2>
+            <dl>
+              <div>
+                <dt>Backend</dt>
+                <dd id="backend-detail">—</dd>
+              </div>
+              <div>
+                <dt>Device</dt>
+                <dd id="device-detail">—</dd>
+              </div>
+              <div>
+                <dt>Species</dt>
+                <dd id="species-count">—</dd>
+              </div>
+              <div>
+                <dt>Grid</dt>
+                <dd id="grid-shape">—</dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
+
+        <section id="viewport" class="viewport" aria-label="3D colony view">
+          <div id="canvas-host"></div>
+          <div id="empty-state" class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <h1>Inspect a colony snapshot</h1>
+            <p>
+              Drop a <code>.cm2.scene.json</code> file here, or choose one from
+              disk.
+            </p>
+            <label class="button button-primary" for="scene-file"
+              >Open scene</label
+            >
+          </div>
+          <div class="viewport-help" aria-hidden="true">
+            Drag to orbit · Right-drag to pan · Scroll to zoom · Click a cell to
+            inspect
+          </div>
+          <div
+            id="status"
+            class="status"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+        </section>
+
+        <aside class="panel inspector-panel" aria-label="Cell inspector">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Selection</span>
+              <h2 id="selection-title">No cell selected</h2>
+            </div>
+            <button
+              id="clear-selection"
+              class="icon-button"
+              type="button"
+              disabled
+            >
+              <span aria-hidden="true">×</span>
+              <span class="sr-only">Clear selection</span>
+            </button>
+          </div>
+          <p id="selection-hint" class="muted">
+            Click a rod to inspect its exact scene values.
+          </p>
+          <dl id="cell-details" class="details" hidden></dl>
+          <section id="species-details" class="species-details" hidden>
+            <h3>Species levels</h3>
+            <ol id="species-values"></ol>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

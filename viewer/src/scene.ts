@@ -1,0 +1,499 @@
+import canonicalize from "canonicalize";
+
+export const SCENE_FORMAT = "cellmodeller2-scene";
+export const SCENE_VERSION = 1;
+export const MAX_SCENE_BYTES = 1 << 30;
+
+const UINT32_MAX = 2 ** 32 - 1;
+const UINT64_MAX = (1n << 64n) - 1n;
+const INT32_MIN = -(2 ** 31);
+const INT32_MAX = 2 ** 31 - 1;
+const FLOAT32_MAX = 3.4028234663852886e38;
+
+export type BackendKind = "cpu" | "metal" | "cuda";
+export type BoundaryKind = "no_flux" | "periodic" | "fixed";
+export type Vector3 = readonly [number, number, number];
+
+export interface SceneBackend {
+  readonly kind: BackendKind;
+  readonly name: string;
+  readonly device: string;
+  readonly deviceIndex: number;
+  readonly native: boolean;
+}
+
+export interface SceneCell {
+  readonly id: string;
+  readonly parentId: string | null;
+  readonly slot: number;
+  readonly position: Vector3;
+  readonly direction: Vector3;
+  readonly length: number;
+  readonly radius: number;
+  readonly growthRate: number;
+  readonly cellType: number;
+  readonly fixed: boolean;
+  readonly species: readonly number[];
+}
+
+export interface SceneGridBoundary {
+  readonly kind: BoundaryKind;
+  readonly values: readonly number[];
+}
+
+export interface SceneSignalGrid {
+  readonly signalCount: number;
+  readonly shape: readonly [number, number, number];
+  readonly origin: Vector3;
+  readonly spacing: Vector3;
+  readonly boundaries: Readonly<{
+    xLower: SceneGridBoundary;
+    xUpper: SceneGridBoundary;
+    yLower: SceneGridBoundary;
+    yUpper: SceneGridBoundary;
+    zLower: SceneGridBoundary;
+    zUpper: SceneGridBoundary;
+  }>;
+  readonly levels: readonly number[];
+}
+
+export interface SceneFrame {
+  readonly time: number;
+  readonly backend: SceneBackend;
+  readonly speciesCount: number;
+  readonly cells: readonly SceneCell[];
+  readonly signalGrid: SceneSignalGrid | null;
+}
+
+export class SceneFormatError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "SceneFormatError";
+  }
+}
+
+function fail(path: string, message: string): never {
+  throw new SceneFormatError(`${path}: ${message}`);
+}
+
+function record(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return fail(path, "expected an object");
+  }
+  return value as Record<string, unknown>;
+}
+
+function array(value: unknown, path: string): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    return fail(path, "expected an array");
+  }
+  return value;
+}
+
+function exactKeys(
+  value: Record<string, unknown>,
+  path: string,
+  expected: readonly string[],
+): void {
+  const wanted = new Set(expected);
+  const missing = expected.filter((key) => !(key in value));
+  const unknown = Object.keys(value).filter((key) => !wanted.has(key));
+  if (missing.length > 0) {
+    fail(path, `missing keys ${JSON.stringify(missing.toSorted())}`);
+  }
+  if (unknown.length > 0) {
+    fail(path, `unknown keys ${JSON.stringify(unknown.toSorted())}`);
+  }
+}
+
+function string(value: unknown, path: string): string {
+  if (typeof value !== "string") {
+    return fail(path, "expected a string");
+  }
+  return value;
+}
+
+function boolean(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") {
+    return fail(path, "expected a boolean");
+  }
+  return value;
+}
+
+function number(value: unknown, path: string, float32 = false): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fail(path, "expected a finite number");
+  }
+  if (float32 && Math.abs(value) > FLOAT32_MAX) {
+    return fail(path, "number is outside the finite float32 range");
+  }
+  return value;
+}
+
+function integer(
+  value: unknown,
+  path: string,
+  minimum: number,
+  maximum: number,
+): number {
+  const result = number(value, path);
+  if (!Number.isSafeInteger(result)) {
+    return fail(path, "expected a safe integer");
+  }
+  if (result < minimum || result > maximum) {
+    return fail(path, `integer is outside [${minimum}, ${maximum}]`);
+  }
+  return result;
+}
+
+function identifier(value: unknown, path: string): string {
+  const result = string(value, path);
+  if (!/^[1-9][0-9]*$/.test(result)) {
+    return fail(path, "expected a canonical positive decimal uint64 string");
+  }
+  if (BigInt(result) > UINT64_MAX) {
+    return fail(path, "identifier is outside the positive uint64 range");
+  }
+  return result;
+}
+
+function tuple3(value: unknown, path: string, positive = false): Vector3 {
+  const values = array(value, path);
+  if (values.length !== 3) {
+    return fail(path, "expected exactly three values");
+  }
+  const result: Vector3 = [
+    number(values[0], `${path}[0]`, true),
+    number(values[1], `${path}[1]`, true),
+    number(values[2], `${path}[2]`, true),
+  ];
+  if (positive && result.some((component) => component <= 0)) {
+    return fail(path, "values must be positive");
+  }
+  return result;
+}
+
+function floatArray(value: unknown, path: string): readonly number[] {
+  return array(value, path).map((item, index) =>
+    number(item, `${path}[${index}]`, true),
+  );
+}
+
+function parseBackend(value: unknown, path: string): SceneBackend {
+  const data = record(value, path);
+  exactKeys(data, path, ["kind", "name", "device", "device_index", "native"]);
+  const kind = string(data.kind, `${path}.kind`);
+  if (kind !== "cpu" && kind !== "metal" && kind !== "cuda") {
+    return fail(`${path}.kind`, `unknown backend kind ${JSON.stringify(kind)}`);
+  }
+  const name = string(data.name, `${path}.name`);
+  const device = string(data.device, `${path}.device`);
+  if (name.length === 0 || device.length === 0) {
+    return fail(path, "name and device must not be empty");
+  }
+  return {
+    kind,
+    name,
+    device,
+    deviceIndex: integer(
+      data.device_index,
+      `${path}.device_index`,
+      0,
+      UINT32_MAX,
+    ),
+    native: boolean(data.native, `${path}.native`),
+  };
+}
+
+function parseCell(
+  value: unknown,
+  path: string,
+  speciesCount: number,
+): SceneCell {
+  const data = record(value, path);
+  exactKeys(data, path, [
+    "id",
+    "parent_id",
+    "slot",
+    "position",
+    "direction",
+    "length",
+    "radius",
+    "growth_rate",
+    "cell_type",
+    "fixed",
+    "species",
+  ]);
+  const id = identifier(data.id, `${path}.id`);
+  const parentId =
+    data.parent_id === null
+      ? null
+      : identifier(data.parent_id, `${path}.parent_id`);
+  if (parentId !== null && BigInt(parentId) >= BigInt(id)) {
+    return fail(`${path}.parent_id`, "must precede the child identifier");
+  }
+  const direction = tuple3(data.direction, `${path}.direction`);
+  const norm = Math.hypot(...direction);
+  if (Math.abs(norm - 1) > 1e-5) {
+    return fail(`${path}.direction`, "must be normalized");
+  }
+  const length = number(data.length, `${path}.length`, true);
+  const radius = number(data.radius, `${path}.radius`, true);
+  if (length < 0) {
+    return fail(`${path}.length`, "must be non-negative");
+  }
+  if (radius <= 0) {
+    return fail(`${path}.radius`, "must be positive");
+  }
+  const species = floatArray(data.species, `${path}.species`);
+  if (species.length !== speciesCount) {
+    return fail(`${path}.species`, `expected ${speciesCount} values`);
+  }
+  return {
+    id,
+    parentId,
+    slot: integer(data.slot, `${path}.slot`, 0, UINT32_MAX - 1),
+    position: tuple3(data.position, `${path}.position`),
+    direction,
+    length,
+    radius,
+    growthRate: number(data.growth_rate, `${path}.growth_rate`, true),
+    cellType: integer(
+      data.cell_type,
+      `${path}.cell_type`,
+      INT32_MIN,
+      INT32_MAX,
+    ),
+    fixed: boolean(data.fixed, `${path}.fixed`),
+    species,
+  };
+}
+
+function parseBoundary(
+  value: unknown,
+  path: string,
+  signalCount: number,
+): SceneGridBoundary {
+  const data = record(value, path);
+  exactKeys(data, path, ["kind", "values"]);
+  const kind = string(data.kind, `${path}.kind`);
+  if (kind !== "no_flux" && kind !== "periodic" && kind !== "fixed") {
+    return fail(
+      `${path}.kind`,
+      `unknown boundary kind ${JSON.stringify(kind)}`,
+    );
+  }
+  const values = floatArray(data.values, `${path}.values`);
+  const expected = kind === "fixed" ? signalCount : 0;
+  if (values.length !== expected) {
+    return fail(
+      `${path}.values`,
+      `expected ${expected} values for ${kind} boundary`,
+    );
+  }
+  return { kind, values };
+}
+
+function parseSignalGrid(value: unknown, path: string): SceneSignalGrid | null {
+  if (value === null) {
+    return null;
+  }
+  const data = record(value, path);
+  exactKeys(data, path, [
+    "signal_count",
+    "shape",
+    "origin",
+    "spacing",
+    "boundaries",
+    "levels",
+  ]);
+  const signalCount = integer(
+    data.signal_count,
+    `${path}.signal_count`,
+    1,
+    UINT32_MAX,
+  );
+  const shapeValues = array(data.shape, `${path}.shape`);
+  if (shapeValues.length !== 3) {
+    return fail(`${path}.shape`, "expected exactly three dimensions");
+  }
+  const shape: readonly [number, number, number] = [
+    integer(shapeValues[0], `${path}.shape[0]`, 1, UINT32_MAX),
+    integer(shapeValues[1], `${path}.shape[1]`, 1, UINT32_MAX),
+    integer(shapeValues[2], `${path}.shape[2]`, 1, UINT32_MAX),
+  ];
+  const boundaries = record(data.boundaries, `${path}.boundaries`);
+  exactKeys(boundaries, `${path}.boundaries`, [
+    "x_lower",
+    "x_upper",
+    "y_lower",
+    "y_upper",
+    "z_lower",
+    "z_upper",
+  ]);
+  const levels = floatArray(data.levels, `${path}.levels`);
+  const expectedLevels = signalCount * shape[0] * shape[1] * shape[2];
+  if (
+    !Number.isSafeInteger(expectedLevels) ||
+    levels.length !== expectedLevels
+  ) {
+    return fail(`${path}.levels`, `expected ${expectedLevels} values`);
+  }
+  return {
+    signalCount,
+    shape,
+    origin: tuple3(data.origin, `${path}.origin`),
+    spacing: tuple3(data.spacing, `${path}.spacing`, true),
+    boundaries: {
+      xLower: parseBoundary(
+        boundaries.x_lower,
+        `${path}.boundaries.x_lower`,
+        signalCount,
+      ),
+      xUpper: parseBoundary(
+        boundaries.x_upper,
+        `${path}.boundaries.x_upper`,
+        signalCount,
+      ),
+      yLower: parseBoundary(
+        boundaries.y_lower,
+        `${path}.boundaries.y_lower`,
+        signalCount,
+      ),
+      yUpper: parseBoundary(
+        boundaries.y_upper,
+        `${path}.boundaries.y_upper`,
+        signalCount,
+      ),
+      zLower: parseBoundary(
+        boundaries.z_lower,
+        `${path}.boundaries.z_lower`,
+        signalCount,
+      ),
+      zUpper: parseBoundary(
+        boundaries.z_upper,
+        `${path}.boundaries.z_upper`,
+        signalCount,
+      ),
+    },
+    levels,
+  };
+}
+
+function parseFrame(value: unknown, path: string): SceneFrame {
+  const data = record(value, path);
+  exactKeys(data, path, [
+    "time",
+    "backend",
+    "species_count",
+    "cells",
+    "signal_grid",
+  ]);
+  const time = number(data.time, `${path}.time`);
+  if (time < 0) {
+    return fail(`${path}.time`, "must be non-negative");
+  }
+  const speciesCount = integer(
+    data.species_count,
+    `${path}.species_count`,
+    0,
+    UINT32_MAX,
+  );
+  const cells = array(data.cells, `${path}.cells`).map((item, index) =>
+    parseCell(item, `${path}.cells[${index}]`, speciesCount),
+  );
+  const identifiers = new Set<string>();
+  for (const [index, cell] of cells.entries()) {
+    if (cell.slot !== index) {
+      return fail(
+        `${path}.cells[${index}].slot`,
+        "cells must be compact and ordered by slot",
+      );
+    }
+    if (identifiers.has(cell.id)) {
+      return fail(`${path}.cells[${index}].id`, "duplicate cell identifier");
+    }
+    identifiers.add(cell.id);
+  }
+  return {
+    time,
+    backend: parseBackend(data.backend, `${path}.backend`),
+    speciesCount,
+    cells,
+    signalGrid: parseSignalGrid(data.signal_grid, `${path}.signal_grid`),
+  };
+}
+
+async function sha256(value: string): Promise<string> {
+  if (globalThis.crypto?.subtle === undefined) {
+    throw new SceneFormatError(
+      "SHA-256 verification requires the Web Crypto API",
+    );
+  }
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function parseScene(source: string): Promise<SceneFrame> {
+  if (source.length === 0) {
+    throw new SceneFormatError("scene is empty");
+  }
+  if (new TextEncoder().encode(source).byteLength > MAX_SCENE_BYTES) {
+    throw new SceneFormatError(
+      `scene exceeds the ${MAX_SCENE_BYTES}-byte limit`,
+    );
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(source) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new SceneFormatError(`scene is not valid JSON: ${detail}`);
+  }
+
+  const root = record(decoded, "$");
+  exactKeys(root, "$", ["format", "version", "producer", "integrity", "frame"]);
+  if (string(root.format, "$.format") !== SCENE_FORMAT) {
+    return fail("$.format", "not a CellModeller2 scene");
+  }
+  if (integer(root.version, "$.version", 0, UINT32_MAX) !== SCENE_VERSION) {
+    return fail(
+      "$.version",
+      `unsupported scene version ${String(root.version)}`,
+    );
+  }
+  const producer = record(root.producer, "$.producer");
+  exactKeys(producer, "$.producer", ["name", "version"]);
+  string(producer.name, "$.producer.name");
+  string(producer.version, "$.producer.version");
+  const integrity = record(root.integrity, "$.integrity");
+  exactKeys(integrity, "$.integrity", ["algorithm", "frame"]);
+  if (string(integrity.algorithm, "$.integrity.algorithm") !== "sha256") {
+    return fail("$.integrity.algorithm", "unsupported integrity algorithm");
+  }
+  const expectedDigest = string(integrity.frame, "$.integrity.frame");
+  if (!/^[0-9a-f]{64}$/.test(expectedDigest)) {
+    return fail("$.integrity.frame", "expected a lowercase SHA-256 digest");
+  }
+  let canonical: string | undefined;
+  try {
+    canonical = canonicalize(root.frame);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new SceneFormatError(`scene cannot be canonicalized: ${detail}`);
+  }
+  if (canonical === undefined) {
+    return fail("$.frame", "cannot be represented by RFC 8785 canonical JSON");
+  }
+  const actualDigest = await sha256(canonical);
+  if (actualDigest !== expectedDigest) {
+    return fail("$.integrity.frame", "frame digest does not match");
+  }
+  return parseFrame(root.frame, "$.frame");
+}

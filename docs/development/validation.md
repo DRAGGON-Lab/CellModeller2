@@ -56,6 +56,14 @@ round trips, atomic writes, SHA-256 tamper detection, closed schemas, malformed
 input, float32 geometry invariants, grid cardinality, and unsigned 64-bit IDs
 beyond JavaScript's exact integer range.
 
+The independent viewer validates with `pnpm --dir viewer format:check`,
+`check`, `test`, and `build`. Its unit suite verifies a Python-authored RFC 8785
+digest, strict browser decoding, tamper rejection, browser-safe cell IDs,
+categorical and scalar color mappings, and every signal-slice indexing path.
+Rendered browser QA loads `examples/viewer_scene.py` output and exercises rod
+picking, selection clearing, species coloring, and signal-axis changes while
+checking the console for warnings and errors.
+
 Checkpoint fixtures compare every persisted field exactly before taking a
 resumed step. They then continue the same typed species model on each available
 backend and compare with a fresh CPU restore under the species tolerance. File

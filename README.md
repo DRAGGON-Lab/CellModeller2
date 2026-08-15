@@ -142,6 +142,19 @@ fields, every species channel, and an optional signaling grid. It is strict,
 integrity-checked JSON and intentionally cannot resume a simulation. The
 [scene format](docs/formats/scene-v1.md) defines its complete wire layout.
 
+Generate a deterministic example and open the standalone viewer:
+
+```console
+uv run python examples/viewer_scene.py --output viewer-demo.cm2.scene.json
+pnpm --dir viewer install
+pnpm --dir viewer dev
+```
+
+The TypeScript/Three.js viewer verifies the cross-language digest before it
+renders anything. It provides instanced rods, orbit/pan/zoom, cell picking and
+inspection, declarative cell coloring, and signal-grid slicing without owning
+or importing the simulation engine. See the [viewer README](viewer/README.md).
+
 `backend_device_count(kind)` enumerates native devices and every `Simulation`
 constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
 not inherit mutable process-thread device selection, and Metal does not

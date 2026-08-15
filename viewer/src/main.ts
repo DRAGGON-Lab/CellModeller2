@@ -1,0 +1,310 @@
+import "./style.css";
+
+import { mapCellColors, type ColorMode } from "./color";
+import { ColonyViewer } from "./colony-viewer";
+import { signalSlice, sliceDimension, type SliceAxis } from "./grid";
+import {
+  MAX_SCENE_BYTES,
+  parseScene,
+  type SceneCell,
+  type SceneFrame,
+} from "./scene";
+
+function required<T extends HTMLElement>(id: string): T {
+  const value = document.querySelector<T>(`#${id}`);
+  if (value === null) {
+    throw new Error(`missing required element #${id}`);
+  }
+  return value;
+}
+
+const viewport = required<HTMLElement>("viewport");
+const canvasHost = required<HTMLElement>("canvas-host");
+const fileInput = required<HTMLInputElement>("scene-file");
+const fitButton = required<HTMLButtonElement>("fit-button");
+const emptyState = required<HTMLElement>("empty-state");
+const status = required<HTMLElement>("status");
+const backendChip = required<HTMLElement>("backend-chip");
+const timeChip = required<HTMLElement>("time-chip");
+const countChip = required<HTMLElement>("count-chip");
+const cellCount = required<HTMLElement>("cell-count");
+const colorMode = required<HTMLSelectElement>("color-mode");
+const speciesField = required<HTMLElement>("species-field");
+const speciesChannel = required<HTMLSelectElement>("species-channel");
+const colorLegend = required<HTMLElement>("color-legend");
+const legendMinimum = required<HTMLElement>("legend-min");
+const legendMaximum = required<HTMLElement>("legend-max");
+const legendTitle = required<HTMLElement>("legend-title");
+const signalSection = required<HTMLElement>("signal-section");
+const signalVisible = required<HTMLInputElement>("signal-visible");
+const signalChannel = required<HTMLSelectElement>("signal-channel");
+const signalAxis = required<HTMLSelectElement>("signal-axis");
+const signalRange = required<HTMLInputElement>("signal-slice");
+const sliceValue = required<HTMLOutputElement>("slice-value");
+const backendDetail = required<HTMLElement>("backend-detail");
+const deviceDetail = required<HTMLElement>("device-detail");
+const speciesCount = required<HTMLElement>("species-count");
+const gridShape = required<HTMLElement>("grid-shape");
+const selectionTitle = required<HTMLElement>("selection-title");
+const selectionHint = required<HTMLElement>("selection-hint");
+const clearSelection = required<HTMLButtonElement>("clear-selection");
+const cellDetails = required<HTMLElement>("cell-details");
+const speciesDetails = required<HTMLElement>("species-details");
+const speciesValues = required<HTMLOListElement>("species-values");
+
+let frame: SceneFrame | null = null;
+let statusToken = 0;
+let dragDepth = 0;
+
+const viewer = new ColonyViewer(canvasHost, updateSelection);
+
+function formatNumber(value: number): string {
+  if (value === 0) {
+    return "0";
+  }
+  const magnitude = Math.abs(value);
+  return magnitude >= 10_000 || magnitude < 0.001
+    ? value.toExponential(4)
+    : value.toLocaleString(undefined, { maximumSignificantDigits: 7 });
+}
+
+function setStatus(message: string, kind: "info" | "error" = "info"): void {
+  const token = ++statusToken;
+  status.textContent = message;
+  status.dataset.kind = kind;
+  status.hidden = false;
+  window.setTimeout(
+    () => {
+      if (token === statusToken) {
+        status.hidden = true;
+      }
+    },
+    kind === "error" ? 7000 : 3500,
+  );
+}
+
+function options(
+  select: HTMLSelectElement,
+  count: number,
+  prefix: string,
+): void {
+  select.replaceChildren();
+  for (let index = 0; index < count; index += 1) {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${prefix} ${index}`;
+    select.append(option);
+  }
+}
+
+function selectedInteger(
+  control: HTMLSelectElement | HTMLInputElement,
+): number {
+  const value = Number.parseInt(control.value, 10);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function updateColors(): void {
+  if (frame === null) {
+    return;
+  }
+  const mode = colorMode.value as ColorMode;
+  speciesField.hidden = mode !== "species";
+  const mapping = mapCellColors(frame, {
+    mode,
+    speciesIndex: selectedInteger(speciesChannel),
+  });
+  viewer.setCellColors(mapping.colors);
+  const scalar = mapping.minimum !== null && mapping.maximum !== null;
+  colorLegend.hidden = !scalar;
+  legendTitle.textContent = mapping.title;
+  legendMinimum.textContent = scalar ? formatNumber(mapping.minimum ?? 0) : "—";
+  legendMaximum.textContent = scalar ? formatNumber(mapping.maximum ?? 0) : "—";
+}
+
+function updateSignalRange(): void {
+  if (frame?.signalGrid === null || frame === null) {
+    return;
+  }
+  const axis = signalAxis.value as SliceAxis;
+  const maximum = sliceDimension(frame.signalGrid, axis) - 1;
+  signalRange.max = String(maximum);
+  signalRange.value = String(Math.min(selectedInteger(signalRange), maximum));
+  sliceValue.value = signalRange.value;
+}
+
+function updateSignal(): void {
+  if (frame?.signalGrid === null || frame === null || !signalVisible.checked) {
+    viewer.setSignalSlice(null);
+    return;
+  }
+  const axis = signalAxis.value as SliceAxis;
+  const value = signalSlice(
+    frame.signalGrid,
+    selectedInteger(signalChannel),
+    axis,
+    selectedInteger(signalRange),
+  );
+  viewer.setSignalSlice(value);
+}
+
+function detail(label: string, value: string): HTMLDivElement {
+  const row = document.createElement("div");
+  const term = document.createElement("dt");
+  const description = document.createElement("dd");
+  term.textContent = label;
+  description.textContent = value;
+  row.append(term, description);
+  return row;
+}
+
+function updateSelection(cell: SceneCell | null): void {
+  cellDetails.replaceChildren();
+  speciesValues.replaceChildren();
+  if (cell === null) {
+    selectionTitle.textContent = "No cell selected";
+    selectionHint.hidden = false;
+    cellDetails.hidden = true;
+    speciesDetails.hidden = true;
+    clearSelection.disabled = true;
+    return;
+  }
+  selectionTitle.textContent = `Cell ${cell.id}`;
+  selectionHint.hidden = true;
+  clearSelection.disabled = false;
+  cellDetails.hidden = false;
+  cellDetails.append(
+    detail("Slot", String(cell.slot)),
+    detail("Parent", cell.parentId ?? "Founder"),
+    detail("Type", String(cell.cellType)),
+    detail("Position", cell.position.map(formatNumber).join(", ")),
+    detail("Direction", cell.direction.map(formatNumber).join(", ")),
+    detail("Length", formatNumber(cell.length)),
+    detail("Radius", formatNumber(cell.radius)),
+    detail("Growth", formatNumber(cell.growthRate)),
+    detail("Fixed", cell.fixed ? "Yes" : "No"),
+  );
+  speciesDetails.hidden = cell.species.length === 0;
+  for (const [index, value] of cell.species.entries()) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    const encoded = document.createElement("code");
+    label.textContent = `Channel ${index}`;
+    encoded.textContent = formatNumber(value);
+    item.append(label, encoded);
+    speciesValues.append(item);
+  }
+}
+
+function presentScene(next: SceneFrame, filename: string): void {
+  frame = next;
+  viewer.setFrame(next);
+  fitButton.disabled = false;
+  colorMode.disabled = false;
+  emptyState.hidden = true;
+  backendChip.textContent = `${next.backend.kind.toUpperCase()} · ${next.backend.native ? "native" : "reference"}`;
+  timeChip.textContent = `t = ${formatNumber(next.time)}`;
+  countChip.textContent = `${next.cells.length.toLocaleString()} ${next.cells.length === 1 ? "cell" : "cells"}`;
+  cellCount.textContent = next.cells.length.toLocaleString();
+  backendDetail.textContent = next.backend.name;
+  deviceDetail.textContent = `${next.backend.device} · ${next.backend.deviceIndex}`;
+  speciesCount.textContent = String(next.speciesCount);
+  gridShape.textContent =
+    next.signalGrid === null ? "None" : next.signalGrid.shape.join(" × ");
+
+  options(speciesChannel, next.speciesCount, "Channel");
+  if (next.speciesCount === 0 && colorMode.value === "species") {
+    colorMode.value = "cell-type";
+  }
+  const speciesOption = colorMode.querySelector<HTMLOptionElement>(
+    'option[value="species"]',
+  );
+  if (speciesOption !== null) {
+    speciesOption.disabled = next.speciesCount === 0;
+  }
+
+  signalSection.hidden = next.signalGrid === null;
+  if (next.signalGrid !== null) {
+    options(signalChannel, next.signalGrid.signalCount, "Channel");
+    signalVisible.checked = true;
+    signalAxis.value = "z";
+    signalRange.value = String(Math.floor((next.signalGrid.shape[2] - 1) / 2));
+    updateSignalRange();
+  }
+  updateColors();
+  updateSignal();
+  setStatus(`Opened ${filename}`);
+}
+
+async function loadFile(file: File): Promise<void> {
+  if (file.size > MAX_SCENE_BYTES) {
+    setStatus(
+      `Scene exceeds the ${MAX_SCENE_BYTES.toLocaleString()}-byte limit`,
+      "error",
+    );
+    return;
+  }
+  try {
+    const next = await parseScene(await file.text());
+    presentScene(next, file.name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus(message, "error");
+  }
+}
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files?.[0];
+  if (file !== undefined) {
+    void loadFile(file);
+  }
+  fileInput.value = "";
+});
+
+fitButton.addEventListener("click", () => viewer.fitColony());
+clearSelection.addEventListener("click", () => viewer.selectCell(null));
+colorMode.addEventListener("change", updateColors);
+speciesChannel.addEventListener("change", updateColors);
+signalVisible.addEventListener("change", updateSignal);
+signalChannel.addEventListener("change", updateSignal);
+signalAxis.addEventListener("change", () => {
+  updateSignalRange();
+  updateSignal();
+});
+signalRange.addEventListener("input", () => {
+  sliceValue.value = signalRange.value;
+  updateSignal();
+});
+
+for (const eventName of ["dragenter", "dragover"] as const) {
+  viewport.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    if (eventName === "dragenter") {
+      dragDepth += 1;
+    }
+    viewport.dataset.dragging = "true";
+  });
+}
+viewport.addEventListener("dragleave", (event) => {
+  event.preventDefault();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) {
+    delete viewport.dataset.dragging;
+  }
+});
+viewport.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dragDepth = 0;
+  delete viewport.dataset.dragging;
+  const file = event.dataTransfer?.files[0];
+  if (file !== undefined) {
+    void loadFile(file);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    viewer.selectCell(null);
+  }
+});
+window.addEventListener("beforeunload", () => viewer.dispose(), { once: true });
