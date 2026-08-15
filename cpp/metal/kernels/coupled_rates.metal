@@ -241,7 +241,7 @@ kernel void advance_coupled_grid(
     constant float4& origin [[buffer(10)]], constant float4& spacing [[buffer(11)]],
     constant float& dt [[buffer(12)]], constant uint& signal_count [[buffer(13)]],
     constant uint& cell_count [[buffer(14)]], constant uint& level_count [[buffer(15)]],
-    uint index [[thread_position_in_grid]]) {
+    constant uint& crank_nicolson [[buffer(16)]], uint index [[thread_position_in_grid]]) {
   if (index >= level_count) {
     return;
   }
@@ -310,9 +310,10 @@ kernel void advance_coupled_grid(
     float weight = cell_site_weight(centers[cell], shape, origin, spacing, x, y, z);
     source += weight * cell_signal_rates[cell * signal_count + signal] * inverse_voxel_volume;
   }
-  float candidate = current + dt * (rate + source);
+  float transport_scale = crank_nicolson == 0u ? dt : 0.5f * dt;
+  float candidate = current + transport_scale * rate + dt * source;
   output[index] = candidate;
-  if (!isfinite(candidate) || candidate < 0.0f) {
+  if (!isfinite(candidate) || (crank_nicolson == 0u && candidate < 0.0f)) {
     atomic_fetch_or_explicit(error, 2u, memory_order_relaxed);
   }
 }

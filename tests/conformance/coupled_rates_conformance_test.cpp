@@ -14,7 +14,7 @@ cm2::RateInstruction operation(cm2::RateOp op, std::uint32_t first = 0, std::uin
   return {.operation = op, .first = first, .second = second, .value = value};
 }
 
-cm2::Simulation make_reference() {
+cm2::Simulation make_reference(cm2::SignalIntegrationKind integration) {
   cm2::Simulation simulation(cm2::BackendKind::cpu, 513, 3);
   cm2::SignalGridSpec grid;
   grid.signal_count = 2;
@@ -23,6 +23,7 @@ cm2::Simulation make_reference() {
   grid.spacing = {0.75F, 1.25F, 2.0F};
   grid.diffusion = {0.08F, 0.03F};
   grid.advection = {{0.05F, -0.02F, 0.01F}, {-0.03F, 0.04F, -0.01F}};
+  grid.integration = integration;
   grid.x_lower.kind = cm2::GridBoundaryKind::periodic;
   grid.x_upper.kind = cm2::GridBoundaryKind::periodic;
   grid.z_lower.kind = cm2::GridBoundaryKind::fixed;
@@ -98,13 +99,11 @@ void assert_close(const cm2::Simulation& actual, const cm2::Simulation& expected
   }
 }
 
-}  // namespace
-
-int main() {
-  auto source = make_reference();
+void run_case(cm2::SignalIntegrationKind integration, float dt) {
+  auto source = make_reference(integration);
   const auto checkpoint = source.checkpoint();
   cm2::Simulation expected(cm2::BackendKind::cpu, checkpoint);
-  expected.step(0.01F);
+  expected.step(dt);
 
   for (const auto backend :
        {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
@@ -117,8 +116,17 @@ int main() {
                 << " does not advertise coupled rates; skipping\n";
       continue;
     }
-    candidate.step(0.01F);
+    candidate.step(dt);
     assert_close(candidate, expected);
+    assert(candidate.last_signal_solve_report().has_value());
+    assert(candidate.last_signal_solve_report()->converged);
   }
+}
+
+}  // namespace
+
+int main() {
+  run_case(cm2::SignalIntegrationKind::forward_euler, 0.01F);
+  run_case(cm2::SignalIntegrationKind::crank_nicolson, 0.5F);
   return 0;
 }

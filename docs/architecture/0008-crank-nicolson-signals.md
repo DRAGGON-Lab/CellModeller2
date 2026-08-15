@@ -58,9 +58,11 @@ is not positivity preserving, so an oscillatory negative result is rejected.
 ## Backend staging
 
 CPU is the numerical reference. Metal and CUDA use native Jacobi stencil
-kernels and compare their committed fields and reports against it. A backend
-must reject Crank-Nicolson until its native solver exists; calling the CPU
-reference from a GPU backend is not an allowed fallback.
+kernels and compare their committed fields and reports against it. Metal forms
+the right-hand side, iterates, computes residual terms, and reduces them through
+native MSL pipelines; the host reads only the scalar convergence result and the
+committed field. A backend must reject Crank-Nicolson until its native solver
+exists; calling the CPU reference from a GPU backend is not an allowed fallback.
 
 ## Consequences
 

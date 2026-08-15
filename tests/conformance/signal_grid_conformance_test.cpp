@@ -54,14 +54,13 @@ void assert_matches(const cm2::Simulation& actual, const cm2::Simulation& expect
   }
 }
 
-}  // namespace
-
-int main() {
-  const auto spec = make_spec();
+void run_case(cm2::SignalIntegrationKind integration, float dt) {
+  auto spec = make_spec();
+  spec.integration = integration;
   const auto levels = make_levels(spec);
   cm2::Simulation reference;
   reference.configure_signal_grid(spec, levels);
-  reference.step(0.02F);
+  reference.step(dt);
 
   for (const auto backend :
        {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
@@ -73,7 +72,16 @@ int main() {
     if (!candidate.supports(cm2::BackendFeature::signals)) {
       continue;
     }
-    candidate.step(0.02F);
+    candidate.step(dt);
     assert_matches(candidate, reference);
+    assert(candidate.last_signal_solve_report().has_value());
+    assert(candidate.last_signal_solve_report()->converged);
   }
+}
+
+}  // namespace
+
+int main() {
+  run_case(cm2::SignalIntegrationKind::forward_euler, 0.02F);
+  run_case(cm2::SignalIntegrationKind::crank_nicolson, 0.5F);
 }

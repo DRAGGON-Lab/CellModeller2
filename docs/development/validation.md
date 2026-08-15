@@ -58,9 +58,10 @@ produce the same serialized simulation state.
 Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
 reservoir values, periodic upwind advection, reduced-dimensional and 3D
 trilinear samples, paired-periodic validation, explicit stability rejection,
-checkpoint round trips, and v1/v2-to-v3 checkpoint migration. The shared
-anisotropic 630-value scenario executes native MSL transport on Apple GPU
-hardware and compares it with the CPU reference at `5e-6`. The independent
+checkpoint round trips, v1-through-v4 migration, and diagnosed Crank-Nicolson
+convergence. The shared anisotropic 630-value scenario executes both Forward
+Euler and Crank-Nicolson through native MSL transport on Apple GPU hardware and
+compares them with the CPU reference at `5e-6`. The independent
 CUDA transport kernel compiles and links against the CUDA 12.8 toolkit, but
 compilation and driverless test execution are not conformance; the same gate
 must execute on NVIDIA hardware.
@@ -76,8 +77,9 @@ support.
 The shared fixture uses 513 heterogeneous cells, two signals, three species,
 anisotropic transport, fractional samples, and repeated scatter destinations;
 native implementations compare every committed value with the CPU reference.
-The native Metal stage passes that fixture on Apple GPU hardware. It evaluates
-cells and gathers grid sources in two MSL kernels within one command buffer;
+The native Metal stage passes that fixture in both Forward Euler and
+Crank-Nicolson modes on Apple GPU hardware. It evaluates cells and gathers grid
+sources in two MSL kernels within one command buffer;
 the grid-thread gather is deterministic and avoids a floating-point atomic
 requirement while keeping intermediate samples and rates device-resident.
 The independent CUDA C++ stage uses the same two-launch stream ordering and

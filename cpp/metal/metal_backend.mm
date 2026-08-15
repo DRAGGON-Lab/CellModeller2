@@ -185,6 +185,18 @@ class MetalBackend final : public ComputeBackend {
           compile_library(device_, metal::signals_source, "failed to compile Metal signals");
       signals_pipeline_ = compile_pipeline(device_, signals_library, @"advance_signal_grid",
                                            "failed to create the Metal signals pipeline");
+      signals_cn_jacobi_pipeline_ =
+          compile_pipeline(device_, signals_library, @"crank_nicolson_jacobi",
+                           "failed to create the Metal signal Jacobi pipeline");
+      signals_cn_residual_pipeline_ =
+          compile_pipeline(device_, signals_library, @"crank_nicolson_residual_terms",
+                           "failed to create the Metal signal residual pipeline");
+      signals_square_pipeline_ =
+          compile_pipeline(device_, signals_library, @"signal_square_terms",
+                           "failed to create the Metal signal square pipeline");
+      signals_reduce_pipeline_ =
+          compile_pipeline(device_, signals_library, @"reduce_signal_sum_pairs",
+                           "failed to create the Metal signal reduction pipeline");
 
       const auto coupled_library = compile_library(device_, metal::coupled_rates_source,
                                                    "failed to compile Metal coupled rates");
@@ -414,9 +426,6 @@ class MetalBackend final : public ComputeBackend {
   }
 
   SignalSolveReport advance_signal_grid(SignalGrid& grid, float dt) override {
-    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
-      throw std::runtime_error("Metal Crank-Nicolson signal integration is not implemented");
-    }
     grid.validate();
     grid.validate_step(dt);
     if (dt == 0.0F) {
@@ -459,6 +468,8 @@ class MetalBackend final : public ComputeBackend {
     const MetalUInt4 shape{spec.shape.x, spec.shape.y, spec.shape.z,
                            static_cast<std::uint32_t>(spec.site_count())};
     const MetalFloat4 spacing{spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F};
+    const auto crank_nicolson =
+        static_cast<std::uint32_t>(spec.integration == SignalIntegrationKind::crank_nicolson);
     @autoreleasepool {
       id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
       id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
@@ -480,6 +491,7 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBytes:&dt length:sizeof(dt) atIndex:9];
       [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:10];
       [encoder setBytes:&level_count length:sizeof(level_count) atIndex:11];
+      [encoder setBytes:&crank_nicolson length:sizeof(crank_nicolson) atIndex:12];
       dispatch_1d(encoder, signals_pipeline_, level_count);
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal signal-grid command failed");
@@ -488,17 +500,28 @@ class MetalBackend final : public ComputeBackend {
       throw std::domain_error(
           "Metal signal-grid kernel produced a non-finite or negative concentration");
     }
-    const auto* output = static_cast<const float*>(signal_output_.contents);
+    id<MTLBuffer> result_buffer = signal_output_;
+    SignalSolveReport report;
+    if (crank_nicolson != 0) {
+      const auto solve = solve_signal_crank_nicolson(
+          signal_levels_, signal_output_, signal_diffusion_, signal_advection_,
+          signal_fixed_values_, signal_error_, boundary_kinds, shape, spacing, dt, signal_count,
+          level_count, spec.solver);
+      result_buffer = solve.first;
+      report = solve.second;
+      if (!report.converged) {
+        throw std::runtime_error("Metal Crank-Nicolson signal solve did not converge after " +
+                                 std::to_string(report.iterations) + " iterations");
+      }
+    }
+    const auto* output = static_cast<const float*>(result_buffer.contents);
     grid.replace_levels(std::vector<float>(output, output + levels.size()));
-    return {};
+    return report;
   }
 
   SignalSolveReport advance_coupled(WorldState& state, SignalGrid& grid,
                                     const CoupledRatePlan& plan,
                                     std::span<const float> previous_lengths, float dt) override {
-    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
-      throw std::runtime_error("Metal Crank-Nicolson coupled integration is not implemented");
-    }
     validate_coupled_step(state, grid, plan, previous_lengths, dt);
     const auto checked_product = [](std::size_t left, std::size_t right, const char* name) {
       if (right != 0 && left > std::numeric_limits<std::size_t>::max() / right) {
@@ -601,6 +624,8 @@ class MetalBackend final : public ComputeBackend {
                            static_cast<std::uint32_t>(spec.site_count())};
     const MetalFloat4 origin{spec.origin.x, spec.origin.y, spec.origin.z, 0.0F};
     const MetalFloat4 spacing{spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F};
+    const auto crank_nicolson =
+        static_cast<std::uint32_t>(spec.integration == SignalIntegrationKind::crank_nicolson);
     @autoreleasepool {
       id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
       id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
@@ -653,6 +678,7 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:13];
       [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:14];
       [encoder setBytes:&level_count length:sizeof(level_count) atIndex:15];
+      [encoder setBytes:&crank_nicolson length:sizeof(crank_nicolson) atIndex:16];
       dispatch_1d(encoder, coupled_grid_pipeline_, level_count);
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal coupled-rate command failed");
@@ -662,7 +688,22 @@ class MetalBackend final : public ComputeBackend {
     if (error != 0) {
       throw std::domain_error("Metal coupled-rate kernel produced an invalid value");
     }
-    const auto* output = static_cast<const float*>(coupled_grid_output_.contents);
+    id<MTLBuffer> result_buffer = coupled_grid_output_;
+    SignalSolveReport report;
+    if (crank_nicolson != 0) {
+      const auto solve = solve_signal_crank_nicolson(
+          coupled_grid_levels_, coupled_grid_output_, coupled_diffusion_, coupled_advection_,
+          coupled_fixed_values_, coupled_error_, boundary_kinds, shape, spacing, dt, signal_count,
+          level_count, spec.solver);
+      result_buffer = solve.first;
+      report = solve.second;
+      if (!report.converged) {
+        throw std::runtime_error(
+            "Metal Crank-Nicolson coupled signal solve did not converge after " +
+            std::to_string(report.iterations) + " iterations");
+      }
+    }
+    const auto* output = static_cast<const float*>(result_buffer.contents);
     std::vector<float> next_grid(output, output + grid_level_count);
     SignalGridCheckpoint{.spec = spec, .levels = next_grid}.validate();
     if (!species_state.levels.empty()) {
@@ -670,7 +711,7 @@ class MetalBackend final : public ComputeBackend {
                   species_state.levels.size_bytes());
     }
     grid.replace_levels(std::move(next_grid));
-    return {};
+    return report;
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -928,6 +969,185 @@ class MetalBackend final : public ComputeBackend {
       signal_error_ =
           allocate_shared_buffer(device_, sizeof(std::uint32_t), "signal-grid error flag");
     }
+  }
+
+  void ensure_signal_solve_capacity(std::uint32_t level_count) {
+    if (level_count <= signal_solve_capacity_) {
+      return;
+    }
+    signal_solve_capacity_ = std::bit_ceil(static_cast<std::size_t>(level_count));
+    const auto byte_count = signal_solve_capacity_ * sizeof(float);
+    signal_cn_a_ = allocate_shared_buffer(device_, byte_count, "signal Jacobi field A");
+    signal_cn_b_ = allocate_shared_buffer(device_, byte_count, "signal Jacobi field B");
+    signal_cn_terms_ = allocate_shared_buffer(device_, byte_count, "signal residual terms");
+    signal_cn_reduce_a_ = allocate_shared_buffer(device_, byte_count, "signal reduction A");
+    signal_cn_reduce_b_ = allocate_shared_buffer(device_, byte_count, "signal reduction B");
+  }
+
+  id<MTLBuffer> encode_signal_reduction(id<MTLComputeCommandEncoder> encoder,
+                                        std::uint32_t element_count) {
+    id<MTLBuffer> input = signal_cn_terms_;
+    id<MTLBuffer> output = signal_cn_reduce_a_;
+    auto count = element_count;
+    while (count > 1) {
+      const auto output_count = (count + 1) / 2;
+      [encoder setComputePipelineState:signals_reduce_pipeline_];
+      [encoder setBuffer:input offset:0 atIndex:0];
+      [encoder setBuffer:output offset:0 atIndex:1];
+      [encoder setBytes:&count length:sizeof(count) atIndex:2];
+      dispatch_1d(encoder, signals_reduce_pipeline_, output_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      input = output;
+      output = output == signal_cn_reduce_a_ ? signal_cn_reduce_b_ : signal_cn_reduce_a_;
+      count = output_count;
+    }
+    return input;
+  }
+
+  [[nodiscard]] float signal_rhs_rms(id<MTLBuffer> right_hand_side, std::uint32_t level_count) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal signal norm command");
+      }
+      [encoder setComputePipelineState:signals_square_pipeline_];
+      [encoder setBuffer:right_hand_side offset:0 atIndex:0];
+      [encoder setBuffer:signal_cn_terms_ offset:0 atIndex:1];
+      [encoder setBytes:&level_count length:sizeof(level_count) atIndex:2];
+      dispatch_1d(encoder, signals_square_pipeline_, level_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      const auto reduction = encode_signal_reduction(encoder, level_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal signal norm failed");
+      const auto sum = *static_cast<const float*>(reduction.contents);
+      return std::sqrt(sum / static_cast<float>(level_count));
+    }
+  }
+
+  id<MTLBuffer> encode_signal_residual(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> current,
+                                       id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
+                                       id<MTLBuffer> advection, id<MTLBuffer> fixed_values,
+                                       const std::array<std::uint32_t, 6>& boundary_kinds,
+                                       const MetalUInt4& shape, const MetalFloat4& spacing,
+                                       float half_dt, std::uint32_t signal_count,
+                                       std::uint32_t level_count) {
+    [encoder setComputePipelineState:signals_cn_residual_pipeline_];
+    [encoder setBuffer:current offset:0 atIndex:0];
+    [encoder setBuffer:right_hand_side offset:0 atIndex:1];
+    [encoder setBuffer:signal_cn_terms_ offset:0 atIndex:2];
+    [encoder setBuffer:diffusion offset:0 atIndex:3];
+    [encoder setBuffer:advection offset:0 atIndex:4];
+    [encoder setBuffer:fixed_values offset:0 atIndex:5];
+    [encoder setBytes:boundary_kinds.data()
+               length:boundary_kinds.size() * sizeof(std::uint32_t)
+              atIndex:6];
+    [encoder setBytes:&shape length:sizeof(shape) atIndex:7];
+    [encoder setBytes:&spacing length:sizeof(spacing) atIndex:8];
+    [encoder setBytes:&half_dt length:sizeof(half_dt) atIndex:9];
+    [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:10];
+    [encoder setBytes:&level_count length:sizeof(level_count) atIndex:11];
+    dispatch_1d(encoder, signals_cn_residual_pipeline_, level_count);
+    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    return encode_signal_reduction(encoder, level_count);
+  }
+
+  [[nodiscard]] float signal_residual_rms(id<MTLBuffer> current, id<MTLBuffer> right_hand_side,
+                                          id<MTLBuffer> diffusion, id<MTLBuffer> advection,
+                                          id<MTLBuffer> fixed_values,
+                                          const std::array<std::uint32_t, 6>& boundary_kinds,
+                                          const MetalUInt4& shape, const MetalFloat4& spacing,
+                                          float half_dt, std::uint32_t signal_count,
+                                          std::uint32_t level_count) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal signal residual command");
+      }
+      const auto reduction = encode_signal_residual(encoder, current, right_hand_side, diffusion,
+                                                    advection, fixed_values, boundary_kinds, shape,
+                                                    spacing, half_dt, signal_count, level_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal signal residual failed");
+      const auto sum = *static_cast<const float*>(reduction.contents);
+      return std::sqrt(sum / static_cast<float>(level_count));
+    }
+  }
+
+  [[nodiscard]] std::pair<id<MTLBuffer>, SignalSolveReport> solve_signal_crank_nicolson(
+      id<MTLBuffer> initial, id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
+      id<MTLBuffer> advection, id<MTLBuffer> fixed_values, id<MTLBuffer> error,
+      const std::array<std::uint32_t, 6>& boundary_kinds, const MetalUInt4& shape,
+      const MetalFloat4& spacing, float dt, std::uint32_t signal_count, std::uint32_t level_count,
+      const SignalSolveParameters& parameters) {
+    ensure_signal_solve_capacity(level_count);
+    const auto half_dt = 0.5F * dt;
+    const auto right_hand_side_rms = signal_rhs_rms(right_hand_side, level_count);
+    const auto threshold =
+        parameters.absolute_tolerance + (parameters.relative_tolerance * right_hand_side_rms);
+    SignalSolveReport report;
+    report.residual_rms =
+        signal_residual_rms(initial, right_hand_side, diffusion, advection, fixed_values,
+                            boundary_kinds, shape, spacing, half_dt, signal_count, level_count);
+    if (std::isfinite(report.residual_rms) && report.residual_rms <= threshold) {
+      return {initial, report};
+    }
+    if (!std::isfinite(report.residual_rms) || !std::isfinite(threshold)) {
+      report.converged = false;
+      return {initial, report};
+    }
+
+    *static_cast<std::uint32_t*>(error.contents) = 0;
+    id<MTLBuffer> current = initial;
+    for (std::uint32_t iteration = 1; iteration <= parameters.max_iterations; ++iteration) {
+      id<MTLBuffer> output = current == signal_cn_a_ ? signal_cn_b_ : signal_cn_a_;
+      @autoreleasepool {
+        id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+        if (command_buffer == nil || encoder == nil) {
+          throw std::runtime_error("failed to create a Metal signal Jacobi command");
+        }
+        [encoder setComputePipelineState:signals_cn_jacobi_pipeline_];
+        [encoder setBuffer:current offset:0 atIndex:0];
+        [encoder setBuffer:output offset:0 atIndex:1];
+        [encoder setBuffer:right_hand_side offset:0 atIndex:2];
+        [encoder setBuffer:diffusion offset:0 atIndex:3];
+        [encoder setBuffer:advection offset:0 atIndex:4];
+        [encoder setBuffer:fixed_values offset:0 atIndex:5];
+        [encoder setBuffer:error offset:0 atIndex:6];
+        [encoder setBytes:boundary_kinds.data()
+                   length:boundary_kinds.size() * sizeof(std::uint32_t)
+                  atIndex:7];
+        [encoder setBytes:&shape length:sizeof(shape) atIndex:8];
+        [encoder setBytes:&spacing length:sizeof(spacing) atIndex:9];
+        [encoder setBytes:&half_dt length:sizeof(half_dt) atIndex:10];
+        [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:11];
+        [encoder setBytes:&level_count length:sizeof(level_count) atIndex:12];
+        dispatch_1d(encoder, signals_cn_jacobi_pipeline_, level_count);
+        [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        const auto reduction = encode_signal_residual(
+            encoder, output, right_hand_side, diffusion, advection, fixed_values, boundary_kinds,
+            shape, spacing, half_dt, signal_count, level_count);
+        [encoder endEncoding];
+        wait_for_command(command_buffer, "Metal signal Jacobi iteration failed");
+        const auto sum = *static_cast<const float*>(reduction.contents);
+        report.residual_rms = std::sqrt(sum / static_cast<float>(level_count));
+      }
+      report.iterations = iteration;
+      current = output;
+      if (*static_cast<const std::uint32_t*>(error.contents) != 0 ||
+          !std::isfinite(report.residual_rms)) {
+        report.converged = false;
+        return {current, report};
+      }
+      if (report.residual_rms <= threshold) {
+        report.converged = true;
+        return {current, report};
+      }
+    }
+    report.converged = false;
+    return {current, report};
   }
 
   void ensure_coupled_capacity(std::size_t cell_count, std::size_t species_level_count,
@@ -1725,6 +1945,10 @@ class MetalBackend final : public ComputeBackend {
   id<MTLComputePipelineState> growth_pipeline_{nil};
   id<MTLComputePipelineState> species_pipeline_{nil};
   id<MTLComputePipelineState> signals_pipeline_{nil};
+  id<MTLComputePipelineState> signals_cn_jacobi_pipeline_{nil};
+  id<MTLComputePipelineState> signals_cn_residual_pipeline_{nil};
+  id<MTLComputePipelineState> signals_square_pipeline_{nil};
+  id<MTLComputePipelineState> signals_reduce_pipeline_{nil};
   id<MTLComputePipelineState> coupled_cells_pipeline_{nil};
   id<MTLComputePipelineState> coupled_grid_pipeline_{nil};
   id<MTLComputePipelineState> contact_count_pipeline_{nil};
@@ -1771,6 +1995,12 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> signal_error_{nil};
   std::size_t signal_level_capacity_{0};
   std::size_t signal_count_capacity_{0};
+  id<MTLBuffer> signal_cn_a_{nil};
+  id<MTLBuffer> signal_cn_b_{nil};
+  id<MTLBuffer> signal_cn_terms_{nil};
+  id<MTLBuffer> signal_cn_reduce_a_{nil};
+  id<MTLBuffer> signal_cn_reduce_b_{nil};
+  std::size_t signal_solve_capacity_{0};
 
   id<MTLBuffer> coupled_species_levels_{nil};
   id<MTLBuffer> coupled_previous_lengths_{nil};
