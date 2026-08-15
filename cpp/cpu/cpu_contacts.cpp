@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -156,23 +155,10 @@ Vec3 deterministic_normal(const Capsule& first, const Capsule& second, const Poi
   return normalized(cross(first.axis, *least_aligned));
 }
 
-void validate_parameters(const ContactParameters& parameters) {
-  if (!std::isfinite(parameters.activation_margin) || parameters.activation_margin < 0.0F) {
-    throw std::invalid_argument("contact activation margin must be finite and non-negative");
-  }
-  if (!std::isfinite(parameters.parallel_sine_threshold) ||
-      parameters.parallel_sine_threshold < 0.0F || parameters.parallel_sine_threshold > 1.0F) {
-    throw std::invalid_argument("contact parallel threshold must be between zero and one");
-  }
-  if (!std::isfinite(parameters.degeneracy_epsilon) || parameters.degeneracy_epsilon <= 0.0F) {
-    throw std::invalid_argument("contact degeneracy epsilon must be finite and positive");
-  }
-}
-
 }  // namespace
 
 ContactGraph find_cell_contacts_cpu(const WorldState& state, const ContactParameters& parameters) {
-  validate_parameters(parameters);
+  validate_contact_parameters(parameters);
   const auto geometry = state.geometry_state();
   std::vector<CellContact> contacts;
 

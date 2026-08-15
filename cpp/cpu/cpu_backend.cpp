@@ -16,6 +16,8 @@ class CpuBackend final : public ComputeBackend {
     };
   }
 
+  [[nodiscard]] bool supports(BackendFeature) const noexcept override { return true; }
+
   void advance_growth(WorldState& state, float dt) override { state.advance_growth(dt); }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,

@@ -1,6 +1,7 @@
 """CellModeller2 public Python API."""
 
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
+    BackendFeature,
     BackendInfo,
     BackendKind,
     CellContact,
@@ -14,6 +15,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 
 __all__ = [
+    "BackendFeature",
     "BackendInfo",
     "BackendKind",
     "CellContact",

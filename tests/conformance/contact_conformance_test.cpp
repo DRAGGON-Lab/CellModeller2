@@ -1,0 +1,155 @@
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+
+#include "cm2/simulation.hpp"
+
+namespace {
+
+constexpr float absolute_tolerance = 2.0e-5F;
+constexpr float relative_tolerance = 2.0e-5F;
+
+bool close(float actual, float expected) {
+  const auto tolerance = absolute_tolerance + relative_tolerance * std::abs(expected);
+  return std::abs(actual - expected) <= tolerance;
+}
+
+void add_capsule(cm2::Simulation& simulation, cm2::Vec3 center, cm2::Vec3 axis, float length = 2.0F,
+                 float radius = 0.5F) {
+  cm2::CellInit cell;
+  cell.position = center;
+  cell.direction = axis;
+  cell.length = length;
+  cell.radius = radius;
+  simulation.add_cell(cell);
+}
+
+void compare_graphs(const cm2::ContactGraph& actual, const cm2::ContactGraph& expected) {
+  assert(actual.cell_count() == expected.cell_count());
+  assert(actual.size() == expected.size());
+  for (std::size_t index = 0; index < expected.size(); ++index) {
+    const auto& actual_contact = actual.contacts()[index];
+    const auto& expected_contact = expected.contacts()[index];
+    assert(actual_contact.first_id == expected_contact.first_id);
+    assert(actual_contact.second_id == expected_contact.second_id);
+    assert(actual_contact.first_slot == expected_contact.first_slot);
+    assert(actual_contact.second_slot == expected_contact.second_slot);
+    assert(actual_contact.ordinal == expected_contact.ordinal);
+    assert(close(actual_contact.point_on_first.x, expected_contact.point_on_first.x));
+    assert(close(actual_contact.point_on_first.y, expected_contact.point_on_first.y));
+    assert(close(actual_contact.point_on_first.z, expected_contact.point_on_first.z));
+    assert(close(actual_contact.normal.x, expected_contact.normal.x));
+    assert(close(actual_contact.normal.y, expected_contact.normal.y));
+    assert(close(actual_contact.normal.z, expected_contact.normal.z));
+    assert(close(actual_contact.signed_separation, expected_contact.signed_separation));
+    assert(close(actual_contact.weight, expected_contact.weight));
+  }
+  for (std::size_t slot = 0; slot < expected.cell_count(); ++slot) {
+    const auto actual_indices = actual.incident_contact_indices(static_cast<cm2::Slot>(slot));
+    const auto expected_indices = expected.incident_contact_indices(static_cast<cm2::Slot>(slot));
+    assert(actual_indices.size() == expected_indices.size());
+    for (std::size_t index = 0; index < expected_indices.size(); ++index) {
+      assert(actual_indices[index] == expected_indices[index]);
+    }
+  }
+}
+
+void populate_mixed_geometry(cm2::Simulation& simulation) {
+  add_capsule(simulation, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
+  add_capsule(simulation, {0.0F, 0.8F, 0.0F}, {-1.0F, 0.0F, 0.0F}, 4.0F);
+  add_capsule(simulation, {4.9F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
+  add_capsule(simulation, {10.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  add_capsule(simulation, {10.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F});
+  add_capsule(simulation, {15.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
+  add_capsule(simulation, {15.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
+}
+
+void run_mixed_geometry(cm2::BackendKind backend) {
+  cm2::Simulation reference(cm2::BackendKind::cpu);
+  cm2::Simulation candidate(backend);
+  populate_mixed_geometry(reference);
+  populate_mixed_geometry(candidate);
+  compare_graphs(candidate.find_cell_contacts(), reference.find_cell_contacts());
+}
+
+void run_empty_and_single_cell(cm2::BackendKind backend) {
+  cm2::Simulation empty(backend);
+  const auto empty_graph = empty.find_cell_contacts();
+  assert(empty_graph.cell_count() == 0);
+  assert(empty_graph.empty());
+
+  cm2::Simulation single(backend);
+  add_capsule(single, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  const auto single_graph = single.find_cell_contacts();
+  assert(single_graph.cell_count() == 1);
+  assert(single_graph.empty());
+}
+
+void run_dense_geometry(cm2::BackendKind backend) {
+  cm2::Simulation reference(cm2::BackendKind::cpu, 31);
+  cm2::Simulation candidate(backend, 31);
+  for (std::size_t index = 0; index < 31; ++index) {
+    add_capsule(reference, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+    add_capsule(candidate, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  }
+  const auto expected = reference.find_cell_contacts();
+  const auto actual = candidate.find_cell_contacts();
+  assert(actual.size() == 930);
+  assert(actual.incident_contact_indices(0).size() == 60);
+  compare_graphs(actual, expected);
+}
+
+void run_parameters_and_buffer_reuse(cm2::BackendKind backend) {
+  cm2::Simulation reference(cm2::BackendKind::cpu);
+  cm2::Simulation candidate(backend);
+  for (auto* simulation : {&reference, &candidate}) {
+    add_capsule(*simulation, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
+    add_capsule(*simulation, {1.005F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
+  }
+
+  cm2::ContactParameters strict;
+  strict.activation_margin = 0.0F;
+  compare_graphs(candidate.find_cell_contacts(strict), reference.find_cell_contacts(strict));
+  assert(candidate.find_cell_contacts(strict).empty());
+  compare_graphs(candidate.find_cell_contacts(), reference.find_cell_contacts());
+
+  add_capsule(reference, {0.5F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
+  add_capsule(candidate, {0.5F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
+  compare_graphs(candidate.find_cell_contacts(), reference.find_cell_contacts());
+}
+
+void run_compacted_identity_geometry(cm2::BackendKind backend) {
+  cm2::Simulation reference(cm2::BackendKind::cpu);
+  cm2::Simulation candidate(backend);
+  for (auto* simulation : {&reference, &candidate}) {
+    cm2::CellInit first;
+    first.length = 4.0F;
+    const auto parent = simulation->add_cell(first);
+    cm2::CellInit second = first;
+    second.position.y = 0.2F;
+    simulation->add_cell(second);
+    simulation->divide_equal(parent);
+  }
+  compare_graphs(candidate.find_cell_contacts(), reference.find_cell_contacts());
+}
+
+}  // namespace
+
+int main() {
+  for (const auto backend :
+       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
+    if (!cm2::backend_available(backend)) {
+      continue;
+    }
+    cm2::Simulation capability_probe(backend);
+    if (!capability_probe.supports(cm2::BackendFeature::cell_contacts)) {
+      continue;
+    }
+    run_empty_and_single_cell(backend);
+    run_mixed_geometry(backend);
+    run_dense_geometry(backend);
+    run_parameters_and_buffer_reuse(backend);
+    run_compacted_identity_geometry(backend);
+  }
+  return 0;
+}

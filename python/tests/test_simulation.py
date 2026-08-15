@@ -4,6 +4,7 @@ import math
 
 import pytest
 from cellmodeller2 import (
+    BackendFeature,
     BackendKind,
     CellInit,
     ContactParameters,
@@ -55,8 +56,13 @@ def test_invalid_time_step_is_rejected() -> None:
         simulation.step(-0.1)
 
 
-def test_cpu_contact_graph_is_available_through_the_public_api() -> None:
-    simulation = Simulation()
+@pytest.mark.parametrize("backend", list(BackendKind))
+def test_contact_graph_is_available_through_the_public_api(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+    simulation = Simulation(backend)
+    if not simulation.supports(BackendFeature.CELL_CONTACTS):
+        pytest.skip("backend does not implement cell contacts")
     first = CellInit()
     first.length = 4.0
     first.radius = 0.5

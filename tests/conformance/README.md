@@ -25,3 +25,12 @@ equal division. Stable identifiers, slot reuse, active ordering, lineage,
 daughter geometry, inherited cell attributes, and simulation time are checked.
 Floating-point length and position checks use the same `1e-6` absolute and
 relative tolerances as the growth scenario; lifecycle identities are exact.
+
+## Contact conformance scenario
+
+The contact scenario compares each contact-capable backend with the exhaustive
+CPU oracle for mixed end-on, parallel, anti-parallel, skew, point-like, empty,
+and single-cell geometry. It also checks stable-ID ordering after slot reuse and
+a 31-cell coincident case with 60 incident contacts per cell. Contact fields use
+absolute and relative tolerances of `2e-5`; IDs, slots, ordinals, graph sizes,
+and incidence indices are exact.

@@ -41,20 +41,35 @@ if(CM2_ENABLE_METAL)
 
   set(CM2_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
   set(CM2_METAL_GROWTH_HEADER "${CM2_GENERATED_DIR}/cm2/metal/growth_source.hpp")
+  set(CM2_METAL_CONTACTS_HEADER "${CM2_GENERATED_DIR}/cm2/metal/contacts_source.hpp")
   add_custom_command(
     OUTPUT "${CM2_METAL_GROWTH_HEADER}"
     COMMAND "${CMAKE_COMMAND}"
       "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/cpp/metal/kernels/growth.metal"
       "-DOUTPUT=${CM2_METAL_GROWTH_HEADER}"
+      "-DSYMBOL=growth_source"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMetalSource.cmake"
     DEPENDS
       cpp/metal/kernels/growth.metal
       cmake/EmbedMetalSource.cmake
     VERBATIM
   )
+  add_custom_command(
+    OUTPUT "${CM2_METAL_CONTACTS_HEADER}"
+    COMMAND "${CMAKE_COMMAND}"
+      "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/cpp/metal/kernels/contacts.metal"
+      "-DOUTPUT=${CM2_METAL_CONTACTS_HEADER}"
+      "-DSYMBOL=contacts_source"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMetalSource.cmake"
+    DEPENDS
+      cpp/metal/kernels/contacts.metal
+      cmake/EmbedMetalSource.cmake
+    VERBATIM
+  )
 
   target_sources(cm2_core PRIVATE
     cpp/metal/metal_backend.mm
+    "${CM2_METAL_CONTACTS_HEADER}"
     "${CM2_METAL_GROWTH_HEADER}"
   )
   target_include_directories(cm2_core PRIVATE "${CM2_GENERATED_DIR}")
@@ -126,4 +141,11 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_lifecycle_conformance_test PRIVATE cm2::core)
   add_test(NAME lifecycle_conformance COMMAND cm2_lifecycle_conformance_test)
   set_tests_properties(lifecycle_conformance PROPERTIES LABELS conformance)
+
+  add_executable(cm2_contact_conformance_test
+    tests/conformance/contact_conformance_test.cpp
+  )
+  target_link_libraries(cm2_contact_conformance_test PRIVATE cm2::core)
+  add_test(NAME contact_conformance COMMAND cm2_contact_conformance_test)
+  set_tests_properties(contact_conformance PROPERTIES LABELS conformance)
 endif()

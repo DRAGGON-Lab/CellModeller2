@@ -15,6 +15,7 @@ class Simulation {
   explicit Simulation(BackendKind backend = BackendKind::cpu, std::size_t reserved_capacity = 0);
 
   [[nodiscard]] BackendInfo backend_info() const;
+  [[nodiscard]] bool supports(BackendFeature feature) const noexcept;
   [[nodiscard]] double time() const noexcept;
   [[nodiscard]] std::size_t cell_count() const noexcept;
 

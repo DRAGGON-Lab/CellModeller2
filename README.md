@@ -17,7 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
-- robust CPU capsule contacts with dynamic incidence storage;
+- CPU and native Metal capsule contacts with dynamic incidence storage;
 - a C++ CPU reference backend;
 - a small Python API backed by nanobind;
 - C++ and Python conformance tests;
@@ -28,7 +28,8 @@ Metal growth is validated on Apple GPU hardware. CUDA growth is implemented
 with the native CUDA Runtime API and CUDA C++, but remains unadvertised until
 the conformance suite passes on NVIDIA hardware. Deterministic equal division
 is backend-neutral and conformed on CPU and Metal; contact mechanics remain
-unimplemented.
+unimplemented. Metal contact geometry uses an exhaustive correctness path while
+the scalable broad phase is under construction.
 
 ## Build the C++ reference tests
 

@@ -60,6 +60,11 @@ enum class BackendKind : std::uint8_t {
   cuda,
 };
 
+enum class BackendFeature : std::uint8_t {
+  growth,
+  cell_contacts,
+};
+
 struct BackendInfo {
   BackendKind kind{BackendKind::cpu};
   std::string name;

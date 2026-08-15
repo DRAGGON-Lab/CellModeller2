@@ -50,6 +50,10 @@ Simulation::Simulation(BackendKind backend, std::size_t reserved_capacity)
 
 BackendInfo Simulation::backend_info() const { return backend_->info(); }
 
+bool Simulation::supports(BackendFeature feature) const noexcept {
+  return backend_->supports(feature);
+}
+
 double Simulation::time() const noexcept { return time_; }
 
 std::size_t Simulation::cell_count() const noexcept { return state_.size(); }

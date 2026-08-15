@@ -13,6 +13,7 @@ class ComputeBackend {
   virtual ~ComputeBackend() = default;
 
   [[nodiscard]] virtual BackendInfo info() const = 0;
+  [[nodiscard]] virtual bool supports(BackendFeature feature) const noexcept = 0;
   virtual void advance_growth(WorldState& state, float dt) = 0;
   [[nodiscard]] virtual ContactGraph find_cell_contacts(const WorldState& state,
                                                         const ContactParameters& parameters) = 0;

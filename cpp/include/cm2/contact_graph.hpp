@@ -28,6 +28,8 @@ struct CellContact {
   float weight{1.0F};
 };
 
+void validate_contact_parameters(const ContactParameters& parameters);
+
 class ContactGraph {
  public:
   ContactGraph() = default;

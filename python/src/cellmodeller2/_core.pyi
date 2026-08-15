@@ -5,6 +5,10 @@ class BackendKind(Enum):
     METAL: BackendKind
     CUDA: BackendKind
 
+class BackendFeature(Enum):
+    GROWTH: BackendFeature
+    CELL_CONTACTS: BackendFeature
+
 def backend_available(backend: BackendKind) -> bool: ...
 
 class Vec3:
@@ -97,6 +101,7 @@ class Simulation:
     ) -> None: ...
     @property
     def backend_info(self) -> BackendInfo: ...
+    def supports(self, feature: BackendFeature) -> bool: ...
     @property
     def time(self) -> float: ...
     @property

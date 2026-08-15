@@ -50,6 +50,10 @@ class CudaBackend final : public ComputeBackend {
     };
   }
 
+  [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
+    return feature == BackendFeature::growth;
+  }
+
   void advance_growth(WorldState& state, float dt) override {
     auto view = state.growth_state();
     if (view.lengths.empty()) {

@@ -19,6 +19,10 @@ NB_MODULE(_core, module) {
       .value("METAL", cm2::BackendKind::metal)
       .value("CUDA", cm2::BackendKind::cuda);
 
+  nb::enum_<cm2::BackendFeature>(module, "BackendFeature")
+      .value("GROWTH", cm2::BackendFeature::growth)
+      .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts);
+
   nb::class_<cm2::Vec3>(module, "Vec3")
       .def(nb::init<float, float, float>(), "x"_a = 0.0F, "y"_a = 0.0F, "z"_a = 0.0F)
       .def_rw("x", &cm2::Vec3::x)
@@ -88,6 +92,7 @@ NB_MODULE(_core, module) {
       .def(nb::init<cm2::BackendKind, std::size_t>(), "backend"_a = cm2::BackendKind::cpu,
            "reserved_capacity"_a = 0)
       .def_prop_ro("backend_info", &cm2::Simulation::backend_info)
+      .def("supports", &cm2::Simulation::supports, "feature"_a)
       .def_prop_ro("time", &cm2::Simulation::time)
       .def_prop_ro("cell_count", &cm2::Simulation::cell_count)
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
