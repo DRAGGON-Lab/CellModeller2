@@ -24,12 +24,16 @@ class Simulation {
   [[nodiscard]] double time() const noexcept;
   [[nodiscard]] std::size_t cell_count() const noexcept;
   [[nodiscard]] std::size_t species_count() const noexcept;
+  [[nodiscard]] std::size_t signal_count() const noexcept;
+  [[nodiscard]] bool has_signal_grid() const noexcept;
 
   CellId add_cell(const CellInit& cell);
   ConstraintId add_plane_constraint(const PlaneConstraintInit& plane);
   ConstraintId add_sphere_constraint(const SphereConstraintInit& sphere);
   void set_species(CellId id, std::span<const float> levels);
   void set_species_rate_plan(const SpeciesRatePlan& plan);
+  void configure_signal_grid(const SignalGridSpec& spec, std::vector<float> levels = {});
+  void set_signal_levels(std::span<const float> levels);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void step(float dt);
   [[nodiscard]] ContactGraph find_cell_contacts(
@@ -50,6 +54,8 @@ class Simulation {
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;
   [[nodiscard]] std::optional<CellId> lineage_parent(CellId id) const noexcept;
+  [[nodiscard]] std::vector<float> signal_levels() const;
+  [[nodiscard]] std::vector<float> sample_signals(Vec3 position) const;
   [[nodiscard]] SimulationCheckpoint checkpoint() const;
   void validate() const;
 
@@ -58,6 +64,7 @@ class Simulation {
   ConstraintSet constraints_;
   std::unique_ptr<ComputeBackend> backend_;
   SpeciesRatePlan species_rate_plan_;
+  std::optional<SignalGrid> signal_grid_;
   double time_{0.0};
 };
 

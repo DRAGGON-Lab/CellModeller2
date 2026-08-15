@@ -22,6 +22,7 @@ add_library(cm2_core STATIC
   cpp/core/contact_graph.cpp
   cpp/core/constraints.cpp
   cpp/core/mechanics_integration.cpp
+  cpp/core/signals.cpp
   cpp/core/species.cpp
   cpp/core/world_state.cpp
   cpp/core/simulation.cpp
@@ -184,6 +185,10 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_species_test PRIVATE cm2::core)
   add_test(NAME species COMMAND cm2_species_test)
 
+  add_executable(cm2_signal_grid_test tests/cpp/signal_grid_test.cpp)
+  target_link_libraries(cm2_signal_grid_test PRIVATE cm2::core)
+  add_test(NAME signal_grid COMMAND cm2_signal_grid_test)
+
   add_executable(cm2_checkpoint_test tests/cpp/checkpoint_test.cpp)
   target_link_libraries(cm2_checkpoint_test PRIVATE cm2::core)
   add_test(NAME checkpoint COMMAND cm2_checkpoint_test)
@@ -200,6 +205,13 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_species_conformance_test PRIVATE cm2::core)
   add_test(NAME species_conformance COMMAND cm2_species_conformance_test)
   set_tests_properties(species_conformance PROPERTIES LABELS conformance)
+
+  add_executable(cm2_signal_grid_conformance_test
+    tests/conformance/signal_grid_conformance_test.cpp
+  )
+  target_link_libraries(cm2_signal_grid_conformance_test PRIVATE cm2::core)
+  add_test(NAME signal_grid_conformance COMMAND cm2_signal_grid_conformance_test)
+  set_tests_properties(signal_grid_conformance PROPERTIES LABELS conformance)
 
   add_executable(cm2_lifecycle_conformance_test
     tests/conformance/lifecycle_conformance_test.cpp

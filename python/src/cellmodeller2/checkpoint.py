@@ -18,8 +18,12 @@ from typing import NoReturn, cast
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendKind,
     CellSnapshot,
+    GridBoundary,
+    GridBoundaryKind,
+    GridShape,
     RateInstruction,
     RateOp,
+    SignalGridSpec,
     Simulation,
     SpeciesRatePlan,
     SphereRegion,
@@ -27,13 +31,14 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     _ConstraintSetCheckpoint,
     _LineageEntry,
     _PlaneConstraint,
+    _SignalGridCheckpoint,
     _SimulationCheckpoint,
     _SphereConstraint,
     _WorldStateCheckpoint,
 )
 
 CHECKPOINT_FORMAT = "cellmodeller2-checkpoint"
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 2
 MAX_CHECKPOINT_BYTES = 1 << 30
 
 _UINT32_MAX = (1 << 32) - 1
@@ -90,6 +95,12 @@ _BACKEND_NAMES = {
     BackendKind.METAL: "metal",
     BackendKind.CUDA: "cuda",
 }
+_GRID_BOUNDARY_NAMES = {
+    GridBoundaryKind.NO_FLUX: "no_flux",
+    GridBoundaryKind.PERIODIC: "periodic",
+    GridBoundaryKind.FIXED: "fixed",
+}
+_GRID_BOUNDARIES = {name: kind for kind, name in _GRID_BOUNDARY_NAMES.items()}
 
 
 def _installed_version() -> str:
@@ -101,6 +112,38 @@ def _installed_version() -> str:
 
 def _vec3_to_json(value: Vec3) -> list[JSONValue]:
     return [value.x, value.y, value.z]
+
+
+def _boundary_to_json(boundary: GridBoundary) -> dict[str, JSONValue]:
+    return {
+        "kind": _GRID_BOUNDARY_NAMES[boundary.kind],
+        "values": list(boundary.values),
+    }
+
+
+def _signal_grid_to_json(checkpoint: _SignalGridCheckpoint | None) -> JSONValue:
+    if checkpoint is None:
+        return None
+    spec = checkpoint.spec
+    return {
+        "spec": {
+            "signal_count": spec.signal_count,
+            "shape": [spec.shape.x, spec.shape.y, spec.shape.z],
+            "origin": _vec3_to_json(spec.origin),
+            "spacing": _vec3_to_json(spec.spacing),
+            "diffusion": list(spec.diffusion),
+            "advection": [_vec3_to_json(value) for value in spec.advection],
+            "boundaries": {
+                "x_lower": _boundary_to_json(spec.x_lower),
+                "x_upper": _boundary_to_json(spec.x_upper),
+                "y_lower": _boundary_to_json(spec.y_lower),
+                "y_upper": _boundary_to_json(spec.y_upper),
+                "z_lower": _boundary_to_json(spec.z_lower),
+                "z_upper": _boundary_to_json(spec.z_upper),
+            },
+        },
+        "levels": list(checkpoint.levels),
+    }
 
 
 def _simulation_to_json(checkpoint: _SimulationCheckpoint) -> dict[str, JSONValue]:
@@ -170,6 +213,7 @@ def _simulation_to_json(checkpoint: _SimulationCheckpoint) -> dict[str, JSONValu
             "instructions": instructions,
             "outputs": list(checkpoint.species_rate_plan.outputs),
         },
+        "signal_grid": _signal_grid_to_json(checkpoint.signal_grid),
     }
 
 
@@ -413,9 +457,94 @@ def _instruction(value: object, path: str) -> RateInstruction:
     return instruction
 
 
+def _boundary(value: object, path: str) -> GridBoundary:
+    data = _object(value, path)
+    _keys(data, path, {"kind", "values"})
+    kind_name = _string(data["kind"], f"{path}.kind")
+    boundary = GridBoundary()
+    try:
+        boundary.kind = _GRID_BOUNDARIES[kind_name]
+    except KeyError:
+        _fail(f"{path}.kind", f"unknown grid boundary kind {kind_name!r}")
+    boundary.values = [
+        _number(item, f"{path}.values[{index}]", float32=True)
+        for index, item in enumerate(_array(data["values"], f"{path}.values"))
+    ]
+    return boundary
+
+
+def _signal_grid(value: object, path: str) -> _SignalGridCheckpoint | None:
+    if value is None:
+        return None
+    data = _object(value, path)
+    _keys(data, path, {"spec", "levels"})
+    spec_data = _object(data["spec"], f"{path}.spec")
+    _keys(
+        spec_data,
+        f"{path}.spec",
+        {
+            "signal_count",
+            "shape",
+            "origin",
+            "spacing",
+            "diffusion",
+            "advection",
+            "boundaries",
+        },
+    )
+    shape_values = _array(spec_data["shape"], f"{path}.spec.shape")
+    if len(shape_values) != 3:
+        _fail(f"{path}.spec.shape", "expected exactly three dimensions")
+    shape = GridShape()
+    shape.x = _integer(shape_values[0], f"{path}.spec.shape[0]", 1, _UINT32_MAX)
+    shape.y = _integer(shape_values[1], f"{path}.spec.shape[1]", 1, _UINT32_MAX)
+    shape.z = _integer(shape_values[2], f"{path}.spec.shape[2]", 1, _UINT32_MAX)
+
+    boundaries = _object(spec_data["boundaries"], f"{path}.spec.boundaries")
+    boundary_names = {"x_lower", "x_upper", "y_lower", "y_upper", "z_lower", "z_upper"}
+    _keys(boundaries, f"{path}.spec.boundaries", boundary_names)
+
+    spec = SignalGridSpec()
+    spec.signal_count = _integer(
+        spec_data["signal_count"], f"{path}.spec.signal_count", 1, _UINT32_MAX
+    )
+    spec.shape = shape
+    spec.origin = _vec3(spec_data["origin"], f"{path}.spec.origin")
+    spec.spacing = _vec3(spec_data["spacing"], f"{path}.spec.spacing")
+    spec.diffusion = [
+        _number(item, f"{path}.spec.diffusion[{index}]", float32=True)
+        for index, item in enumerate(
+            _array(spec_data["diffusion"], f"{path}.spec.diffusion")
+        )
+    ]
+    spec.advection = [
+        _vec3(item, f"{path}.spec.advection[{index}]")
+        for index, item in enumerate(
+            _array(spec_data["advection"], f"{path}.spec.advection")
+        )
+    ]
+    spec.x_lower = _boundary(boundaries["x_lower"], f"{path}.spec.boundaries.x_lower")
+    spec.x_upper = _boundary(boundaries["x_upper"], f"{path}.spec.boundaries.x_upper")
+    spec.y_lower = _boundary(boundaries["y_lower"], f"{path}.spec.boundaries.y_lower")
+    spec.y_upper = _boundary(boundaries["y_upper"], f"{path}.spec.boundaries.y_upper")
+    spec.z_lower = _boundary(boundaries["z_lower"], f"{path}.spec.boundaries.z_lower")
+    spec.z_upper = _boundary(boundaries["z_upper"], f"{path}.spec.boundaries.z_upper")
+
+    checkpoint = _SignalGridCheckpoint()
+    checkpoint.spec = spec
+    checkpoint.levels = [
+        _number(item, f"{path}.levels[{index}]", float32=True)
+        for index, item in enumerate(_array(data["levels"], f"{path}.levels"))
+    ]
+    return checkpoint
+
+
 def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpoint:
     data = _object(value, "$.simulation")
-    _keys(data, "$.simulation", {"time", "world", "constraints", "species_rate_plan"})
+    required = {"time", "world", "constraints", "species_rate_plan"}
+    if schema_version == 2:
+        required.add("signal_grid")
+    _keys(data, "$.simulation", required)
 
     world_data = _object(data["world"], "$.simulation.world")
     _keys(world_data, "$.simulation.world", {"species_count", "next_id", "cells", "lineage"})
@@ -484,11 +613,16 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
     ]
 
     checkpoint = _SimulationCheckpoint()
-    checkpoint.schema_version = schema_version
+    checkpoint.schema_version = CHECKPOINT_VERSION
     checkpoint.time = _number(data["time"], "$.simulation.time")
     checkpoint.world = world
     checkpoint.constraints = constraints
     checkpoint.species_rate_plan = SpeciesRatePlan(plan_species_count, instructions, outputs)
+    checkpoint.signal_grid = (
+        _signal_grid(data["signal_grid"], "$.simulation.signal_grid")
+        if schema_version == 2
+        else None
+    )
     try:
         checkpoint.validate()
     except (ValueError, OverflowError) as error:
@@ -545,7 +679,7 @@ def load_checkpoint(
     if _string(root["format"], "$.format") != CHECKPOINT_FORMAT:
         _fail("$.format", "not a CellModeller2 checkpoint")
     schema_version = _integer(root["version"], "$.version", 0, _UINT32_MAX)
-    if schema_version != CHECKPOINT_VERSION:
+    if schema_version not in {1, CHECKPOINT_VERSION}:
         _fail("$.version", f"unsupported checkpoint version {schema_version}")
     _object(root["producer"], "$.producer")
     _object(root["source_backend"], "$.source_backend")

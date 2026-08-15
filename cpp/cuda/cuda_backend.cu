@@ -260,6 +260,10 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaStreamSynchronize(stream_), "CUDA species download failed");
   }
 
+  void advance_signal_grid(SignalGrid&, float) override {
+    throw std::runtime_error("CUDA backend does not implement signal grids yet");
+  }
+
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
     activate_device();

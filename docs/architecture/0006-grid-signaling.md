@@ -29,14 +29,15 @@ position(x, y, z) = origin + spacing * (x, y, z)
 Each signal declares a non-negative diffusion coefficient and a finite 3D
 advection velocity. Every grid face declares one of:
 
-- `no_flux`: the exterior stencil value equals the boundary lattice value;
+- `no_flux`: diffusive and advective face fluxes are zero;
 - `periodic`: the stencil wraps to the opposite face; or
 - `fixed`: the exterior stencil value is the declared non-negative reservoir
   concentration for that signal.
 
-Periodic faces must occur in opposing pairs on an axis. Boundary values are
-defined at the exterior stencil location one grid spacing beyond the boundary,
-which removes half-cell ambiguity.
+Periodic faces must occur in opposing pairs on an axis. For diffusion, a
+no-flux exterior stencil value equals the boundary lattice value. Fixed values
+are defined at the exterior stencil location one grid spacing beyond the
+boundary, which removes half-cell ambiguity.
 
 ## Transport discretization
 
@@ -47,10 +48,12 @@ each non-degenerate axis:
 D * sum_axis((c[i-1] - 2*c[i] + c[i+1]) / spacing_axis^2)
 ```
 
-Advection uses first-order upwinding for `-velocity dot grad(c)`. This is less
-dispersive in smooth fields than a higher-order scheme, but its monotonicity
-and compact native implementation make it the reference stage. Higher-order
-transport can be added as a separately named integrator.
+Advection uses conservative face fluxes with first-order upwinding for
+`-velocity dot grad(c)`. A fixed reservoir supplies the exterior upwind value,
+a periodic face wraps, and a no-flux face has exactly zero advective flux. This
+is less accurate in smooth fields than a higher-order scheme, but its
+monotonicity and compact native implementation make it the reference stage.
+Higher-order transport can be added as a separately named integrator.
 
 Forward Euler rejects a step before mutation unless, for every signal,
 

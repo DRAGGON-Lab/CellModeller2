@@ -25,7 +25,13 @@ NB_MODULE(_core, module) {
       .value("SPECIES", cm2::BackendFeature::species)
       .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts)
       .value("CELL_MECHANICS", cm2::BackendFeature::cell_mechanics)
-      .value("EXTERNAL_CONSTRAINTS", cm2::BackendFeature::external_constraints);
+      .value("EXTERNAL_CONSTRAINTS", cm2::BackendFeature::external_constraints)
+      .value("SIGNALS", cm2::BackendFeature::signals);
+
+  nb::enum_<cm2::GridBoundaryKind>(module, "GridBoundaryKind")
+      .value("NO_FLUX", cm2::GridBoundaryKind::no_flux)
+      .value("PERIODIC", cm2::GridBoundaryKind::periodic)
+      .value("FIXED", cm2::GridBoundaryKind::fixed);
 
   nb::enum_<cm2::RateOp>(module, "RateOp")
       .value("CONSTANT", cm2::RateOp::constant)
@@ -91,6 +97,43 @@ NB_MODULE(_core, module) {
       .def_ro("device", &cm2::BackendInfo::device)
       .def_ro("device_index", &cm2::BackendInfo::device_index)
       .def_ro("native", &cm2::BackendInfo::native);
+
+  nb::class_<cm2::GridBoundary>(module, "GridBoundary")
+      .def(nb::init<>())
+      .def_rw("kind", &cm2::GridBoundary::kind)
+      .def_rw("values", &cm2::GridBoundary::values)
+      .def("validate", &cm2::GridBoundary::validate, "signal_count"_a);
+
+  nb::class_<cm2::GridShape>(module, "GridShape")
+      .def(nb::init<>())
+      .def_rw("x", &cm2::GridShape::x)
+      .def_rw("y", &cm2::GridShape::y)
+      .def_rw("z", &cm2::GridShape::z);
+
+  nb::class_<cm2::SignalGridSpec>(module, "SignalGridSpec")
+      .def(nb::init<>())
+      .def_rw("signal_count", &cm2::SignalGridSpec::signal_count)
+      .def_rw("shape", &cm2::SignalGridSpec::shape)
+      .def_rw("origin", &cm2::SignalGridSpec::origin)
+      .def_rw("spacing", &cm2::SignalGridSpec::spacing)
+      .def_rw("diffusion", &cm2::SignalGridSpec::diffusion)
+      .def_rw("advection", &cm2::SignalGridSpec::advection)
+      .def_rw("x_lower", &cm2::SignalGridSpec::x_lower)
+      .def_rw("x_upper", &cm2::SignalGridSpec::x_upper)
+      .def_rw("y_lower", &cm2::SignalGridSpec::y_lower)
+      .def_rw("y_upper", &cm2::SignalGridSpec::y_upper)
+      .def_rw("z_lower", &cm2::SignalGridSpec::z_lower)
+      .def_rw("z_upper", &cm2::SignalGridSpec::z_upper)
+      .def_prop_ro("site_count", &cm2::SignalGridSpec::site_count)
+      .def_prop_ro("level_count", &cm2::SignalGridSpec::level_count)
+      .def_prop_ro("voxel_volume", &cm2::SignalGridSpec::voxel_volume)
+      .def("validate", &cm2::SignalGridSpec::validate);
+
+  nb::class_<cm2::SignalGridCheckpoint>(module, "_SignalGridCheckpoint")
+      .def(nb::init<>())
+      .def_rw("spec", &cm2::SignalGridCheckpoint::spec)
+      .def_rw("levels", &cm2::SignalGridCheckpoint::levels)
+      .def("validate", &cm2::SignalGridCheckpoint::validate);
 
   nb::class_<cm2::CellInit>(module, "CellInit")
       .def(nb::init<>())
@@ -228,6 +271,7 @@ NB_MODULE(_core, module) {
       .def_rw("world", &cm2::SimulationCheckpoint::world)
       .def_rw("constraints", &cm2::SimulationCheckpoint::constraints)
       .def_rw("species_rate_plan", &cm2::SimulationCheckpoint::species_rate_plan)
+      .def_rw("signal_grid", &cm2::SimulationCheckpoint::signal_grid)
       .def("validate", &cm2::SimulationCheckpoint::validate);
 
   nb::class_<cm2::ConstraintContactParameters>(module, "ConstraintContactParameters")
@@ -302,6 +346,8 @@ NB_MODULE(_core, module) {
       .def_prop_ro("time", &cm2::Simulation::time)
       .def_prop_ro("cell_count", &cm2::Simulation::cell_count)
       .def_prop_ro("species_count", &cm2::Simulation::species_count)
+      .def_prop_ro("signal_count", &cm2::Simulation::signal_count)
+      .def_prop_ro("has_signal_grid", &cm2::Simulation::has_signal_grid)
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
       .def("add_plane_constraint", &cm2::Simulation::add_plane_constraint, "plane"_a)
       .def("add_sphere_constraint", &cm2::Simulation::add_sphere_constraint, "sphere"_a)
@@ -312,6 +358,14 @@ NB_MODULE(_core, module) {
           },
           "id"_a, "levels"_a)
       .def("set_species_rate_plan", &cm2::Simulation::set_species_rate_plan, "plan"_a)
+      .def("configure_signal_grid", &cm2::Simulation::configure_signal_grid, "spec"_a,
+           "levels"_a = std::vector<float>{})
+      .def(
+          "set_signal_levels",
+          [](cm2::Simulation& simulation, const std::vector<float>& levels) {
+            simulation.set_signal_levels(levels);
+          },
+          "levels"_a)
       .def("divide_equal", &cm2::Simulation::divide_equal, "parent_id"_a)
       .def("step", &cm2::Simulation::step, "dt"_a)
       .def("find_cell_contacts", &cm2::Simulation::find_cell_contacts,
@@ -330,6 +384,8 @@ NB_MODULE(_core, module) {
       .def("cell", &cm2::Simulation::cell, "id"_a)
       .def("cells", &cm2::Simulation::cells)
       .def("lineage_parent", &cm2::Simulation::lineage_parent, "id"_a)
+      .def_prop_ro("signal_levels", &cm2::Simulation::signal_levels)
+      .def("sample_signals", &cm2::Simulation::sample_signals, "position"_a)
       .def("_checkpoint", &cm2::Simulation::checkpoint)
       .def("validate", &cm2::Simulation::validate);
 }

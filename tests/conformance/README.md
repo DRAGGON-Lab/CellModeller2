@@ -36,6 +36,16 @@ daughter geometry, inherited cell attributes, and simulation time are checked.
 Floating-point length and position checks use the same `1e-6` absolute and
 relative tolerances as the growth scenario; lifecycle identities are exact.
 
+## Signal-grid conformance scenario
+
+The signal-grid scenario uses two fields on a 9-by-7-by-5 anisotropic lattice,
+mixed diffusion and vector advection, periodic x boundaries, no-flux y
+boundaries, and distinct fixed reservoirs on the z faces. One native transport
+step and an interior trilinear sample are compared with the CPU reference using
+absolute and relative tolerances of `5e-6`. An available backend is skipped
+until it advertises native signal-grid support; after that advertisement this
+executable is its hardware conformance gate.
+
 ## Checkpoint conformance scenario
 
 The checkpoint scenario captures a divided colony with a typed species plan,

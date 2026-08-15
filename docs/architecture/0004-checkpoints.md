@@ -31,11 +31,16 @@ The public checkpoint is UTF-8 JSON with the format identifier
 - producer, source-backend, and caller-supplied provenance; and
 - a SHA-256 digest of the canonical simulation payload.
 
+Version 2 additionally records an optional validated signal-grid specification
+and its complete signal-major concentration field. A v1 file is migrated
+explicitly to v2 native state with no signal grid. Writers emit only v2;
+readers accept v1 and v2 and reject every other version.
+
 Files are written to a temporary sibling, flushed, and atomically replaced.
-Loading rejects duplicate JSON keys, non-finite numbers, unknown version-1
-state fields, unsupported versions, oversized files, digest mismatches, and
-any state that fails native domain validation. No module is imported and no
-source text, callback, pickle opcode, or other executable representation is
+Loading rejects duplicate JSON keys, non-finite numbers, unknown fields for the
+declared version, unsupported versions, oversized files, digest mismatches,
+and any state that fails native domain validation. No module is imported and
+no source text, callback, pickle opcode, or other executable representation is
 accepted.
 
 Device buffers, command queues, streams, compiled pipelines, contact graphs,

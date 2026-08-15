@@ -18,6 +18,9 @@ void SimulationCheckpoint::validate() const {
   if (species_rate_plan.species_count() != world.species_count) {
     throw std::invalid_argument("checkpoint rate plan and world species counts disagree");
   }
+  if (signal_grid.has_value()) {
+    signal_grid->validate();
+  }
 }
 
 }  // namespace cm2

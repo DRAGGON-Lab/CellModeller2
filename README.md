@@ -20,6 +20,7 @@ The initial slice establishes:
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
+- validated CPU signal grids with trilinear sampling and explicit transport boundaries;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
 - typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
 - matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
@@ -53,11 +54,19 @@ simultaneous Euler updates. CUDA has an independent native interpreter that
 compiles against the 12.8 toolkit; the same shared scenario still needs to run
 on NVIDIA hardware before CUDA species conformance is claimed.
 
+Signal-grid state now has a CPU reference implementation for conventional
+diffusion, vector upwind advection, no-flux/periodic/fixed boundaries,
+trilinear sampling, stability checks, and non-negative concentration updates.
+Metal and CUDA deliberately report this feature as unsupported until their
+native transport pipelines pass the same conformance scenarios.
+
 Checkpoints preserve compact slot order, stable identity allocation, complete
-lineage, constraints, species rates, concentrations, geometry, and simulation
-time. They contain data only: loading never imports a model or evaluates source
-text. Writes use an atomic replace and each file carries a SHA-256 digest over
-the simulation payload.
+lineage, constraints, species rates, signal-grid geometry and levels,
+concentrations, cell geometry, and simulation time. Schema v2 adds signal-grid
+state; the reader explicitly migrates v1 files to an empty signal state. Files
+contain data only: loading never imports a model or evaluates source text.
+Writes use an atomic replace and each file carries a SHA-256 digest over the
+simulation payload.
 
 ```python
 from cellmodeller2 import load_checkpoint, save_checkpoint

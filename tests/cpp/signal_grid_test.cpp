@@ -1,0 +1,132 @@
+#include <cassert>
+#include <cmath>
+#include <stdexcept>
+#include <vector>
+
+#include "cm2/signals.hpp"
+#include "cm2/simulation.hpp"
+
+namespace {
+
+cm2::SignalGridSpec line_spec(std::uint32_t length) {
+  cm2::SignalGridSpec spec;
+  spec.signal_count = 1;
+  spec.shape = {.x = length, .y = 1, .z = 1};
+  spec.diffusion = {1.0F};
+  spec.advection = {{0.0F, 0.0F, 0.0F}};
+  return spec;
+}
+
+template <typename Exception, typename Function>
+void assert_throws(Function&& function) {
+  bool rejected = false;
+  try {
+    function();
+  } catch (const Exception&) {
+    rejected = true;
+  }
+  assert(rejected);
+}
+
+void assert_close(float actual, float expected) { assert(std::abs(actual - expected) <= 1.0e-6F); }
+
+}  // namespace
+
+int main() {
+  {
+    cm2::SignalGrid grid(line_spec(3), {0.0F, 1.0F, 0.0F});
+    cm2::advance_signal_grid_cpu(grid, 0.25F);
+    const auto levels = grid.levels();
+    assert_close(levels[0], 0.25F);
+    assert_close(levels[1], 0.5F);
+    assert_close(levels[2], 0.25F);
+    assert_close(levels[0] + levels[1] + levels[2], 1.0F);
+
+    const std::vector<float> before(levels.begin(), levels.end());
+    assert_throws<std::invalid_argument>([&] { cm2::advance_signal_grid_cpu(grid, 0.51F); });
+    assert(std::vector<float>(grid.levels().begin(), grid.levels().end()) == before);
+  }
+
+  {
+    auto spec = line_spec(2);
+    spec.x_lower.kind = cm2::GridBoundaryKind::fixed;
+    spec.x_lower.values = {2.0F};
+    cm2::SignalGrid grid(spec, {0.0F, 0.0F});
+    cm2::advance_signal_grid_cpu(grid, 0.25F);
+    assert_close(grid.levels()[0], 0.5F);
+    assert_close(grid.levels()[1], 0.0F);
+  }
+
+  {
+    auto spec = line_spec(4);
+    spec.diffusion = {0.0F};
+    spec.advection = {{1.0F, 0.0F, 0.0F}};
+    spec.x_lower.kind = cm2::GridBoundaryKind::periodic;
+    spec.x_upper.kind = cm2::GridBoundaryKind::periodic;
+    cm2::SignalGrid grid(spec, {1.0F, 0.0F, 0.0F, 0.0F});
+    cm2::advance_signal_grid_cpu(grid, 0.5F);
+    assert_close(grid.levels()[0], 0.5F);
+    assert_close(grid.levels()[1], 0.5F);
+    assert_close(grid.levels()[2], 0.0F);
+    assert_close(grid.levels()[3], 0.0F);
+  }
+
+  {
+    auto spec = line_spec(4);
+    spec.diffusion = {0.0F};
+    spec.advection = {{1.0F, 0.0F, 0.0F}};
+    cm2::SignalGrid grid(spec, {0.0F, 0.0F, 0.0F, 1.0F});
+    cm2::advance_signal_grid_cpu(grid, 0.5F);
+    assert_close(grid.levels()[0], 0.0F);
+    assert_close(grid.levels()[1], 0.0F);
+    assert_close(grid.levels()[2], 0.0F);
+    assert_close(grid.levels()[3], 1.0F);
+  }
+
+  {
+    cm2::SignalGridSpec spec;
+    spec.signal_count = 1;
+    spec.shape = {.x = 2, .y = 2, .z = 2};
+    spec.diffusion = {0.0F};
+    spec.advection = {{0.0F, 0.0F, 0.0F}};
+    cm2::SignalGrid grid(spec, {0.0F, 1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F, 7.0F});
+    assert_close(grid.sample({0.5F, 0.5F, 0.5F})[0], 3.5F);
+    assert_close(grid.sample({1.0F, 1.0F, 1.0F})[0], 7.0F);
+    assert_throws<std::out_of_range>([&] { static_cast<void>(grid.sample({1.01F, 0.0F, 0.0F})); });
+
+    cm2::SignalGrid reduced(line_spec(2), {2.0F, 4.0F});
+    assert_close(reduced.sample({0.5F, 99.0F, -37.0F})[0], 3.0F);
+  }
+
+  {
+    auto invalid = line_spec(3);
+    invalid.x_lower.kind = cm2::GridBoundaryKind::periodic;
+    assert_throws<std::invalid_argument>([&] { invalid.validate(); });
+    invalid.x_upper.kind = cm2::GridBoundaryKind::periodic;
+    invalid.diffusion = {-1.0F};
+    assert_throws<std::invalid_argument>([&] { invalid.validate(); });
+  }
+
+  {
+    cm2::Simulation simulation;
+    const auto spec = line_spec(3);
+    simulation.configure_signal_grid(spec, {0.0F, 1.0F, 0.0F});
+    assert(simulation.has_signal_grid());
+    assert(simulation.signal_count() == 1);
+    assert(simulation.supports(cm2::BackendFeature::signals));
+    simulation.step(0.25F);
+    assert_close(simulation.signal_levels()[0], 0.25F);
+    assert(simulation.time() == 0.25);
+    const auto checkpoint = simulation.checkpoint();
+    assert(checkpoint.signal_grid.has_value());
+    assert(checkpoint.signal_grid->levels == simulation.signal_levels());
+
+    cm2::Simulation restored(cm2::BackendKind::cpu, checkpoint);
+    assert(restored.signal_levels() == simulation.signal_levels());
+    assert_close(restored.sample_signals({1.0F, 0.0F, 0.0F})[0], 0.5F);
+
+    cm2::CellInit cell;
+    restored.add_cell(cell);
+    assert_throws<std::logic_error>([&] { restored.configure_signal_grid(spec); });
+  }
+}

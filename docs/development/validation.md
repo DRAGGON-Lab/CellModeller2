@@ -55,6 +55,13 @@ checkpoint names, collision preflight, model and resume hashes, exact resumed
 time, and machine-readable device discovery. The same model and seed must
 produce the same serialized simulation state.
 
+Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
+reservoir values, periodic upwind advection, reduced-dimensional and 3D
+trilinear samples, paired-periodic validation, explicit stability rejection,
+checkpoint round trips, and v1-to-v2 checkpoint migration. GPU backends report
+signal grids as unsupported until these cases run through their native
+pipelines; compiling the expanded backend interface is not conformance.
+
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while

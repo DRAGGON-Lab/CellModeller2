@@ -1,0 +1,79 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <vector>
+
+#include "cm2/simulation.hpp"
+
+namespace {
+
+cm2::SignalGridSpec make_spec() {
+  cm2::SignalGridSpec spec;
+  spec.signal_count = 2;
+  spec.shape = {.x = 9, .y = 7, .z = 5};
+  spec.origin = {-4.0F, -3.0F, -2.0F};
+  spec.spacing = {1.0F, 0.75F, 1.25F};
+  spec.diffusion = {0.2F, 0.05F};
+  spec.advection = {{0.1F, -0.2F, 0.05F}, {-0.05F, 0.03F, -0.08F}};
+  spec.x_lower.kind = cm2::GridBoundaryKind::periodic;
+  spec.x_upper.kind = cm2::GridBoundaryKind::periodic;
+  spec.z_lower.kind = cm2::GridBoundaryKind::fixed;
+  spec.z_lower.values = {0.25F, 0.5F};
+  spec.z_upper.kind = cm2::GridBoundaryKind::fixed;
+  spec.z_upper.values = {1.0F, 0.75F};
+  return spec;
+}
+
+std::vector<float> make_levels(const cm2::SignalGridSpec& spec) {
+  std::vector<float> levels(spec.level_count());
+  for (std::size_t index = 0; index < levels.size(); ++index) {
+    levels[index] = 0.5F + (0.001F * static_cast<float>((index * 37) % 211));
+  }
+  return levels;
+}
+
+bool close(float actual, float expected) {
+  constexpr float tolerance = 5.0e-6F;
+  return std::abs(actual - expected) <=
+         tolerance + (tolerance * std::max(std::abs(actual), std::abs(expected)));
+}
+
+void assert_matches(const cm2::Simulation& actual, const cm2::Simulation& expected) {
+  assert(actual.signal_count() == expected.signal_count());
+  assert(actual.signal_levels().size() == expected.signal_levels().size());
+  const auto actual_levels = actual.signal_levels();
+  const auto expected_levels = expected.signal_levels();
+  for (std::size_t index = 0; index < actual_levels.size(); ++index) {
+    assert(close(actual_levels[index], expected_levels[index]));
+  }
+  const auto actual_sample = actual.sample_signals({-0.25F, -0.5F, 1.1F});
+  const auto expected_sample = expected.sample_signals({-0.25F, -0.5F, 1.1F});
+  for (std::size_t signal = 0; signal < actual_sample.size(); ++signal) {
+    assert(close(actual_sample[signal], expected_sample[signal]));
+  }
+}
+
+}  // namespace
+
+int main() {
+  const auto spec = make_spec();
+  const auto levels = make_levels(spec);
+  cm2::Simulation reference;
+  reference.configure_signal_grid(spec, levels);
+  reference.step(0.02F);
+
+  for (const auto backend :
+       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
+    if (!cm2::backend_available(backend)) {
+      continue;
+    }
+    cm2::Simulation candidate(backend);
+    candidate.configure_signal_grid(spec, levels);
+    if (!candidate.supports(cm2::BackendFeature::signals)) {
+      continue;
+    }
+    candidate.step(0.02F);
+    assert_matches(candidate, reference);
+  }
+}

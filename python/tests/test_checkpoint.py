@@ -12,9 +12,11 @@ from cellmodeller2 import (
     BackendKind,
     CellInit,
     CheckpointError,
+    GridShape,
     PlaneConstraintInit,
     RateInstruction,
     RateOp,
+    SignalGridSpec,
     Simulation,
     SpeciesRatePlan,
     SphereConstraintInit,
@@ -44,6 +46,16 @@ def _instruction(
 
 def _make_simulation() -> tuple[Simulation, int, int]:
     simulation = Simulation(BackendKind.CPU, species_count=2)
+    shape = GridShape()
+    shape.x = 3
+    shape.y = 1
+    shape.z = 1
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.diffusion = [0.5]
+    grid.advection = [Vec3()]
+    simulation.configure_signal_grid(grid, [0.0, 1.0, 0.0])
     simulation.set_species_rate_plan(
         SpeciesRatePlan(
             2,
@@ -98,6 +110,10 @@ def _make_simulation() -> tuple[Simulation, int, int]:
 def _assert_cells_exact(actual: Simulation, expected: Simulation) -> None:
     assert actual.time == expected.time
     assert actual.species_count == expected.species_count
+    assert actual.signal_count == expected.signal_count
+    assert actual.has_signal_grid == expected.has_signal_grid
+    if actual.has_signal_grid:
+        assert actual.signal_levels == expected.signal_levels
     actual_cells = actual.cells()
     expected_cells = expected.cells()
     assert len(actual_cells) == len(expected_cells)
@@ -160,6 +176,7 @@ def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
     _assert_cells_exact(restored, original)
     assert restored.lineage_parent(daughter_a) == 1
     assert restored.lineage_parent(daughter_b) == 1
+    assert restored.signal_levels == original.signal_levels
 
     added = CellInit()
     added.species = [0.5, 0.75]
@@ -169,6 +186,21 @@ def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
     restored.step(0.0625)
     original.step(0.0625)
     _assert_cells_exact(restored, original)
+
+
+def test_version_one_checkpoint_migrates_to_an_empty_signal_state(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v1.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 1
+    del document["simulation"]["signal_grid"]
+    _rewrite_with_state_digest(path, document)
+
+    restored = load_checkpoint(path)
+    assert not restored.has_signal_grid
+    assert restored.signal_count == 0
+    assert restored.time == simulation.time
 
 
 def test_checkpoint_rejects_corruption_and_invalid_state(tmp_path: Path) -> None:

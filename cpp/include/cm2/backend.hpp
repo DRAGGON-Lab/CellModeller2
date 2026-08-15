@@ -8,6 +8,7 @@
 #include "cm2/constraints.hpp"
 #include "cm2/contact_graph.hpp"
 #include "cm2/mechanics.hpp"
+#include "cm2/signals.hpp"
 #include "cm2/species.hpp"
 #include "cm2/types.hpp"
 #include "cm2/world_state.hpp"
@@ -23,6 +24,7 @@ class ComputeBackend {
   virtual void advance_growth(WorldState& state, float dt) = 0;
   virtual void advance_species(WorldState& state, const SpeciesRatePlan& plan,
                                std::span<const float> previous_lengths, float dt) = 0;
+  virtual void advance_signal_grid(SignalGrid& grid, float dt) = 0;
   [[nodiscard]] virtual ContactGraph find_cell_contacts(const WorldState& state,
                                                         const ContactParameters& parameters) = 0;
   [[nodiscard]] virtual ExternalContactGraph find_external_contacts(

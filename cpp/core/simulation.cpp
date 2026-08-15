@@ -66,6 +66,9 @@ Simulation::Simulation(BackendKind backend, const SimulationCheckpoint& checkpoi
       constraints_(checkpoint.constraints),
       backend_(make_backend(backend, device_index)),
       species_rate_plan_(checkpoint.species_rate_plan),
+      signal_grid_(checkpoint.signal_grid.has_value()
+                       ? std::optional<SignalGrid>(SignalGrid(*checkpoint.signal_grid))
+                       : std::nullopt),
       time_(checkpoint.time) {
   validate();
 }
@@ -81,6 +84,12 @@ double Simulation::time() const noexcept { return time_; }
 std::size_t Simulation::cell_count() const noexcept { return state_.size(); }
 
 std::size_t Simulation::species_count() const noexcept { return state_.species_count(); }
+
+std::size_t Simulation::signal_count() const noexcept {
+  return signal_grid_.has_value() ? signal_grid_->spec().signal_count : 0;
+}
+
+bool Simulation::has_signal_grid() const noexcept { return signal_grid_.has_value(); }
 
 CellId Simulation::add_cell(const CellInit& cell) { return state_.add_cell(cell); }
 
@@ -104,6 +113,23 @@ void Simulation::set_species_rate_plan(const SpeciesRatePlan& plan) {
   species_rate_plan_ = plan;
 }
 
+void Simulation::configure_signal_grid(const SignalGridSpec& spec, std::vector<float> levels) {
+  if (!state_.empty()) {
+    throw std::logic_error("signal grid geometry must be configured before cells are added");
+  }
+  if (signal_grid_.has_value()) {
+    throw std::logic_error("signal grid geometry is already configured");
+  }
+  signal_grid_.emplace(spec, std::move(levels));
+}
+
+void Simulation::set_signal_levels(std::span<const float> levels) {
+  if (!signal_grid_.has_value()) {
+    throw std::logic_error("simulation does not have a signal grid");
+  }
+  signal_grid_->set_levels(levels);
+}
+
 std::pair<CellId, CellId> Simulation::divide_equal(CellId parent_id) {
   return state_.divide_equal(parent_id);
 }
@@ -115,11 +141,20 @@ void Simulation::step(float dt) {
   if (state_.species_count() != 0 && !backend_->supports(BackendFeature::species)) {
     throw std::runtime_error("selected backend does not implement species integration");
   }
+  if (signal_grid_.has_value()) {
+    if (!backend_->supports(BackendFeature::signals)) {
+      throw std::runtime_error("selected backend does not implement signal grid integration");
+    }
+    signal_grid_->validate_step(dt);
+  }
   const auto geometry = state_.geometry_state();
   const std::vector<float> previous_lengths(geometry.lengths.begin(), geometry.lengths.end());
   backend_->advance_growth(state_, dt);
   if (state_.species_count() != 0) {
     backend_->advance_species(state_, species_rate_plan_, previous_lengths, dt);
+  }
+  if (signal_grid_.has_value()) {
+    backend_->advance_signal_grid(*signal_grid_, dt);
   }
   time_ += static_cast<double>(dt);
 }
@@ -173,6 +208,20 @@ std::optional<CellId> Simulation::lineage_parent(CellId id) const noexcept {
   return state_.lineage_parent(id);
 }
 
+std::vector<float> Simulation::signal_levels() const {
+  if (!signal_grid_.has_value()) {
+    throw std::logic_error("simulation does not have a signal grid");
+  }
+  return std::vector<float>(signal_grid_->levels().begin(), signal_grid_->levels().end());
+}
+
+std::vector<float> Simulation::sample_signals(Vec3 position) const {
+  if (!signal_grid_.has_value()) {
+    throw std::logic_error("simulation does not have a signal grid");
+  }
+  return signal_grid_->sample(position);
+}
+
 SimulationCheckpoint Simulation::checkpoint() const {
   validate();
   SimulationCheckpoint result{
@@ -181,6 +230,9 @@ SimulationCheckpoint Simulation::checkpoint() const {
       .world = state_.checkpoint(),
       .constraints = constraints_.checkpoint(),
       .species_rate_plan = species_rate_plan_,
+      .signal_grid = signal_grid_.has_value()
+                         ? std::optional<SignalGridCheckpoint>(signal_grid_->checkpoint())
+                         : std::nullopt,
   };
   result.validate();
   return result;
@@ -190,6 +242,9 @@ void Simulation::validate() const {
   state_.validate();
   constraints_.validate();
   species_rate_plan_.validate();
+  if (signal_grid_.has_value()) {
+    signal_grid_->validate();
+  }
   if (!std::isfinite(time_) || time_ < 0.0) {
     throw std::logic_error("simulation time must be finite and non-negative");
   }

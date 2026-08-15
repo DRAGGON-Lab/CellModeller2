@@ -66,6 +66,7 @@ enum class BackendFeature : std::uint8_t {
   cell_contacts,
   cell_mechanics,
   external_constraints,
+  signals,
 };
 
 struct BackendInfo {

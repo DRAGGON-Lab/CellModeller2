@@ -381,6 +381,10 @@ class MetalBackend final : public ComputeBackend {
                 species_state.levels.size_bytes());
   }
 
+  void advance_signal_grid(SignalGrid&, float) override {
+    throw std::runtime_error("Metal backend does not implement signal grids yet");
+  }
+
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
     validate_contact_parameters(parameters);
