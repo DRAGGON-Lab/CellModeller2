@@ -9,6 +9,7 @@ project(
 
 option(CM2_BUILD_PYTHON "Build the nanobind Python extension" ON)
 option(CM2_BUILD_TESTS "Build C++ tests" ON)
+option(CM2_ENABLE_CUDA "Build the native NVIDIA CUDA backend" OFF)
 
 set(CM2_METAL_DEFAULT OFF)
 if(APPLE)
@@ -64,10 +65,33 @@ if(CM2_ENABLE_METAL)
   set_target_properties(cm2_core PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)
 endif()
 
+if(CM2_ENABLE_CUDA)
+  if(APPLE)
+    message(FATAL_ERROR "CM2_ENABLE_CUDA requires a platform supported by the CUDA Toolkit")
+  endif()
+
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+
+  target_sources(cm2_core PRIVATE
+    cpp/cuda/cuda_backend.cu
+    cpp/cuda/kernels/growth.cu
+  )
+  target_compile_definitions(cm2_core PRIVATE CM2_HAS_CUDA=1)
+  target_link_libraries(cm2_core PRIVATE CUDA::cudart)
+  set_target_properties(cm2_core PROPERTIES
+    CUDA_STANDARD 20
+    CUDA_STANDARD_REQUIRED ON
+  )
+endif()
+
 if(MSVC)
   target_compile_options(cm2_core PRIVATE /W4 /permissive-)
 else()
-  target_compile_options(cm2_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+  target_compile_options(cm2_core PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-Wconversion>"
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-Wall;-Wextra;-Wpedantic;-Wconversion>"
+  )
 endif()
 
 if(CM2_BUILD_PYTHON)
@@ -89,5 +113,11 @@ if(CM2_BUILD_TESTS)
     add_executable(cm2_metal_growth_test tests/conformance/metal_growth_test.cpp)
     target_link_libraries(cm2_metal_growth_test PRIVATE cm2::core)
     add_test(NAME metal_growth COMMAND cm2_metal_growth_test)
+  endif()
+
+  if(CM2_ENABLE_CUDA)
+    add_executable(cm2_cuda_growth_test tests/conformance/cuda_growth_test.cpp)
+    target_link_libraries(cm2_cuda_growth_test PRIVATE cm2::core)
+    add_test(NAME cuda_growth COMMAND cm2_cuda_growth_test)
   endif()
 endif()

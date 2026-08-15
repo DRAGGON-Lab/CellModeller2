@@ -7,7 +7,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 |---|---|---|---|---|
 | P0 | Stable IDs and compact slots | `Simulator` | IDs never alias slots; division records lineage | implemented on CPU |
 | P0 | Cell creation and division | `Simulator`, `CLBacterium` | deterministic equal division first; asymmetric and jitter policies follow | partial |
-| P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | CPU and Metal conformant |
+| P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | CPU and Metal conformant; CUDA hardware validation pending |
 | P0 | 2D/3D rod mechanics | `CLBacterium` | native contact and matrix-free solve | specified |
 | P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic two-pass CSR; no silent contact cap | specified |
 | P0 | Plane and sphere constraints | `CLBacterium.cl` | explicit constraint records in the contact graph | specified |

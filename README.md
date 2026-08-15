@@ -20,10 +20,13 @@ The initial slice establishes:
 - a C++ CPU reference backend;
 - a small Python API backed by nanobind;
 - C++ and Python conformance tests;
-- the native Metal/CUDA architecture and feature ledger.
+- native Metal growth and CUDA growth implementations;
+- the cross-backend architecture and feature ledger.
 
-Metal and CUDA are intentionally not advertised yet. Their first milestone is
-a real native growth/division/contact vertical slice, not placeholder backends.
+Metal growth is validated on Apple GPU hardware. CUDA growth is implemented
+with the native CUDA Runtime API and CUDA C++, but remains unadvertised until
+the conformance suite passes on NVIDIA hardware. Division and contact remain
+CPU-only.
 
 ## Build the C++ reference tests
 
@@ -46,7 +49,7 @@ uv run pytest
 
 - `cpp/core` contains backend-neutral orchestration and state semantics.
 - `cpp/cpu` is the readable numerical reference.
-- `cpp/metal` contains Metal-cpp host code and Metal Shading Language kernels.
+- `cpp/metal` contains native Metal host code and Metal Shading Language kernels.
 - `cpp/cuda` contains CUDA C++ host code and kernels.
 - Model equations are shared through a typed model representation; mechanics
   kernels remain explicitly native and independently optimized.

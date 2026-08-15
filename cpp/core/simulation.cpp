@@ -17,7 +17,11 @@ std::unique_ptr<ComputeBackend> make_backend(BackendKind kind) {
       throw std::runtime_error("Metal backend is not implemented in this build");
 #endif
     case BackendKind::cuda:
+#if CM2_HAS_CUDA
+      return make_cuda_backend();
+#else
       throw std::runtime_error("CUDA backend is not implemented in this build");
+#endif
   }
   throw std::runtime_error("unknown compute backend");
 }
@@ -30,6 +34,11 @@ bool backend_available(BackendKind kind) noexcept {
   }
 #if CM2_HAS_METAL
   if (kind == BackendKind::metal) {
+    return true;
+  }
+#endif
+#if CM2_HAS_CUDA
+  if (kind == BackendKind::cuda) {
     return true;
   }
 #endif

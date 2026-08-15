@@ -16,6 +16,7 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CM2_BUILD_PYTHON": "OFF",
         "CM2_BUILD_TESTS": "ON",
+        "CM2_ENABLE_CUDA": "OFF",
         "CM2_ENABLE_METAL": "OFF"
       }
     },
@@ -29,7 +30,23 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CM2_BUILD_PYTHON": "OFF",
         "CM2_BUILD_TESTS": "ON",
+        "CM2_ENABLE_CUDA": "OFF",
         "CM2_ENABLE_METAL": "ON"
+      }
+    },
+    {
+      "name": "cuda-debug",
+      "displayName": "Native CUDA (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cuda-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CUDA_ARCHITECTURES": "native",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CM2_BUILD_PYTHON": "OFF",
+        "CM2_BUILD_TESTS": "ON",
+        "CM2_ENABLE_CUDA": "ON",
+        "CM2_ENABLE_METAL": "OFF"
       }
     }
   ],
@@ -41,6 +58,10 @@
     {
       "name": "metal-debug",
       "configurePreset": "metal-debug"
+    },
+    {
+      "name": "cuda-debug",
+      "configurePreset": "cuda-debug"
     }
   ],
   "testPresets": [
@@ -54,6 +75,13 @@
     {
       "name": "metal-debug",
       "configurePreset": "metal-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "cuda-debug",
+      "configurePreset": "cuda-debug",
       "output": {
         "outputOnFailure": true
       }
