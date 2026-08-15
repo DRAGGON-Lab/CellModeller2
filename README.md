@@ -252,3 +252,6 @@ The host callback compatibility boundary is grounded in the
 [legacy Python model audit](docs/compatibility/legacy-python-models.md).
 The trusted one-way snapshot boundary is specified in the
 [legacy pickle migration audit](docs/compatibility/legacy-pickle-import.md).
+The independent interactive-viewer boundary is specified in
+[ADR 0012](docs/architecture/0012-viewer-boundary.md) and grounded in the
+[legacy viewer audit](docs/compatibility/legacy-viewer-audit.md).
