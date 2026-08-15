@@ -16,7 +16,8 @@ def setup(sim):
     )
     biophys.addPlane((0, -4, 0), (0, 1, 0), 1.0)
     sim.init(biophys, ModuleRegulator(sim), None, None)
-    sim.addCell(cellType=2, pos=(0, 0, 0), dir=(1, 0, 0), length=4.0)
+    founder_x = random.uniform(-0.5, 0.5)
+    sim.addCell(cellType=2, pos=(founder_x, 0, 0), dir=(1, 0, 0), length=4.0)
     sim.addRenderer(Renderers.GLBacteriumRenderer(sim))
 
 

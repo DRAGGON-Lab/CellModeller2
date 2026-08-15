@@ -15,11 +15,12 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     CellInit,
     MechanicsParameters,
     PlaneConstraintInit,
+    Simulation,
     SphereConstraintInit,
     SphereRegion,
     Vec3,
 )
-from .checkpoint import JSONValue
+from .checkpoint import CheckpointBundle, JSONValue
 from .legacy import (
     DivideCallback,
     InitCallback,
@@ -105,6 +106,8 @@ class _LegacyCLBacterium:
         plane.point = _vec3(point, "plane point")
         plane.inward_normal = _vec3(normal, "plane normal")
         plane.coefficient = float(coefficient)
+        if self._setup.restoring:
+            return self._setup.record_restored_constraint()
         return self._setup.simulation.add_plane_constraint(plane)
 
     def addSphere(  # noqa: N802 - legacy API
@@ -123,12 +126,22 @@ class _LegacyCLBacterium:
         sphere.allowed_region = (
             SphereRegion.INSIDE if normal_sign == -1 else SphereRegion.OUTSIDE
         )
+        if self._setup.restoring:
+            return self._setup.record_restored_constraint()
         return self._setup.simulation.add_sphere_constraint(sphere)
 
 
 class _LegacySetupFacade:
-    def __init__(self, context: ModelContext, module_name: str, source: bytes) -> None:
-        self.simulation = context.simulation()
+    def __init__(
+        self,
+        context: ModelContext,
+        module_name: str,
+        source: bytes,
+        *,
+        simulation: Simulation | None = None,
+        controller: JSONValue = None,
+    ) -> None:
+        self.simulation = simulation if simulation is not None else context.simulation()
         self.moduleName = module_name
         self.moduleStr = source.decode("utf-8")
         self.module: ModuleType | None = None
@@ -136,7 +149,18 @@ class _LegacySetupFacade:
         self.pickleSteps = 10
         self.saveOutput = False
         self._context = context
+        self._controller = controller
         self._adapter: LegacyModelAdapter | None = None
+        self._restored_cell_cursor = 0
+        self._restored_constraint_cursor = 0
+
+    @property
+    def restoring(self) -> bool:
+        return self._controller is not None
+
+    def record_restored_constraint(self) -> int:
+        self._restored_constraint_cursor += 1
+        return self._restored_constraint_cursor
 
     @property
     def adapter(self) -> LegacyModelAdapter:
@@ -170,17 +194,26 @@ class _LegacySetupFacade:
         update = cast(UpdateCallback, _required_callback(self.module, "update"))
         divide_value = _optional_callback(self.module, "divide")
         divide = cast(DivideCallback, divide_value) if divide_value is not None else None
-        self._adapter = LegacyModelAdapter(
-            self.simulation,
-            init=initialize,
-            update=update,
-            divide=divide,
-            mechanics=True,
-            compute_neighbors=biophysics.compute_neighbors,
-            division_jitter_z=biophysics.jitter_z,
-            rng=self._context.rng,
-            mechanics_parameters=biophysics.mechanics_parameters,
-        )
+        if self.restoring:
+            self._adapter = LegacyModelAdapter.from_controller_state(
+                self.simulation,
+                self._controller,
+                init=initialize,
+                update=update,
+                divide=divide,
+            )
+        else:
+            self._adapter = LegacyModelAdapter(
+                self.simulation,
+                init=initialize,
+                update=update,
+                divide=divide,
+                mechanics=True,
+                compute_neighbors=biophysics.compute_neighbors,
+                division_jitter_z=biophysics.jitter_z,
+                rng=self._context.rng,
+                mechanics_parameters=biophysics.mechanics_parameters,
+            )
 
     def addCell(self, **values: object) -> int:  # noqa: N802 - legacy API
         aliases = {
@@ -201,6 +234,15 @@ class _LegacySetupFacade:
             raise LegacyCompatibilityError("legacy addCell supplied both len and length")
         if "rad" in values and "radius" in values:
             raise LegacyCompatibilityError("legacy addCell supplied both rad and radius")
+        if self.restoring:
+            setup_ids = self.adapter._setup_cell_ids  # pyright: ignore[reportPrivateUsage]
+            if self._restored_cell_cursor >= len(setup_ids):
+                raise LegacyCompatibilityError(
+                    "legacy setup adds more cells than the saved controller"
+                )
+            cell_id = setup_ids[self._restored_cell_cursor]
+            self._restored_cell_cursor += 1
+            return cell_id
         cell = CellInit()
         cell.position = _vec3(values.get("pos", (0.0, 0.0, 0.0)), "cell position")
         cell.direction = _vec3(values.get("dir", (1.0, 0.0, 0.0)), "cell direction")
@@ -208,6 +250,7 @@ class _LegacySetupFacade:
         cell.radius = float(cast(Any, values.get("radius", values.get("rad", 0.5))))
         cell.cell_type = int(cast(Any, values.get("cellType", 0)))
         cell_id = self.adapter.add_cell(cell)
+        self.adapter._setup_cell_ids.append(cell_id)  # pyright: ignore[reportPrivateUsage]
         legacy_cell = self.adapter.cells[cell_id]
         legacy_cell.cellAdh = int(cast(Any, values.get("cellAdh", 0)))
         if "color" in values:
@@ -222,6 +265,14 @@ class _LegacySetupFacade:
         raise LegacyCompatibilityError(
             "legacy pickle loading requires the separate one-way migration tool"
         )
+
+    def validate_setup_complete(self) -> None:
+        if self.restoring and self._restored_cell_cursor != len(
+            self.adapter._setup_cell_ids  # pyright: ignore[reportPrivateUsage]
+        ):
+            raise LegacyCompatibilityError(
+                "legacy setup adds fewer cells than the saved controller"
+            )
 
 
 def _required_callback(module: ModuleType, name: str) -> Callable[..., Any]:
@@ -307,17 +358,71 @@ def build_legacy_model(
 ) -> tuple[LegacyModelAdapter, dict[str, JSONValue]]:
     """Load an unchanged growth/mechanics model through the explicit compatibility facade."""
 
+    return _load_legacy_model(Path(path).resolve(), context)
+
+
+def resume_legacy_model(
+    path: str | Path,
+    context: ModelContext,
+    bundle: CheckpointBundle,
+) -> tuple[LegacyModelAdapter, dict[str, JSONValue]]:
+    """Restore an authenticated legacy controller using the exact recorded model source."""
+
+    if bundle.controller is None:
+        raise LegacyCompatibilityError("checkpoint does not contain legacy controller state")
     source_path = Path(path).resolve()
+    model_value = bundle.provenance.get("model")
+    if not isinstance(model_value, dict):
+        raise LegacyCompatibilityError("checkpoint is missing legacy model provenance")
+    digest_value = model_value.get("sha256")
+    seed_value = model_value.get("seed")
+    parameters_value = model_value.get("parameters")
+    compatibility_value = model_value.get("compatibility")
+    if (
+        not isinstance(digest_value, str)
+        or not isinstance(seed_value, int)
+        or isinstance(seed_value, bool)
+        or not isinstance(parameters_value, dict)
+        or compatibility_value != "legacy-python-callbacks-v1"
+    ):
+        raise LegacyCompatibilityError("checkpoint legacy model provenance is invalid")
+    if seed_value != context.seed or parameters_value != dict(context.parameters):
+        raise LegacyCompatibilityError("legacy resume context differs from checkpoint provenance")
+    return _load_legacy_model(
+        source_path,
+        context,
+        simulation=bundle.simulation,
+        controller=bundle.controller,
+        expected_digest=digest_value,
+    )
+
+
+def _load_legacy_model(
+    source_path: Path,
+    context: ModelContext,
+    *,
+    simulation: Simulation | None = None,
+    controller: JSONValue = None,
+    expected_digest: str | None = None,
+) -> tuple[LegacyModelAdapter, dict[str, JSONValue]]:
     try:
         source = source_path.read_bytes()
     except OSError as error:
         raise BatchError(f"could not read legacy model {source_path}") from error
     digest = hashlib.sha256(source).hexdigest()
+    if expected_digest is not None and digest != expected_digest:
+        raise LegacyCompatibilityError("legacy model source digest does not match checkpoint")
     module_name = f"_cellmodeller2_legacy_{digest[:16]}"
     module = ModuleType(module_name)
     module.__file__ = str(source_path)
     module.__package__ = ""
-    setup_facade = _LegacySetupFacade(context, module_name, source)
+    setup_facade = _LegacySetupFacade(
+        context,
+        module_name,
+        source,
+        simulation=simulation,
+        controller=controller,
+    )
     setup_facade.module = module
 
     previous_module = sys.modules.get(module_name, _MISSING)
@@ -334,6 +439,12 @@ def build_legacy_model(
                 raise LegacyCompatibilityError("legacy model must define setup(sim)")
             cast(Callable[[_LegacySetupFacade], object], setup)(setup_facade)
             adapter = setup_facade.adapter
+            setup_facade.validate_setup_complete()
+            if setup_facade.restoring:
+                restored_rng = adapter._rng  # pyright: ignore[reportPrivateUsage]
+                if restored_rng is not None:
+                    module.__dict__["random"] = restored_rng
+                    context.rng = restored_rng
     except (BatchError, LegacyCompatibilityError):
         raise
     except Exception as error:

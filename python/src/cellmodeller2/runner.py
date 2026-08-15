@@ -18,6 +18,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     backend_available,
 )
 from .checkpoint import JSONValue, save_checkpoint
+from .legacy import LegacyModelAdapter
 
 _UINT64_MAX = (1 << 64) - 1
 
@@ -81,6 +82,15 @@ class RunSummary:
 
 
 type ProgressCallback = Callable[[RunProgress], None]
+type RunnableModel = Simulation | LegacyModelAdapter
+
+
+def _native_simulation(model: RunnableModel) -> Simulation:
+    return model.simulation if isinstance(model, LegacyModelAdapter) else model
+
+
+def _controller_state(model: RunnableModel) -> JSONValue:
+    return model.controller_state() if isinstance(model, LegacyModelAdapter) else None
 
 
 def _periodic_path(output: Path, step: int) -> Path:
@@ -104,7 +114,7 @@ def _run_provenance(
 
 
 def run_simulation(
-    simulation: Simulation,
+    simulation: RunnableModel,
     *,
     steps: int,
     dt: float,
@@ -122,7 +132,8 @@ def run_simulation(
         raise BatchError("time step must be finite and non-negative")
     if checkpoint_every < 0:
         raise BatchError("checkpoint interval must be non-negative")
-    simulation.validate()
+    native = _native_simulation(simulation)
+    native.validate()
 
     destination = Path(output)
     periodic_steps = (
@@ -146,14 +157,14 @@ def run_simulation(
                 RunProgress(
                     completed_steps=completed_steps,
                     requested_steps=steps,
-                    time=simulation.time,
-                    cell_count=simulation.cell_count,
+                    time=native.time,
+                    cell_count=native.cell_count,
                 )
             )
         periodic = periodic_by_step.get(completed_steps)
         if periodic is not None:
             save_checkpoint(
-                simulation,
+                native,
                 periodic,
                 provenance=_run_provenance(
                     base_provenance,
@@ -162,10 +173,11 @@ def run_simulation(
                     steps=steps,
                     dt=dt,
                 ),
+                controller=_controller_state(simulation),
             )
 
     save_checkpoint(
-        simulation,
+        native,
         destination,
         provenance=_run_provenance(
             base_provenance,
@@ -174,17 +186,20 @@ def run_simulation(
             steps=steps,
             dt=dt,
         ),
+        controller=_controller_state(simulation),
     )
     return RunSummary(
         completed_steps=steps,
-        time=simulation.time,
-        cell_count=simulation.cell_count,
+        time=native.time,
+        cell_count=native.cell_count,
         output=destination,
         periodic_checkpoints=periodic_paths,
     )
 
 
-def build_model(path: str | Path, context: ModelContext) -> tuple[Simulation, dict[str, JSONValue]]:
+def build_model(
+    path: str | Path, context: ModelContext
+) -> tuple[Simulation, dict[str, JSONValue]]:
     """Execute an explicit Python model file and call its ``build`` function."""
 
     source_path = Path(path).resolve()

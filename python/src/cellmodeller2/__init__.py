@@ -47,8 +47,16 @@ from .checkpoint import (
     save_checkpoint,
 )
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
-from .legacy_loader import build_legacy_model
-from .runner import BatchError, ModelContext, RunProgress, RunSummary, build_model, run_simulation
+from .legacy_loader import build_legacy_model, resume_legacy_model
+from .runner import (
+    BatchError,
+    ModelContext,
+    RunnableModel,
+    RunProgress,
+    RunSummary,
+    build_model,
+    run_simulation,
+)
 
 __all__ = [
     "CHECKPOINT_FORMAT",
@@ -86,6 +94,7 @@ __all__ = [
     "RodEndpoint",
     "RunProgress",
     "RunSummary",
+    "RunnableModel",
     "SignalGridSpec",
     "Simulation",
     "SolverBreakdown",
@@ -101,6 +110,7 @@ __all__ = [
     "build_model",
     "load_checkpoint",
     "load_checkpoint_bundle",
+    "resume_legacy_model",
     "run_simulation",
     "save_checkpoint",
 ]

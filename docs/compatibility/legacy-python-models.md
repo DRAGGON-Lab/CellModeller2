@@ -31,9 +31,16 @@ declarations; the shims are removed after construction and do not install a
 shadow `CellModeller` package. `controller_state` serializes arbitrary JSON-like
 attributes, tuples, numeric NumPy arrays, adapter options, and the exact random
 stream into the authenticated v4 controller payload; `from_controller_state`
-restores that data without executable content. Wiring this state into the batch
-runner remains separate work. Geometry remains engine-owned, and callback
-attempts to mutate position, direction, length, or radius fail explicitly.
+restores that data without executable content. `cm2 run --legacy-model` writes
+the controller payload in periodic and final checkpoints; combining
+`--legacy-model` with `--resume` reloads the callbacks only after verifying the
+source digest and reuses the recorded seed and parameters. Geometry remains
+engine-owned. Setup is replayed from the original seed on resume while the
+checkpointed random stream is restored only for subsequent callbacks, so
+randomized founder construction cannot consume future runtime draws. Mutable
+module globals other than this controlled random binding are not checkpointed;
+evolving model state must live on cells or in native arrays. Callback attempts
+to mutate position, direction, length, or radius fail explicitly.
 Equal division is supported, including an explicitly seeded compatibility
 policy for the legacy per-daughter direction jitter; asymmetric division fails
 explicitly until its native lifecycle contract is implemented.

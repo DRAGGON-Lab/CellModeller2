@@ -227,6 +227,7 @@ class LegacyModelAdapter:
             mechanics_parameters=mechanics_parameters,
         )
         self._cells: dict[int, LegacyCell] = {}
+        self._setup_cell_ids: list[int] = []
 
     def _configure(
         self,
@@ -276,7 +277,7 @@ class LegacyModelAdapter:
         parameters = self._mechanics_parameters
         return {
             "kind": "cellmodeller2-legacy-python",
-            "version": 1,
+            "version": 2,
             "options": {
                 "mechanics": self._mechanics,
                 "compute_neighbors": self._compute_neighbors,
@@ -291,6 +292,7 @@ class LegacyModelAdapter:
             "random_state": _encoded(self._rng.getstate(), "legacy random state")
             if self._rng is not None
             else None,
+            "setup_cell_ids": list(self._setup_cell_ids),
             "cells": cells,
         }
 
@@ -308,9 +310,16 @@ class LegacyModelAdapter:
         """Restore callback state onto an already-restored native simulation."""
 
         data = cls._controller_object(controller, "controller")
-        if set(data) != {"kind", "version", "options", "random_state", "cells"}:
+        if set(data) != {
+            "kind",
+            "version",
+            "options",
+            "random_state",
+            "setup_cell_ids",
+            "cells",
+        }:
             raise LegacyCompatibilityError("legacy controller has unexpected fields")
-        if data["kind"] != "cellmodeller2-legacy-python" or data["version"] != 1:
+        if data["kind"] != "cellmodeller2-legacy-python" or data["version"] != 2:
             raise LegacyCompatibilityError("legacy controller kind or version is unsupported")
         options = cls._controller_object(data["options"], "controller.options")
         if set(options) != {
@@ -372,6 +381,13 @@ class LegacyModelAdapter:
             rng=restored_rng,
             mechanics_parameters=parameters,
         )
+        setup_cell_ids = data["setup_cell_ids"]
+        if not isinstance(setup_cell_ids, list) or not all(
+            isinstance(item, int) and not isinstance(item, bool) and item > 0
+            for item in setup_cell_ids
+        ):
+            raise LegacyCompatibilityError("legacy setup cell identifiers are invalid")
+        instance._setup_cell_ids = [cast(int, item) for item in setup_cell_ids]
         instance._cells = instance._restore_cells(data["cells"])
         return instance
 

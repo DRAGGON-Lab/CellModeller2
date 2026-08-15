@@ -17,7 +17,8 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     backend_available,
     backend_device_count,
 )
-from .checkpoint import CheckpointError, JSONValue, load_checkpoint
+from .checkpoint import CheckpointError, JSONValue, load_checkpoint, load_checkpoint_bundle
+from .legacy_loader import build_legacy_model, resume_legacy_model
 from .runner import BatchError, ModelContext, RunProgress, build_model, run_simulation
 
 _BACKENDS = {
@@ -35,9 +36,12 @@ def _parser() -> argparse.ArgumentParser:
     devices.add_argument("--json", action="store_true", help="emit machine-readable JSON")
 
     run = commands.add_parser("run", help="run a model or resume a checkpoint")
-    source = run.add_mutually_exclusive_group(required=True)
+    source = run.add_mutually_exclusive_group()
     source.add_argument("--model", type=Path, help="Python file defining build(context)")
-    source.add_argument("--resume", type=Path, help="CellModeller2 checkpoint to resume")
+    source.add_argument(
+        "--legacy-model", type=Path, help="CellModeller 1 growth/mechanics model"
+    )
+    run.add_argument("--resume", type=Path, help="CellModeller2 checkpoint to resume")
     run.add_argument("--backend", choices=tuple(_BACKENDS), default="cpu")
     run.add_argument("--device-index", type=int, default=0)
     run.add_argument("--seed", type=int, default=0, help="model-construction seed")
@@ -170,8 +174,11 @@ def _run(arguments: argparse.Namespace) -> int:
         )
     parameters = _parameters(cast(list[str], arguments.parameter))
     model_path = cast(Path | None, arguments.model)
+    legacy_model_path = cast(Path | None, arguments.legacy_model)
     resume_path = cast(Path | None, arguments.resume)
     if model_path is not None:
+        if resume_path is not None:
+            raise BatchError("--model cannot be combined with --resume")
         context = ModelContext(
             backend=backend,
             device_index=device_index,
@@ -179,11 +186,54 @@ def _run(arguments: argparse.Namespace) -> int:
             parameters=parameters,
         )
         simulation, provenance = build_model(model_path, context)
+    elif legacy_model_path is not None:
+        if resume_path is None:
+            context = ModelContext(
+                backend=backend,
+                device_index=device_index,
+                seed=cast(int, arguments.seed),
+                parameters=parameters,
+            )
+            simulation, provenance = build_legacy_model(legacy_model_path, context)
+        else:
+            if parameters:
+                raise BatchError(
+                    "legacy resume uses the checkpoint parameters; do not pass --parameter"
+                )
+            bundle = load_checkpoint_bundle(
+                resume_path,
+                backend=backend,
+                device_index=device_index,
+            )
+            model_value = bundle.provenance.get("model")
+            if not isinstance(model_value, dict):
+                raise BatchError("legacy checkpoint is missing model provenance")
+            seed_value = model_value.get("seed")
+            saved_parameters = model_value.get("parameters")
+            if (
+                not isinstance(seed_value, int)
+                or isinstance(seed_value, bool)
+                or not isinstance(saved_parameters, dict)
+            ):
+                raise BatchError("legacy checkpoint model provenance is invalid")
+            context = ModelContext(
+                backend=backend,
+                device_index=device_index,
+                seed=seed_value,
+                parameters=cast(dict[str, JSONValue], saved_parameters),
+            )
+            simulation, model_provenance = resume_legacy_model(
+                legacy_model_path,
+                context,
+                bundle,
+            )
+            provenance = dict(model_provenance)
+            provenance.update(_resume_provenance(resume_path))
     else:
-        if parameters:
-            raise BatchError("--parameter is only valid with --model")
         if resume_path is None:
             raise BatchError("a model or checkpoint is required")
+        if parameters:
+            raise BatchError("--parameter is only valid with --model")
         simulation = load_checkpoint(
             resume_path,
             backend=backend,

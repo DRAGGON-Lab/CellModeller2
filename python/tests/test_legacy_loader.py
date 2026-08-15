@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shutil import copyfile
 from typing import cast
 
 import pytest
@@ -10,8 +11,12 @@ from cellmodeller2 import (
     ModelContext,
     backend_available,
     build_legacy_model,
+    load_checkpoint_bundle,
+    resume_legacy_model,
+    run_simulation,
 )
 from cellmodeller2.checkpoint import JSONValue
+from cellmodeller2.cli import main
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -43,3 +48,85 @@ def test_legacy_loader_rejects_opencl_integrators_explicitly() -> None:
     context = ModelContext(BackendKind.CPU, 0, seed=0)
     with pytest.raises(LegacyCompatibilityError, match="OpenCL integrators"):
         build_legacy_model(_FIXTURES / "legacy_opencl_integrator.py", context)
+
+
+def test_legacy_batch_checkpoint_resumes_exactly_and_checks_source(tmp_path: Path) -> None:
+    model_path = _FIXTURES / "legacy_growth.py"
+    context = ModelContext(BackendKind.CPU, 0, seed=42)
+    uninterrupted, uninterrupted_provenance = build_legacy_model(model_path, context)
+    uninterrupted_path = tmp_path / "uninterrupted.cm2.json"
+    run_simulation(
+        uninterrupted,
+        steps=3,
+        dt=0.2,
+        output=uninterrupted_path,
+        provenance=uninterrupted_provenance,
+    )
+
+    first_path = tmp_path / "first.cm2.json"
+    assert (
+        main(
+            [
+                "run",
+                "--legacy-model",
+                str(model_path),
+                "--seed",
+                "42",
+                "--steps",
+                "2",
+                "--dt",
+                "0.2",
+                "--output",
+                str(first_path),
+                "--quiet",
+            ]
+        )
+        == 0
+    )
+    resumed_path = tmp_path / "resumed.cm2.json"
+    assert (
+        main(
+            [
+                "run",
+                "--legacy-model",
+                str(model_path),
+                "--resume",
+                str(first_path),
+                "--steps",
+                "1",
+                "--dt",
+                "0.2",
+                "--output",
+                str(resumed_path),
+                "--quiet",
+            ]
+        )
+        == 0
+    )
+
+    expected = load_checkpoint_bundle(uninterrupted_path)
+    actual = load_checkpoint_bundle(resumed_path)
+    assert actual.controller == expected.controller
+    assert cast(dict[str, JSONValue], actual.controller)["version"] == 2
+    for left, right in zip(
+        actual.simulation.cells(), expected.simulation.cells(), strict=True
+    ):
+        assert left.id == right.id
+        assert left.slot == right.slot
+        assert left.position.x == right.position.x
+        assert left.position.y == right.position.y
+        assert left.position.z == right.position.z
+        assert left.direction.x == right.direction.x
+        assert left.direction.y == right.direction.y
+        assert left.direction.z == right.direction.z
+        assert left.length == right.length
+
+    changed_model = tmp_path / "changed.py"
+    copyfile(model_path, changed_model)
+    changed_model.write_text(
+        changed_model.read_text(encoding="utf-8") + "\nCHANGED = True\n",
+        encoding="utf-8",
+    )
+    first_bundle = load_checkpoint_bundle(first_path)
+    with pytest.raises(LegacyCompatibilityError, match="digest"):
+        resume_legacy_model(changed_model, context, first_bundle)

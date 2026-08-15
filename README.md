@@ -130,6 +130,33 @@ uv run cm2 run \
   --output results/colony-resumed.cm2.json
 ```
 
+Maintained CellModeller 1 growth/mechanics models can run unchanged through the
+explicit compatibility loader. Resuming reloads the same source only after its
+digest has been checked, then restores callback attributes and random state from
+the authenticated controller payload:
+
+```console
+uv run cm2 run \
+  --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
+  --backend metal \
+  --seed 42 \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/legacy.cm2.json
+
+uv run cm2 run \
+  --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
+  --resume results/legacy.cm2.json \
+  --backend metal \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/legacy-resumed.cm2.json
+```
+
+Legacy OpenCL rate-source strings are intentionally not accepted. Species and
+signaling models must migrate their equations to the typed rate-plan APIs so
+Metal and CUDA continue to use native kernels.
+
 ## Build the C++ reference tests
 
 ```console
