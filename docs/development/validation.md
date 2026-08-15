@@ -138,3 +138,13 @@ correction and unchanged geometry for the fixed cell. CUDA hardware execution
 remains required before CUDA fixed-cell support is claimed; the independent
 CUDA mask upload and projected mechanics kernels compile and link with the
 CUDA 12.8.1 toolkit.
+
+Analysis-export fixtures read the published artifacts back through PyArrow and
+Zarr rather than trusting writer completion. They verify explicit Arrow types,
+stable and parent identities, cylinder versus full-capsule length, long-form
+species rows, complete typed cell and constraint contacts, source and
+reconstruction backend provenance, five-dimensional signal order, signal
+epoch boundaries, source-path privacy, time ordering, and non-destructive
+output collision handling. CUDA contact derivation stays rejected until the
+NVIDIA hardware conformance gate passes; ordinary CUDA checkpoint state can
+still be exported without a contact derivation.

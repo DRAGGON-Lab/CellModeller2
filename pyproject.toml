@@ -24,6 +24,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+analysis = [
+  "polars>=1.43,<2",
+  "pyarrow>=25,<26",
+  "zarr>=3.2.1,<4",
+]
 sbml = [
   "python-libsbml>=5.21.1,<6",
 ]
@@ -37,10 +42,13 @@ cm2 = "cellmodeller2.cli:main"
 [dependency-groups]
 dev = [
   "aiohttp>=3.14.3,<4",
+  "polars>=1.43,<2",
+  "pyarrow>=25,<26",
   "pytest>=8.3,<9",
   "pyright>=1.1.390,<2",
   "python-libsbml>=5.21.1,<6",
   "ruff>=0.9,<1",
+  "zarr>=3.2.1,<4",
 ]
 
 [tool.scikit-build]

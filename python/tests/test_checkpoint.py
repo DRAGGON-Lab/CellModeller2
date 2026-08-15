@@ -205,6 +205,27 @@ def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
     _assert_cells_exact(restored, original)
 
 
+def test_checkpoint_bundle_reports_validated_source_metadata(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "source.cm2.json"
+    save_checkpoint(simulation, path)
+
+    bundle = load_checkpoint_bundle(path)
+
+    assert bundle.schema_version == CHECKPOINT_VERSION
+    assert bundle.source_backend.kind == "cpu"
+    assert bundle.source_backend.name == "cpu-reference"
+    assert bundle.source_backend.device == "host"
+    assert bundle.source_backend.device_index == 0
+    assert bundle.source_backend.native
+
+    document = _document(path)
+    document["source_backend"]["kind"] = "opencl"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CheckpointError, match="unknown backend kind"):
+        load_checkpoint_bundle(path)
+
+
 def test_version_one_checkpoint_migrates_to_an_empty_signal_state(tmp_path: Path) -> None:
     simulation, _, _ = _make_simulation()
     path = tmp_path / "legacy-v1.cm2.json"

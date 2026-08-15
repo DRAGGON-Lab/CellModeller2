@@ -26,6 +26,7 @@ The initial slice establishes:
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
+- immutable Parquet/Zarr analysis exports with typed provenance and stable identities;
 - validated CPU and native Metal signal grids with explicit transport boundaries,
   plus a diagnosed CPU Crank-Nicolson reference solver;
 - typed coupled cell/grid rate plans with simultaneous CPU and native Metal stages;
@@ -176,6 +177,36 @@ the browser can request only play, pause, bounded steps, reset, the current
 frame, and a checkpoint to that preconfigured path. Every live frame is a full
 verified scene-v1 document. The wire contract is documented in the
 [live viewer protocol](docs/protocols/live-viewer-v1.md).
+
+## Export analysis datasets
+
+Install the optional analysis dependencies, then export an explicit,
+time-ordered checkpoint series:
+
+```console
+uv sync --extra analysis
+uv run cm2 export-analysis \
+  results/step-00025.cm2.json \
+  results/step-00050.cm2.json \
+  --output results/run.cm2.dataset \
+  --contacts \
+  --external-contacts
+```
+
+The immutable dataset contains explicit-schema Parquet frame, cell, and
+species tables. Requested cell and constraint contacts are reconstructed on
+the selected native backend and record their device and parameters. Signal
+fields are stored as Zarr v3 arrays in named `(frame, channel, x, y, z)`
+dimensions; a geometry change starts a new epoch. The manifest records source
+checkpoint digests, schema versions, model provenance, table schemas, row
+counts, derivations, and output digests without embedding absolute input paths
+unless `--path-provenance` is passed. Existing datasets require the explicit
+`--overwrite` flag.
+
+Contact reconstruction defaults to the CPU reference. Metal is selectable on
+conformant Apple hardware. CUDA state export is available, while CUDA contact
+export remains gated until the shared contact fixture passes on NVIDIA
+hardware.
 
 `backend_device_count(kind)` enumerates native devices and every `Simulation`
 constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does

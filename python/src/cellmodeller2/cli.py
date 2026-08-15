@@ -81,6 +81,24 @@ def _parser() -> argparse.ArgumentParser:
     view.add_argument("--checkpoint-output", type=Path)
     view.add_argument("--viewer-dist", type=Path)
     view.add_argument("--open", action="store_true", help="open the live URL in a browser")
+
+    analysis = commands.add_parser(
+        "export-analysis", help="export ordered checkpoints to Parquet and Zarr"
+    )
+    analysis.add_argument("checkpoints", nargs="+", type=Path)
+    analysis.add_argument("--output", type=Path, required=True)
+    analysis.add_argument("--backend", choices=tuple(_BACKENDS), default="cpu")
+    analysis.add_argument("--device-index", type=int, default=0)
+    analysis.add_argument("--contacts", action="store_true", help="derive cell contacts")
+    analysis.add_argument(
+        "--external-contacts", action="store_true", help="derive constraint contacts"
+    )
+    analysis.add_argument(
+        "--path-provenance",
+        action="store_true",
+        help="record absolute checkpoint paths in the manifest",
+    )
+    analysis.add_argument("--overwrite", action="store_true")
     return parser
 
 
@@ -366,6 +384,40 @@ def _import_legacy_pickle(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _export_analysis(arguments: argparse.Namespace) -> int:
+    try:
+        from .analysis import export_dataset
+    except ModuleNotFoundError as error:
+        if error.name in {"pyarrow", "zarr"}:
+            raise BatchError("analysis export requires `cellmodeller2[analysis]`") from error
+        raise
+
+    backend_name = cast(str, arguments.backend)
+    backend = _BACKENDS[backend_name]
+    device_index = cast(int, arguments.device_index)
+    if not backend_available(backend, device_index):
+        count = backend_device_count(backend)
+        raise BatchError(
+            f"backend {backend_name} device {device_index} is unavailable "
+            f"({count} device(s) found)"
+        )
+    summary = export_dataset(
+        cast(list[Path], arguments.checkpoints),
+        cast(Path, arguments.output),
+        backend=backend,
+        device_index=device_index,
+        include_contacts=cast(bool, arguments.contacts),
+        include_external_contacts=cast(bool, arguments.external_contacts),
+        path_provenance=cast(bool, arguments.path_provenance),
+        replace=cast(bool, arguments.overwrite),
+    )
+    print(
+        f"wrote {summary.output} frames={summary.frame_count} "
+        f"cells={summary.cell_rows} signal_epochs={summary.signal_epochs}"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the ``cm2`` command and return its process status."""
 
@@ -377,6 +429,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _import_legacy_pickle(arguments)
         if arguments.command == "view":
             return _view(arguments)
+        if arguments.command == "export-analysis":
+            return _export_analysis(arguments)
         return _run(arguments)
     except (
         BatchError,

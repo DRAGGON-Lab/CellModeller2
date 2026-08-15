@@ -60,12 +60,25 @@ class CheckpointError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class CheckpointSourceBackend:
+    """Backend identity recorded by the checkpoint producer."""
+
+    kind: str
+    name: str
+    device: str
+    device_index: int
+    native: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CheckpointBundle:
     """Validated native state plus optional data-only controller state."""
 
     simulation: Simulation
     controller: JSONValue
     provenance: dict[str, JSONValue]
+    schema_version: int
+    source_backend: CheckpointSourceBackend
 
 
 _RATE_OP_NAMES = {
@@ -817,7 +830,27 @@ def load_checkpoint_bundle(
     if _string(root["format"], "$.format") != CHECKPOINT_FORMAT:
         _fail("$.format", "not a CellModeller2 checkpoint")
     _object(root["producer"], "$.producer")
-    _object(root["source_backend"], "$.source_backend")
+    source_backend_data = _object(root["source_backend"], "$.source_backend")
+    _keys(
+        source_backend_data,
+        "$.source_backend",
+        {"kind", "name", "device", "device_index", "native"},
+    )
+    source_backend_kind = _string(source_backend_data["kind"], "$.source_backend.kind")
+    if source_backend_kind not in _BACKEND_NAMES.values():
+        _fail("$.source_backend.kind", f"unknown backend kind {source_backend_kind!r}")
+    source_backend = CheckpointSourceBackend(
+        kind=source_backend_kind,
+        name=_string(source_backend_data["name"], "$.source_backend.name"),
+        device=_string(source_backend_data["device"], "$.source_backend.device"),
+        device_index=_integer(
+            source_backend_data["device_index"],
+            "$.source_backend.device_index",
+            0,
+            _UINT32_MAX,
+        ),
+        native=_boolean(source_backend_data["native"], "$.source_backend.native"),
+    )
     provenance = cast(dict[str, JSONValue], _object(root["provenance"], "$.provenance"))
 
     integrity = _object(root["integrity"], "$.integrity")
@@ -846,6 +879,8 @@ def load_checkpoint_bundle(
         simulation=Simulation(backend, checkpoint, device_index),
         controller=controller,
         provenance=provenance,
+        schema_version=schema_version,
+        source_backend=source_backend,
     )
 
 
