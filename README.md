@@ -234,6 +234,7 @@ uv run cm2 run \
   --parameter growth_rate=0.25 \
   --steps 100 \
   --dt 0.05 \
+  --stop-cell-count 10000 \
   --checkpoint-every 25 \
   --output results/colony.cm2.json
 ```
@@ -243,6 +244,13 @@ simulation with `context.simulation()`, use `context.rng` for seeded model
 randomness, and read JSON parameters from `context.parameters`. The runner
 rejects a model that substitutes another backend or device. Existing final or
 periodic outputs are never replaced without `--overwrite`.
+
+`--steps` is always the deterministic maximum. When `--stop-cell-count` is
+present, the runner also stops before the first step if the initial colony has
+already reached the threshold, or immediately after the first step that does.
+The final checkpoint records the requested maximum, actual completed steps,
+threshold, and whether `step_limit` or `cell_count` ended the run. This replaces
+legacy termination tied indirectly to preallocated cell capacity.
 
 Resume a data-only checkpoint on any available backend:
 

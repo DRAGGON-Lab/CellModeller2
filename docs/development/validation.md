@@ -85,7 +85,10 @@ Batch fixtures execute a real model file through both the Python API and the
 `cm2` entry point. They verify seeded construction, JSON parameters, periodic
 checkpoint names, collision preflight, model and resume hashes, exact resumed
 time, and machine-readable device discovery. The same model and seed must
-produce the same serialized simulation state.
+produce the same serialized simulation state. Cell-count fixtures cover an
+initially satisfied threshold, an actual legacy division crossing the
+threshold, maximum-step provenance, completed-periodic reporting, and rejection
+of zero, negative, boolean, or overflowing thresholds.
 
 Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
 reservoir values, periodic upwind advection, reduced-dimensional and 3D

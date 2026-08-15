@@ -130,3 +130,33 @@ def test_legacy_batch_checkpoint_resumes_exactly_and_checks_source(tmp_path: Pat
     first_bundle = load_checkpoint_bundle(first_path)
     with pytest.raises(LegacyCompatibilityError, match="digest"):
         resume_legacy_model(changed_model, context, first_bundle)
+
+
+def test_legacy_batch_stops_when_division_reaches_cell_threshold(tmp_path: Path) -> None:
+    model, provenance = build_legacy_model(
+        _FIXTURES / "legacy_growth.py",
+        ModelContext(BackendKind.CPU, 0, seed=42),
+    )
+    output = tmp_path / "cell-threshold.cm2.json"
+
+    summary = run_simulation(
+        model,
+        steps=100,
+        dt=0.2,
+        output=output,
+        checkpoint_every=1,
+        stop_cell_count=2,
+        provenance=provenance,
+    )
+
+    assert summary.completed_steps == 2
+    assert summary.stop_reason == "cell_count"
+    assert summary.cell_count == 2
+    assert summary.periodic_checkpoints == (
+        tmp_path / "cell-threshold.step-00000001.cm2.json",
+        tmp_path / "cell-threshold.step-00000002.cm2.json",
+    )
+    run = cast(dict[str, JSONValue], load_checkpoint_bundle(output).provenance["run"])
+    assert run["completed_steps"] == 2
+    assert run["requested_steps"] == 100
+    assert run["stop_reason"] == "cell_count"

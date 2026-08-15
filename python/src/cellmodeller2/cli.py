@@ -67,6 +67,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--dt", type=float, required=True)
     run.add_argument("--output", type=Path, required=True)
     run.add_argument("--checkpoint-every", type=int, default=0)
+    run.add_argument(
+        "--stop-cell-count",
+        type=int,
+        help="stop after the first step reaching this many cells",
+    )
     run.add_argument("--progress-every", type=int, default=100)
     run.add_argument("--overwrite", action="store_true")
     run.add_argument("--quiet", action="store_true")
@@ -316,6 +321,7 @@ def _run(arguments: argparse.Namespace) -> int:
         dt=cast(float, arguments.dt),
         output=cast(Path, arguments.output),
         checkpoint_every=cast(int, arguments.checkpoint_every),
+        stop_cell_count=cast(int | None, arguments.stop_cell_count),
         overwrite=cast(bool, arguments.overwrite),
         provenance=provenance,
         progress=_progress_printer(
@@ -324,7 +330,7 @@ def _run(arguments: argparse.Namespace) -> int:
     )
     print(
         f"wrote {summary.output} steps={summary.completed_steps} "
-        f"time={summary.time:.9g} cells={summary.cell_count}"
+        f"time={summary.time:.9g} cells={summary.cell_count} stop={summary.stop_reason}"
     )
     return 0
 

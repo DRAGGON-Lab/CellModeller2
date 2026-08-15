@@ -30,17 +30,26 @@ JSON parameters. The runner rejects a returned simulation on another backend
 or device. Models remain ordinary Python and may define their own typed helper
 layers without coupling the engine to a particular modeling DSL.
 
-The run loop uses an integer step count and an explicit finite non-negative
-time step. Before simulation begins, the runner checks the final and all
-periodic checkpoint paths for collisions. It does not overwrite existing data
-unless `--overwrite` is present. Every write uses the checkpoint layer's
-atomic-replace behavior. Periodic filenames contain an eight-digit completed
-step number, and the final checkpoint is written even for a zero-step run.
+The run loop uses an integer maximum step count and an explicit finite
+non-negative time step. An optional positive unsigned cell-count threshold is
+checked before the first step and after every completed step. The first reached
+condition ends the run; a maximum step count remains mandatory so a
+non-growing model terminates deterministically. Cell-count stopping depends on
+the active-cell count, never reserved capacity.
+
+Before simulation begins, the runner checks the final and every potentially
+written periodic checkpoint path for collisions. It does not overwrite
+existing data unless `--overwrite` is present. Every write uses the checkpoint
+layer's atomic-replace behavior. Periodic filenames contain an eight-digit
+completed step number, and the final checkpoint is written even when the
+initial cell count causes a zero-step run. A run summary reports only periodic
+checkpoints actually written before termination.
 
 Run provenance records the model or resume input's absolute path and SHA-256
 digest. Model provenance also records the seed and JSON parameters. Each
-checkpoint records the requested and completed steps, time step, and run
-status. Randomness during model construction is reproducible when the model
+checkpoint records the maximum and completed steps, time step, complete
+stopping rule, and current or final stop reason. Randomness during model
+construction is reproducible when the model
 uses `context.rng`; runtime stochastic mechanisms will receive explicit engine
 random streams in a later feature slice.
 

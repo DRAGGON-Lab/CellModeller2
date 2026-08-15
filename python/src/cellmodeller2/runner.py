@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType, ModuleType
-from typing import cast
+from typing import Literal, cast
 
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendKind,
@@ -75,6 +75,8 @@ class RunProgress:
 @dataclass(frozen=True, slots=True)
 class RunSummary:
     completed_steps: int
+    stop_reason: RunStopReason
+    cell_count_threshold: int | None
     time: float
     cell_count: int
     output: Path
@@ -83,6 +85,7 @@ class RunSummary:
 
 type ProgressCallback = Callable[[RunProgress], None]
 type RunnableModel = Simulation | LegacyModelAdapter
+type RunStopReason = Literal["step_limit", "cell_count"]
 
 
 def native_simulation(model: RunnableModel) -> Simulation:
@@ -105,7 +108,14 @@ def _periodic_path(output: Path, step: int) -> Path:
 
 
 def _run_provenance(
-    base: Mapping[str, JSONValue], *, status: str, completed_steps: int, steps: int, dt: float
+    base: Mapping[str, JSONValue],
+    *,
+    status: str,
+    completed_steps: int,
+    steps: int,
+    dt: float,
+    stop_reason: RunStopReason | None,
+    stop_cell_count: int | None,
 ) -> dict[str, JSONValue]:
     result = dict(base)
     result["run"] = {
@@ -113,6 +123,11 @@ def _run_provenance(
         "completed_steps": completed_steps,
         "requested_steps": steps,
         "dt": dt,
+        "stop_reason": stop_reason,
+        "stopping": {
+            "maximum_steps": steps,
+            "cell_count": stop_cell_count,
+        },
     }
     return result
 
@@ -124,6 +139,7 @@ def run_simulation(
     dt: float,
     output: str | Path,
     checkpoint_every: int = 0,
+    stop_cell_count: int | None = None,
     overwrite: bool = False,
     provenance: Mapping[str, JSONValue] | None = None,
     progress: ProgressCallback | None = None,
@@ -132,10 +148,18 @@ def run_simulation(
 
     if steps < 0:
         raise BatchError("steps must be non-negative")
+    if steps > _UINT64_MAX:
+        raise BatchError("steps must be an unsigned 64-bit integer")
     if not math.isfinite(dt) or dt < 0.0:
         raise BatchError("time step must be finite and non-negative")
     if checkpoint_every < 0:
         raise BatchError("checkpoint interval must be non-negative")
+    if checkpoint_every > _UINT64_MAX:
+        raise BatchError("checkpoint interval must be an unsigned 64-bit integer")
+    if stop_cell_count is not None and (
+        isinstance(stop_cell_count, bool) or stop_cell_count <= 0 or stop_cell_count > _UINT64_MAX
+    ):
+        raise BatchError("cell-count threshold must be a positive uint64 value")
     native = native_simulation(simulation)
     native.validate()
 
@@ -154,31 +178,54 @@ def run_simulation(
 
     base_provenance = dict(provenance) if provenance is not None else {}
     periodic_by_step = dict(zip(periodic_steps, periodic_paths, strict=True))
-    for completed_steps in range(1, steps + 1):
-        simulation.step(dt)
-        if progress is not None:
-            progress(
-                RunProgress(
-                    completed_steps=completed_steps,
-                    requested_steps=steps,
-                    time=native.time,
-                    cell_count=native.cell_count,
+    written_periodic: list[Path] = []
+    completed_steps = 0
+    stop_reason: RunStopReason = "step_limit"
+    if stop_cell_count is not None and native.cell_count >= stop_cell_count:
+        stop_reason = "cell_count"
+    if stop_reason != "cell_count":
+        for step_number in range(1, steps + 1):
+            simulation.step(dt)
+            completed_steps = step_number
+            reached_cell_count = (
+                stop_cell_count is not None and native.cell_count >= stop_cell_count
+            )
+            if progress is not None:
+                progress(
+                    RunProgress(
+                        completed_steps=completed_steps,
+                        requested_steps=steps,
+                        time=native.time,
+                        cell_count=native.cell_count,
+                    )
                 )
-            )
-        periodic = periodic_by_step.get(completed_steps)
-        if periodic is not None:
-            save_checkpoint(
-                native,
-                periodic,
-                provenance=_run_provenance(
-                    base_provenance,
-                    status="running" if completed_steps < steps else "complete",
-                    completed_steps=completed_steps,
-                    steps=steps,
-                    dt=dt,
-                ),
-                controller=controller_state(simulation),
-            )
+            periodic = periodic_by_step.get(completed_steps)
+            if periodic is not None:
+                finished = reached_cell_count or completed_steps == steps
+                save_checkpoint(
+                    native,
+                    periodic,
+                    provenance=_run_provenance(
+                        base_provenance,
+                        status="complete" if finished else "running",
+                        completed_steps=completed_steps,
+                        steps=steps,
+                        dt=dt,
+                        stop_reason=(
+                            "cell_count"
+                            if reached_cell_count
+                            else "step_limit"
+                            if completed_steps == steps
+                            else None
+                        ),
+                        stop_cell_count=stop_cell_count,
+                    ),
+                    controller=controller_state(simulation),
+                )
+                written_periodic.append(periodic)
+            if reached_cell_count:
+                stop_reason = "cell_count"
+                break
 
     save_checkpoint(
         native,
@@ -186,18 +233,22 @@ def run_simulation(
         provenance=_run_provenance(
             base_provenance,
             status="complete",
-            completed_steps=steps,
+            completed_steps=completed_steps,
             steps=steps,
             dt=dt,
+            stop_reason=stop_reason,
+            stop_cell_count=stop_cell_count,
         ),
         controller=controller_state(simulation),
     )
     return RunSummary(
-        completed_steps=steps,
+        completed_steps=completed_steps,
+        stop_reason=stop_reason,
+        cell_count_threshold=stop_cell_count,
         time=native.time,
         cell_count=native.cell_count,
         output=destination,
-        periodic_checkpoints=periodic_paths,
+        periodic_checkpoints=tuple(written_periodic),
     )
 
 

@@ -63,6 +63,8 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
     )
 
     assert summary.output == output
+    assert summary.stop_reason == "step_limit"
+    assert summary.cell_count_threshold is None
     assert summary.periodic_checkpoints == (tmp_path / "run.step-00000002.cm2.json",)
     assert summary.periodic_checkpoints[0].exists()
     assert progress_steps == [1, 2, 3]
@@ -82,6 +84,8 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
         "dt": 0.1,
         "requested_steps": 3,
         "status": "complete",
+        "stop_reason": "step_limit",
+        "stopping": {"cell_count": None, "maximum_steps": 3},
     }
 
     original_bytes = output.read_bytes()
@@ -102,6 +106,80 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
         provenance=second_provenance,
     )
     assert _document(second_output)["simulation"] == document["simulation"]
+
+
+def test_cell_count_threshold_can_finish_before_the_first_step(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = tmp_path / "model.py"
+    _write_model(model)
+    simulation, provenance = build_model(
+        model,
+        ModelContext(BackendKind.CPU, 0, seed=5),
+    )
+    output = tmp_path / "already-large-enough.cm2.json"
+    progress: list[int] = []
+
+    summary = run_simulation(
+        simulation,
+        steps=100,
+        dt=0.1,
+        output=output,
+        checkpoint_every=10,
+        stop_cell_count=1,
+        provenance=provenance,
+        progress=lambda value: progress.append(value.completed_steps),
+    )
+
+    assert summary.completed_steps == 0
+    assert summary.stop_reason == "cell_count"
+    assert summary.cell_count_threshold == 1
+    assert summary.periodic_checkpoints == ()
+    assert progress == []
+    assert load_checkpoint(output).time == 0.0
+    assert _document(output)["provenance"]["run"] == {
+        "completed_steps": 0,
+        "dt": 0.1,
+        "requested_steps": 100,
+        "status": "complete",
+        "stop_reason": "cell_count",
+        "stopping": {"cell_count": 1, "maximum_steps": 100},
+    }
+
+    cli_output = tmp_path / "cli-threshold.cm2.json"
+    assert (
+        main(
+            [
+                "run",
+                "--model",
+                str(model),
+                "--steps",
+                "100",
+                "--dt",
+                "0.1",
+                "--stop-cell-count",
+                "1",
+                "--output",
+                str(cli_output),
+                "--quiet",
+            ]
+        )
+        == 0
+    )
+    assert "steps=0" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("threshold", [0, -1, True, 1 << 64])
+def test_cell_count_threshold_must_be_positive_uint64(tmp_path: Path, threshold: int) -> None:
+    simulation = ModelContext(BackendKind.CPU, 0, seed=0).simulation()
+    with pytest.raises(BatchError, match="positive uint64"):
+        run_simulation(
+            simulation,
+            steps=1,
+            dt=0.1,
+            output=tmp_path / "invalid.cm2.json",
+            stop_cell_count=threshold,
+        )
 
 
 def test_cli_runs_models_resumes_and_lists_devices(
