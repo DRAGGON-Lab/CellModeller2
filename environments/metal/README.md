@@ -1,23 +1,26 @@
 # Metal environment
 
-The first native Metal vertical slice compiles its MSL growth kernel at runtime
-through `MTLDevice` and validates it against the CPU reference on real Apple GPU
-hardware. Run it with:
+The native Metal backend compiles its independent MSL kernels at runtime
+through `MTLDevice`. Validate the complete backend against the CPU reference on
+real Apple GPU hardware with:
 
 ```console
-cmake --preset metal-debug
-cmake --build --preset metal-debug
-ctest --preset metal-debug
+scripts/run_metal_conformance.sh
 ```
 
-Metal test reports should record the device, OS, Xcode, and shader compiler
-versions. Ahead-of-time metallib packaging will be added when the static kernel
-set begins to stabilize.
+Every Metal-enabled test build includes a mandatory `metal_runtime_gate`; it
+constructs each enumerated native device and therefore compiles every embedded
+MSL library. The runner requires a clean worktree, executes the complete CTest
+suite, and records the source commit, display-device inventory, macOS, Xcode,
+Clang, Metal framework, logs, JUnit results, and final status in a timestamped
+directory under `build/`.
 
-The contact geometry slice also runs native MSL count, inclusive-scan, and fill
-pipelines. Its current exhaustive pair staging is a correctness implementation,
-not the production broad phase; the feature ledger keeps that distinction
-explicit.
+The manually dispatched `Metal conformance` workflow runs the same gate on a
+self-hosted macOS runner with the custom `metal` label and always uploads its
+evidence. It has no pull-request trigger.
+
+Contact geometry uses deterministic sweep-and-prune capsule candidates followed
+by native MSL count, inclusive-scan, and fill pipelines.
 
 Rod mechanics uses native MSL Jacobian assembly, matrix-free `B` and `B^T`
 applications, vector updates, pairwise reductions, and a host-orchestrated CG

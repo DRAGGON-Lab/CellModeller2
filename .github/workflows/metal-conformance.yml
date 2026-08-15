@@ -1,0 +1,35 @@
+name: Metal conformance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metal-conformance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  conformance:
+    runs-on: [self-hosted, macos, metal]
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          clean: true
+          persist-credentials: false
+
+      - name: Run native Metal conformance
+        run: scripts/run_metal_conformance.sh build/metal-conformance-report
+
+      - name: Upload conformance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: metal-conformance-${{ github.sha }}
+          path: build/metal-conformance-report
+          if-no-files-found: error
+          retention-days: 90

@@ -16,6 +16,13 @@ runs the same fixture against each backend compiled into that build. Its exact
 state checks and numerical tolerances are recorded beside the test in
 `tests/conformance/README.md`.
 
+Every Metal-enabled test build includes `metal_runtime_gate`, which constructs
+each enumerated device and compiles every embedded MSL library. Run
+`scripts/run_metal_conformance.sh` on Apple hardware to preserve the exact
+commit, device and toolchain inventory, logs, JUnit results, and final status.
+The manual `Metal conformance` workflow routes this command to a self-hosted
+macOS runner with the custom `metal` label and always uploads the evidence.
+
 External constraint geometry begins with focused CPU fixtures covering plane
 normal normalization, one- and two-endpoint weighting, inside/outside sphere
 orientation, stable typed IDs, and deterministic sphere-center degeneracy.
@@ -153,10 +160,12 @@ checkpoint v6 persistence, migration of v1-through-v5 cells to movable state,
 the projected mechanics operator and right-hand side, and integration that
 rejects contact correction while retaining declared growth. The shared
 relaxation scenario passes on CPU and native Metal, including exact zero
-correction and unchanged geometry for the fixed cell. CUDA hardware execution
-remains required before CUDA fixed-cell support is claimed; the independent
-CUDA mask upload and projected mechanics kernels compile and link with the
-CUDA 12.8.1 toolkit.
+correction and unchanged geometry for the fixed cell. Native solver
+initialization projects the stored right-hand side itself so later exact
+residual recomputation cannot reintroduce a force on fixed cells. CUDA hardware
+execution remains required before CUDA fixed-cell support is claimed; the
+independent CUDA mask upload and projected mechanics kernels compile and link
+with the CUDA 12.8.1 toolkit.
 
 Analysis-export fixtures read the published artifacts back through PyArrow and
 Zarr rather than trusting writer completion. They verify explicit Arrow types,
