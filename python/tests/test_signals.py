@@ -83,14 +83,22 @@ def test_fixed_and_periodic_boundaries_are_explicit() -> None:
     _assert_levels(simulation.signal_levels, [0.5, 0.5, 0.0, 0.0])
 
 
-def test_unimplemented_gpu_signal_paths_fail_before_mutation() -> None:
+def test_gpu_signal_paths_are_native_or_fail_before_mutation() -> None:
+    spec = _line_spec()
+    reference = Simulation()
+    reference.configure_signal_grid(spec, [0.0, 1.0, 0.0])
+    reference.step(0.25)
     for backend in (BackendKind.METAL, BackendKind.CUDA):
         if not backend_available(backend):
             continue
         simulation = Simulation(backend)
-        simulation.configure_signal_grid(_line_spec(), [0.0, 1.0, 0.0])
-        assert not simulation.supports(BackendFeature.SIGNALS)
-        with pytest.raises(RuntimeError, match="does not implement signal grid"):
+        simulation.configure_signal_grid(spec, [0.0, 1.0, 0.0])
+        if simulation.supports(BackendFeature.SIGNALS):
             simulation.step(0.25)
-        assert simulation.time == 0.0
-        assert simulation.signal_levels == [0.0, 1.0, 0.0]
+            _assert_levels(simulation.signal_levels, reference.signal_levels)
+            assert simulation.time == reference.time
+        else:
+            with pytest.raises(RuntimeError, match="does not implement signal grid"):
+                simulation.step(0.25)
+            assert simulation.time == 0.0
+            assert simulation.signal_levels == [0.0, 1.0, 0.0]

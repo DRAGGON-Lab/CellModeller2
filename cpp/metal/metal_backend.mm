@@ -2,6 +2,7 @@
 #import <Metal/Metal.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -19,6 +20,7 @@
 #include "cm2/metal/contacts_source.hpp"
 #include "cm2/metal/growth_source.hpp"
 #include "cm2/metal/mechanics_source.hpp"
+#include "cm2/metal/signals_source.hpp"
 #include "cm2/metal/species_source.hpp"
 
 namespace cm2 {
@@ -39,6 +41,15 @@ struct alignas(16) MetalFloat4 {
 };
 
 static_assert(sizeof(MetalFloat4) == 16);
+
+struct alignas(16) MetalUInt4 {
+  std::uint32_t x;
+  std::uint32_t y;
+  std::uint32_t z;
+  std::uint32_t w;
+};
+
+static_assert(sizeof(MetalUInt4) == 16);
 
 struct alignas(16) MetalDofs {
   MetalFloat4 linear_length;
@@ -162,6 +173,11 @@ class MetalBackend final : public ComputeBackend {
       species_pipeline_ = compile_pipeline(device_, species_library, @"advance_species",
                                            "failed to create the Metal species pipeline");
 
+      const auto signals_library =
+          compile_library(device_, metal::signals_source, "failed to compile Metal signals");
+      signals_pipeline_ = compile_pipeline(device_, signals_library, @"advance_signal_grid",
+                                           "failed to create the Metal signals pipeline");
+
       const auto contacts_library =
           compile_library(device_, metal::contacts_source, "failed to compile Metal contacts");
       contact_count_pipeline_ =
@@ -228,7 +244,7 @@ class MetalBackend final : public ComputeBackend {
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
     return feature == BackendFeature::growth || feature == BackendFeature::species ||
            feature == BackendFeature::cell_contacts || feature == BackendFeature::cell_mechanics ||
-           feature == BackendFeature::external_constraints;
+           feature == BackendFeature::external_constraints || feature == BackendFeature::signals;
   }
 
   void advance_growth(WorldState& state, float dt) override {
@@ -381,8 +397,80 @@ class MetalBackend final : public ComputeBackend {
                 species_state.levels.size_bytes());
   }
 
-  void advance_signal_grid(SignalGrid&, float) override {
-    throw std::runtime_error("Metal backend does not implement signal grids yet");
+  void advance_signal_grid(SignalGrid& grid, float dt) override {
+    grid.validate();
+    grid.validate_step(dt);
+    if (dt == 0.0F) {
+      return;
+    }
+    const auto& spec = grid.spec();
+    const auto levels = grid.levels();
+    const auto level_count = static_cast<std::uint32_t>(levels.size());
+    const auto signal_count = spec.signal_count;
+    ensure_signal_capacity(levels.size(), signal_count);
+
+    std::memcpy(signal_levels_.contents, levels.data(), levels.size_bytes());
+    std::memcpy(signal_diffusion_.contents, spec.diffusion.data(),
+                spec.diffusion.size() * sizeof(float));
+    auto* advection = static_cast<MetalFloat4*>(signal_advection_.contents);
+    for (std::size_t signal = 0; signal < signal_count; ++signal) {
+      advection[signal] = {
+          spec.advection[signal].x,
+          spec.advection[signal].y,
+          spec.advection[signal].z,
+          0.0F,
+      };
+    }
+
+    const std::array<const GridBoundary*, 6> boundaries{
+        &spec.x_lower, &spec.x_upper, &spec.y_lower, &spec.y_upper, &spec.z_lower, &spec.z_upper,
+    };
+    auto* fixed_values = static_cast<float*>(signal_fixed_values_.contents);
+    std::fill_n(fixed_values, static_cast<std::size_t>(6) * signal_count, 0.0F);
+    std::array<std::uint32_t, 6> boundary_kinds{};
+    for (std::size_t face = 0; face < boundaries.size(); ++face) {
+      boundary_kinds[face] = static_cast<std::uint32_t>(boundaries[face]->kind);
+      if (boundaries[face]->kind == GridBoundaryKind::fixed) {
+        std::copy(boundaries[face]->values.begin(), boundaries[face]->values.end(),
+                  fixed_values + (face * signal_count));
+      }
+    }
+    *static_cast<std::uint32_t*>(signal_error_.contents) = 0;
+
+    const MetalUInt4 shape{spec.shape.x, spec.shape.y, spec.shape.z,
+                           static_cast<std::uint32_t>(spec.site_count())};
+    const MetalFloat4 spacing{spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F};
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal signal-grid command");
+      }
+      [encoder setComputePipelineState:signals_pipeline_];
+      [encoder setBuffer:signal_levels_ offset:0 atIndex:0];
+      [encoder setBuffer:signal_output_ offset:0 atIndex:1];
+      [encoder setBuffer:signal_diffusion_ offset:0 atIndex:2];
+      [encoder setBuffer:signal_advection_ offset:0 atIndex:3];
+      [encoder setBuffer:signal_fixed_values_ offset:0 atIndex:4];
+      [encoder setBuffer:signal_error_ offset:0 atIndex:5];
+      [encoder setBytes:boundary_kinds.data()
+                 length:boundary_kinds.size() * sizeof(std::uint32_t)
+                atIndex:6];
+      [encoder setBytes:&shape length:sizeof(shape) atIndex:7];
+      [encoder setBytes:&spacing length:sizeof(spacing) atIndex:8];
+      [encoder setBytes:&dt length:sizeof(dt) atIndex:9];
+      [encoder setBytes:&signal_count length:sizeof(signal_count) atIndex:10];
+      [encoder setBytes:&level_count length:sizeof(level_count) atIndex:11];
+      dispatch_1d(encoder, signals_pipeline_, level_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal signal-grid command failed");
+    }
+    if (*static_cast<const std::uint32_t*>(signal_error_.contents) != 0) {
+      throw std::domain_error(
+          "Metal signal-grid kernel produced a non-finite or negative concentration");
+    }
+    const auto* output = static_cast<const float*>(signal_output_.contents);
+    grid.replace_levels(std::vector<float>(output, output + levels.size()));
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -616,6 +704,28 @@ class MetalBackend final : public ComputeBackend {
     }
     if (species_error_ == nil) {
       species_error_ = allocate_shared_buffer(device_, sizeof(std::uint32_t), "species error flag");
+    }
+  }
+
+  void ensure_signal_capacity(std::size_t level_count, std::size_t signal_count) {
+    if (level_count > signal_level_capacity_) {
+      signal_level_capacity_ = std::bit_ceil(level_count);
+      const auto byte_count = signal_level_capacity_ * sizeof(float);
+      signal_levels_ = allocate_shared_buffer(device_, byte_count, "signal-grid levels");
+      signal_output_ = allocate_shared_buffer(device_, byte_count, "signal-grid output");
+    }
+    if (signal_count > signal_count_capacity_) {
+      signal_count_capacity_ = std::bit_ceil(signal_count);
+      signal_diffusion_ = allocate_shared_buffer(device_, signal_count_capacity_ * sizeof(float),
+                                                 "signal-grid diffusion");
+      signal_advection_ = allocate_shared_buffer(
+          device_, signal_count_capacity_ * sizeof(MetalFloat4), "signal-grid advection");
+      signal_fixed_values_ = allocate_shared_buffer(
+          device_, 6 * signal_count_capacity_ * sizeof(float), "signal-grid boundary values");
+    }
+    if (signal_error_ == nil) {
+      signal_error_ =
+          allocate_shared_buffer(device_, sizeof(std::uint32_t), "signal-grid error flag");
     }
   }
 
@@ -1323,6 +1433,7 @@ class MetalBackend final : public ComputeBackend {
   id<MTLCommandQueue> queue_{nil};
   id<MTLComputePipelineState> growth_pipeline_{nil};
   id<MTLComputePipelineState> species_pipeline_{nil};
+  id<MTLComputePipelineState> signals_pipeline_{nil};
   id<MTLComputePipelineState> contact_count_pipeline_{nil};
   id<MTLComputePipelineState> contact_scan_pipeline_{nil};
   id<MTLComputePipelineState> contact_fill_pipeline_{nil};
@@ -1358,6 +1469,15 @@ class MetalBackend final : public ComputeBackend {
   std::size_t species_instruction_capacity_{0};
   std::size_t species_output_capacity_{0};
   std::size_t species_workspace_capacity_{0};
+
+  id<MTLBuffer> signal_levels_{nil};
+  id<MTLBuffer> signal_output_{nil};
+  id<MTLBuffer> signal_diffusion_{nil};
+  id<MTLBuffer> signal_advection_{nil};
+  id<MTLBuffer> signal_fixed_values_{nil};
+  id<MTLBuffer> signal_error_{nil};
+  std::size_t signal_level_capacity_{0};
+  std::size_t signal_count_capacity_{0};
 
   id<MTLBuffer> contact_ids_{nil};
   id<MTLBuffer> contact_centers_{nil};

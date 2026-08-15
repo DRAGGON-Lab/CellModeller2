@@ -13,9 +13,9 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Plane and sphere constraints | `CLBacterium.cl` | typed constraint records; no sentinel cell IDs | CPU and native Metal geometry/mechanics conformant; native CUDA builds with hardware validation pending |
 | P0 | Mechanics solver | `CLBacterium` | regularized matrix-free CG/PCG with residual report | CPU and native Metal CG conformant; native CUDA builds with hardware validation pending |
 | P0 | Species Euler integration | `CLEulerIntegrator` | typed rate plan and growth dilution | CPU and native Metal conformant; native CUDA builds with hardware validation pending |
-| P0 | Grid signaling | `GridDiffusion` | diffusion, optional advection, declared boundaries | CPU reference implemented and checkpointed; native Metal/CUDA pending |
+| P0 | Grid signaling | `GridDiffusion` | diffusion, optional advection, declared boundaries | CPU and native Metal conformant and checkpointed; native CUDA pending |
 | P0 | Coupled cell/grid rates | signal integrators | device-resident sample, rate, scatter, and update | typed simultaneous-Euler contract accepted |
-| P0 | Checkpoint and exact resume | pickle output | versioned, non-executable checkpoint with provenance | JSON v1 exact restore implemented; CPU and Metal continuation conformant; CUDA hardware validation pending |
+| P0 | Checkpoint and exact resume | pickle output | versioned, non-executable checkpoint with provenance | JSON v2 exact restore and v1 migration implemented; CPU and Metal continuation conformant; CUDA hardware validation pending |
 | P0 | Batch execution | batch scripts | `cm2 run`, backend/device/seed selection | implemented with deterministic construction, collision preflight, periodic checkpoints, and provenance |
 | P1 | Legacy Python model adapter | module regulator | adapter for maintained `setup/init/update/divide` models | audit needed |
 | P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | audit needed |
