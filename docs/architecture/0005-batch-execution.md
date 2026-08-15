@@ -17,11 +17,13 @@ code chosen explicitly by the operator.
 
 ## Decision
 
-The `cm2` console command has two initial operations:
+The batch-facing `cm2` operations are:
 
 - `cm2 devices` enumerates native CPU, Metal, and CUDA devices; and
 - `cm2 run` either executes a Python file supplied with `--model` or restores a
-  data-only checkpoint supplied with `--resume`.
+  data-only checkpoint supplied with `--resume`; and
+- `cm2 run-manifest` executes exactly one named job from a strict data-only
+  experiment manifest.
 
 A Python model exports `build(context)` and returns a `Simulation` created by
 `context.simulation()`. The context owns the selected backend and device, an
@@ -53,6 +55,19 @@ construction is reproducible when the model
 uses `context.rng`; runtime stochastic mechanisms will receive explicit engine
 random streams in a later feature slice.
 
+A run manifest contains an explicit ID, model path and SHA-256, backend,
+device, seed, JSON parameter map, maximum steps, time step, optional cell-count
+threshold, checkpoint interval, and output path for every job. Relative paths
+resolve from the manifest directory. IDs and all potential final/periodic
+outputs are disjoint. Parsing is closed-schema JSON and does not load model
+code. When a selected job executes, its exact model bytes are checked against
+the declared digest before compilation. The manifest path, file digest, and job
+ID enter checkpoint provenance.
+
+One invocation executes one job. Parallelism, retries, resource requests, and
+job placement remain responsibilities of a caller-chosen scheduler rather than
+a second scheduler embedded in CellModeller2.
+
 ## Consequences
 
 - Batch jobs have one inspectable entry point and stable exit behavior.
@@ -63,3 +78,5 @@ random streams in a later feature slice.
   checkpoint input.
 - Scheduling systems can treat periodic checkpoints as independent restart
   points without parsing process logs.
+- Experiment plans are reviewable data, while model execution remains an
+  explicit trusted-code action with a pre-execution digest check.

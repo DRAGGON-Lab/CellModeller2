@@ -253,7 +253,10 @@ def run_simulation(
 
 
 def build_model(
-    path: str | Path, context: ModelContext
+    path: str | Path,
+    context: ModelContext,
+    *,
+    expected_sha256: str | None = None,
 ) -> tuple[Simulation, dict[str, JSONValue]]:
     """Execute an explicit Python model file and call its ``build`` function."""
 
@@ -263,6 +266,8 @@ def build_model(
     except OSError as error:
         raise BatchError(f"could not read model {source_path}") from error
     digest = hashlib.sha256(source).hexdigest()
+    if expected_sha256 is not None and digest != expected_sha256:
+        raise BatchError(f"model digest does not match manifest: {source_path}")
     module_name = f"_cellmodeller2_model_{digest[:16]}"
     module = ModuleType(module_name)
     module.__file__ = str(source_path)

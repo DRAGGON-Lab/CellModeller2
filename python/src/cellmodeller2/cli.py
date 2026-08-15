@@ -104,6 +104,15 @@ def _parser() -> argparse.ArgumentParser:
         help="record absolute checkpoint paths in the manifest",
     )
     analysis.add_argument("--overwrite", action="store_true")
+
+    manifest = commands.add_parser(
+        "run-manifest", help="execute one named job from a data-only run manifest"
+    )
+    manifest.add_argument("manifest", type=Path)
+    manifest.add_argument("--job", required=True, help="stable job ID to execute")
+    manifest.add_argument("--progress-every", type=int, default=100)
+    manifest.add_argument("--overwrite", action="store_true")
+    manifest.add_argument("--quiet", action="store_true")
     return parser
 
 
@@ -424,6 +433,25 @@ def _export_analysis(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_manifest(arguments: argparse.Namespace) -> int:
+    from .run_manifest import execute_run_job, load_run_manifest
+
+    manifest = load_run_manifest(cast(Path, arguments.manifest))
+    summary = execute_run_job(
+        manifest,
+        cast(str, arguments.job),
+        overwrite=cast(bool, arguments.overwrite),
+        progress=_progress_printer(
+            cast(int, arguments.progress_every), cast(bool, arguments.quiet)
+        ),
+    )
+    print(
+        f"wrote {summary.output} steps={summary.completed_steps} "
+        f"time={summary.time:.9g} cells={summary.cell_count} stop={summary.stop_reason}"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the ``cm2`` command and return its process status."""
 
@@ -437,6 +465,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _view(arguments)
         if arguments.command == "export-analysis":
             return _export_analysis(arguments)
+        if arguments.command == "run-manifest":
+            return _run_manifest(arguments)
         return _run(arguments)
     except (
         BatchError,

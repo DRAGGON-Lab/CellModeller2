@@ -53,6 +53,16 @@ from .checkpoint import (
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
 from .legacy_loader import build_legacy_model, resume_legacy_model
 from .legacy_pickle import LegacyPickleError, LegacyPickleImport, import_legacy_pickle
+from .run_manifest import (
+    MAX_RUN_MANIFEST_BYTES,
+    RUN_MANIFEST_FORMAT,
+    RUN_MANIFEST_VERSION,
+    RunJob,
+    RunManifest,
+    RunManifestError,
+    execute_run_job,
+    load_run_manifest,
+)
 from .runner import (
     BatchError,
     ModelContext,
@@ -84,7 +94,10 @@ from .scene import (
 __all__ = [
     "CHECKPOINT_FORMAT",
     "CHECKPOINT_VERSION",
+    "MAX_RUN_MANIFEST_BYTES",
     "MAX_SCENE_BYTES",
+    "RUN_MANIFEST_FORMAT",
+    "RUN_MANIFEST_VERSION",
     "SCENE_FORMAT",
     "SCENE_VERSION",
     "BackendFeature",
@@ -121,6 +134,9 @@ __all__ = [
     "RateInstruction",
     "RateOp",
     "RodEndpoint",
+    "RunJob",
+    "RunManifest",
+    "RunManifestError",
     "RunProgress",
     "RunStopReason",
     "RunSummary",
@@ -151,9 +167,11 @@ __all__ = [
     "build_model",
     "capture_scene",
     "dumps_scene",
+    "execute_run_job",
     "import_legacy_pickle",
     "load_checkpoint",
     "load_checkpoint_bundle",
+    "load_run_manifest",
     "load_sbml",
     "load_scene",
     "parse_sbml",

@@ -252,6 +252,22 @@ The final checkpoint records the requested maximum, actual completed steps,
 threshold, and whether `step_limit` or `cell_count` ended the run. This replaces
 legacy termination tied indirectly to preallocated cell capacity.
 
+Parameter sweeps and replicates can be declared as strict data rather than
+hard-coded shell or Python loops. Each run-manifest job fixes its ID, model
+path and digest, backend/device, seed, JSON parameters, complete stopping rule,
+checkpoint interval, and output path. Execute one named job per scheduler task:
+
+```console
+uv run cm2 run-manifest experiments/gamma.cm2.runs.json \
+  --job gamma-0.10-replicate-001
+```
+
+Manifest parsing never imports a model, and execution checks the model digest
+before compilation. Relative paths resolve from the manifest location, output
+names are checked for cross-job periodic collisions, and the manifest/job
+identity enters checkpoint provenance. See the
+[run manifest v1 format](docs/formats/run-manifest-v1.md).
+
 Resume a data-only checkpoint on any available backend:
 
 ```console

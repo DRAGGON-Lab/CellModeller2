@@ -90,6 +90,13 @@ initially satisfied threshold, an actual legacy division crossing the
 threshold, maximum-step provenance, completed-periodic reporting, and rejection
 of zero, negative, boolean, or overflowing thresholds.
 
+Run-manifest fixtures prove that loading a manifest has no model side effects,
+then execute exactly one selected job through the CLI. They verify manifest and
+job provenance, relative path resolution, duplicate IDs, invalid fields,
+non-finite parameters, final/periodic cross-job collisions, and duplicate JSON
+keys. A mismatch fixture uses a model with an import-time filesystem side
+effect and confirms its declared digest fails before that code executes.
+
 Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
 reservoir values, periodic upwind advection, reduced-dimensional and 3D
 trilinear samples, paired-periodic validation, explicit stability rejection,
