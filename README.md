@@ -144,3 +144,6 @@ The checkpoint schema and exact-resume boundary are specified in
 [ADR 0004](docs/architecture/0004-checkpoints.md).
 The command-line model and batch-run contract is specified in
 [ADR 0005](docs/architecture/0005-batch-execution.md).
+The grid transport and conservative cell-coupling contract is specified in
+[ADR 0006](docs/architecture/0006-grid-signaling.md) and grounded in the
+[legacy signaling audit](docs/compatibility/legacy-signaling-audit.md).
