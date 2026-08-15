@@ -31,8 +31,17 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     Vec3,
     backend_available,
 )
+from .checkpoint import (
+    CHECKPOINT_FORMAT,
+    CHECKPOINT_VERSION,
+    CheckpointError,
+    load_checkpoint,
+    save_checkpoint,
+)
 
 __all__ = [
+    "CHECKPOINT_FORMAT",
+    "CHECKPOINT_VERSION",
     "BackendFeature",
     "BackendInfo",
     "BackendKind",
@@ -40,6 +49,7 @@ __all__ = [
     "CellCorrection",
     "CellInit",
     "CellSnapshot",
+    "CheckpointError",
     "ConstraintContactParameters",
     "ContactGraph",
     "ContactParameters",
@@ -62,6 +72,8 @@ __all__ = [
     "SphereRegion",
     "Vec3",
     "backend_available",
+    "load_checkpoint",
+    "save_checkpoint",
 ]
 
 __version__ = "0.1.0"

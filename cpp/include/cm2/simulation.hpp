@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "cm2/backend.hpp"
+#include "cm2/checkpoint.hpp"
 
 namespace cm2 {
 
@@ -14,6 +15,7 @@ class Simulation {
  public:
   explicit Simulation(BackendKind backend = BackendKind::cpu, std::size_t reserved_capacity = 0,
                       std::size_t species_count = 0);
+  Simulation(BackendKind backend, const SimulationCheckpoint& checkpoint);
 
   [[nodiscard]] BackendInfo backend_info() const;
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept;
@@ -46,6 +48,7 @@ class Simulation {
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;
   [[nodiscard]] std::optional<CellId> lineage_parent(CellId id) const noexcept;
+  [[nodiscard]] SimulationCheckpoint checkpoint() const;
   void validate() const;
 
  private:

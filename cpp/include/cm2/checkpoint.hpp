@@ -1,0 +1,23 @@
+#pragma once
+
+#include <cstdint>
+
+#include "cm2/constraints.hpp"
+#include "cm2/species.hpp"
+#include "cm2/world_state.hpp"
+
+namespace cm2 {
+
+inline constexpr std::uint32_t checkpoint_schema_version = 1;
+
+struct SimulationCheckpoint {
+  std::uint32_t schema_version{checkpoint_schema_version};
+  double time{0.0};
+  WorldStateCheckpoint world;
+  ConstraintSetCheckpoint constraints;
+  SpeciesRatePlan species_rate_plan;
+
+  void validate() const;
+};
+
+}  // namespace cm2

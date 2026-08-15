@@ -18,6 +18,7 @@ The initial slice establishes:
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
+- versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
 - typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
 - matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
@@ -49,6 +50,19 @@ declared instruction, legacy-compatible effective-volume dilution, and
 simultaneous Euler updates. CUDA has an independent native interpreter that
 compiles against the 12.8 toolkit; the same shared scenario still needs to run
 on NVIDIA hardware before CUDA species conformance is claimed.
+
+Checkpoints preserve compact slot order, stable identity allocation, complete
+lineage, constraints, species rates, concentrations, geometry, and simulation
+time. They contain data only: loading never imports a model or evaluates source
+text. Writes use an atomic replace and each file carries a SHA-256 digest over
+the simulation payload.
+
+```python
+from cellmodeller2 import load_checkpoint, save_checkpoint
+
+save_checkpoint(simulation, "run.cm2.json", provenance={"model": "colony-a"})
+resumed = load_checkpoint("run.cm2.json")
+```
 
 ## Build the C++ reference tests
 
@@ -82,3 +96,5 @@ redesign is specified in [ADR 0002](docs/architecture/0002-contact-mechanics.md)
 and grounded in the [legacy mechanics audit](docs/compatibility/legacy-mechanics-audit.md).
 The species state and rate representation is specified in
 [ADR 0003](docs/architecture/0003-species-rates.md).
+The checkpoint schema and exact-resume boundary are specified in
+[ADR 0004](docs/architecture/0004-checkpoints.md).

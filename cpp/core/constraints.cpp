@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace cm2 {
@@ -15,6 +16,64 @@ bool finite(const Vec3& value) {
 void validate_coefficient(float coefficient) {
   if (!std::isfinite(coefficient) || coefficient <= 0.0F) {
     throw std::invalid_argument("constraint coefficient must be finite and positive");
+  }
+}
+
+void validate_plane(const PlaneConstraint& plane) {
+  if (plane.id == invalid_constraint_id || !finite(plane.point) || !finite(plane.inward_normal)) {
+    throw std::invalid_argument("checkpoint plane contains an invalid field");
+  }
+  validate_coefficient(plane.coefficient);
+  if (std::abs(norm(plane.inward_normal) - 1.0F) > 1.0e-5F) {
+    throw std::invalid_argument("checkpoint plane inward normal is not normalized");
+  }
+}
+
+void validate_sphere(const SphereConstraint& sphere) {
+  if (sphere.id == invalid_constraint_id || !finite(sphere.center) ||
+      !std::isfinite(sphere.radius) || sphere.radius <= 0.0F) {
+    throw std::invalid_argument("checkpoint sphere contains invalid geometry");
+  }
+  validate_coefficient(sphere.coefficient);
+  switch (sphere.allowed_region) {
+    case SphereRegion::outside:
+    case SphereRegion::inside:
+      return;
+  }
+  throw std::invalid_argument("checkpoint sphere uses an unknown allowed region");
+}
+
+void validate_constraint_state(ConstraintId next_id, std::span<const PlaneConstraint> planes,
+                               std::span<const SphereConstraint> spheres) {
+  if (next_id == invalid_constraint_id) {
+    throw std::invalid_argument("checkpoint next constraint identifier is invalid");
+  }
+  if (spheres.size() > std::numeric_limits<std::size_t>::max() - planes.size()) {
+    throw std::overflow_error("checkpoint constraint count overflow");
+  }
+  std::unordered_set<ConstraintId> ids;
+  ids.reserve(planes.size() + spheres.size());
+  ConstraintId previous_plane = invalid_constraint_id;
+  for (const auto& plane : planes) {
+    validate_plane(plane);
+    if (plane.id <= previous_plane || plane.id >= next_id) {
+      throw std::invalid_argument("checkpoint plane identifiers are not ordered and allocated");
+    }
+    if (!ids.insert(plane.id).second) {
+      throw std::invalid_argument("checkpoint contains a duplicate constraint identifier");
+    }
+    previous_plane = plane.id;
+  }
+  ConstraintId previous_sphere = invalid_constraint_id;
+  for (const auto& sphere : spheres) {
+    validate_sphere(sphere);
+    if (sphere.id <= previous_sphere || sphere.id >= next_id) {
+      throw std::invalid_argument("checkpoint sphere identifiers are not ordered and allocated");
+    }
+    if (!ids.insert(sphere.id).second) {
+      throw std::invalid_argument("checkpoint contains a duplicate constraint identifier");
+    }
+    previous_sphere = sphere.id;
   }
 }
 
@@ -44,6 +103,15 @@ void validate_contact(const ExternalContact& contact, std::size_t cell_count) {
 }
 
 }  // namespace
+
+void ConstraintSetCheckpoint::validate() const {
+  validate_constraint_state(next_id, planes, spheres);
+}
+
+ConstraintSet::ConstraintSet(const ConstraintSetCheckpoint& checkpoint)
+    : next_id_(checkpoint.next_id), planes_(checkpoint.planes), spheres_(checkpoint.spheres) {
+  checkpoint.validate();
+}
 
 ConstraintId ConstraintSet::allocate_id() {
   if (next_id_ == invalid_constraint_id || next_id_ == std::numeric_limits<ConstraintId>::max()) {
@@ -94,6 +162,18 @@ bool ConstraintSet::empty() const noexcept { return planes_.empty() && spheres_.
 std::span<const PlaneConstraint> ConstraintSet::planes() const& noexcept { return planes_; }
 
 std::span<const SphereConstraint> ConstraintSet::spheres() const& noexcept { return spheres_; }
+
+ConstraintSetCheckpoint ConstraintSet::checkpoint() const {
+  ConstraintSetCheckpoint result{
+      .next_id = next_id_,
+      .planes = planes_,
+      .spheres = spheres_,
+  };
+  result.validate();
+  return result;
+}
+
+void ConstraintSet::validate() const { validate_constraint_state(next_id_, planes_, spheres_); }
 
 void validate_constraint_contact_parameters(const ConstraintContactParameters& parameters) {
   if (!std::isfinite(parameters.activation_margin) || parameters.activation_margin < 0.0F) {

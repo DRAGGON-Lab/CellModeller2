@@ -26,6 +26,11 @@ std::unique_ptr<ComputeBackend> make_backend(BackendKind kind) {
   throw std::runtime_error("unknown compute backend");
 }
 
+const SimulationCheckpoint& validated_checkpoint(const SimulationCheckpoint& checkpoint) {
+  checkpoint.validate();
+  return checkpoint;
+}
+
 }  // namespace
 
 bool backend_available(BackendKind kind) noexcept {
@@ -50,6 +55,15 @@ Simulation::Simulation(BackendKind backend, std::size_t reserved_capacity,
     : state_(reserved_capacity, species_count),
       backend_(make_backend(backend)),
       species_rate_plan_(SpeciesRatePlan::zero(species_count)) {}
+
+Simulation::Simulation(BackendKind backend, const SimulationCheckpoint& checkpoint)
+    : state_(validated_checkpoint(checkpoint).world),
+      constraints_(checkpoint.constraints),
+      backend_(make_backend(backend)),
+      species_rate_plan_(checkpoint.species_rate_plan),
+      time_(checkpoint.time) {
+  validate();
+}
 
 BackendInfo Simulation::backend_info() const { return backend_->info(); }
 
@@ -154,6 +168,29 @@ std::optional<CellId> Simulation::lineage_parent(CellId id) const noexcept {
   return state_.lineage_parent(id);
 }
 
-void Simulation::validate() const { state_.validate(); }
+SimulationCheckpoint Simulation::checkpoint() const {
+  validate();
+  SimulationCheckpoint result{
+      .schema_version = checkpoint_schema_version,
+      .time = time_,
+      .world = state_.checkpoint(),
+      .constraints = constraints_.checkpoint(),
+      .species_rate_plan = species_rate_plan_,
+  };
+  result.validate();
+  return result;
+}
+
+void Simulation::validate() const {
+  state_.validate();
+  constraints_.validate();
+  species_rate_plan_.validate();
+  if (!std::isfinite(time_) || time_ < 0.0) {
+    throw std::logic_error("simulation time must be finite and non-negative");
+  }
+  if (species_rate_plan_.species_count() != state_.species_count()) {
+    throw std::logic_error("simulation rate plan and world species counts disagree");
+  }
+}
 
 }  // namespace cm2

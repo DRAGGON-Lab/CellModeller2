@@ -18,6 +18,7 @@ endif()
 option(CM2_ENABLE_METAL "Build the native Apple Metal backend" ${CM2_METAL_DEFAULT})
 
 add_library(cm2_core STATIC
+  cpp/core/checkpoint.cpp
   cpp/core/contact_graph.cpp
   cpp/core/constraints.cpp
   cpp/core/mechanics_integration.cpp
@@ -182,6 +183,11 @@ if(CM2_BUILD_TESTS)
   add_executable(cm2_species_test tests/cpp/species_test.cpp)
   target_link_libraries(cm2_species_test PRIVATE cm2::core)
   add_test(NAME species COMMAND cm2_species_test)
+
+  add_executable(cm2_checkpoint_test tests/cpp/checkpoint_test.cpp)
+  target_link_libraries(cm2_checkpoint_test PRIVATE cm2::core)
+  add_test(NAME checkpoint COMMAND cm2_checkpoint_test)
+  set_tests_properties(checkpoint PROPERTIES LABELS conformance)
 
   add_executable(cm2_growth_conformance_test tests/conformance/growth_conformance_test.cpp)
   target_link_libraries(cm2_growth_conformance_test PRIVATE cm2::core)

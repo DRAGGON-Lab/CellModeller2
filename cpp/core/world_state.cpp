@@ -6,6 +6,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace cm2 {
 namespace {
@@ -55,6 +56,88 @@ WorldState::WorldState(std::size_t reserved_capacity, std::size_t species_count)
   species_.reserve(reserved_capacity * species_count);
   id_to_slot_.reserve(reserved_capacity);
   lineage_.reserve(reserved_capacity);
+}
+
+void WorldStateCheckpoint::validate() const {
+  if (next_id == invalid_cell_id) {
+    throw std::invalid_argument("checkpoint next cell identifier is invalid");
+  }
+  if (cells.size() > static_cast<std::size_t>(invalid_slot)) {
+    throw std::overflow_error("checkpoint exceeds the cell slot space");
+  }
+  if (species_count != 0 &&
+      cells.size() > std::numeric_limits<std::size_t>::max() / species_count) {
+    throw std::overflow_error("checkpoint species storage size overflow");
+  }
+
+  std::unordered_set<CellId> active_ids;
+  active_ids.reserve(cells.size());
+  for (std::size_t index = 0; index < cells.size(); ++index) {
+    const auto& cell = cells[index];
+    if (cell.slot != static_cast<Slot>(index)) {
+      throw std::invalid_argument("checkpoint cell slots are not compact and ordered");
+    }
+    if (cell.id == invalid_cell_id || cell.id >= next_id) {
+      throw std::invalid_argument("checkpoint cell identifier is outside the allocated range");
+    }
+    if (!active_ids.insert(cell.id).second) {
+      throw std::invalid_argument("checkpoint contains a duplicate active cell identifier");
+    }
+    if (cell.species.size() != species_count) {
+      throw std::invalid_argument("checkpoint cell species count does not match the world");
+    }
+    validate_cell(
+        {
+            .position = cell.position,
+            .direction = cell.direction,
+            .length = cell.length,
+            .radius = cell.radius,
+            .growth_rate = cell.growth_rate,
+            .cell_type = cell.cell_type,
+            .species = cell.species,
+        },
+        species_count);
+    if (std::abs(norm(cell.direction) - 1.0F) > 1.0e-5F) {
+      throw std::invalid_argument("checkpoint cell direction is not normalized");
+    }
+  }
+
+  std::unordered_set<CellId> lineage_children;
+  lineage_children.reserve(lineage.size());
+  for (const auto& entry : lineage) {
+    if (entry.child == invalid_cell_id || entry.parent == invalid_cell_id ||
+        entry.parent >= entry.child || entry.child >= next_id) {
+      throw std::invalid_argument("checkpoint lineage violates monotonic cell identity");
+    }
+    if (!lineage_children.insert(entry.child).second) {
+      throw std::invalid_argument("checkpoint contains a duplicate lineage child");
+    }
+  }
+}
+
+WorldState::WorldState(const WorldStateCheckpoint& checkpoint)
+    : WorldState(checkpoint.cells.size(), checkpoint.species_count) {
+  checkpoint.validate();
+  next_id_ = checkpoint.next_id;
+  for (const auto& cell : checkpoint.cells) {
+    ids_.push_back(cell.id);
+    position_x_.push_back(cell.position.x);
+    position_y_.push_back(cell.position.y);
+    position_z_.push_back(cell.position.z);
+    direction_x_.push_back(cell.direction.x);
+    direction_y_.push_back(cell.direction.y);
+    direction_z_.push_back(cell.direction.z);
+    length_.push_back(cell.length);
+    radius_.push_back(cell.radius);
+    growth_rate_.push_back(cell.growth_rate);
+    cell_type_.push_back(cell.cell_type);
+    species_.insert(species_.end(), cell.species.begin(), cell.species.end());
+    id_to_slot_.emplace(cell.id, cell.slot);
+  }
+  for (const auto& entry : checkpoint.lineage) {
+    lineage_.emplace(entry.child, entry.parent);
+  }
+  validate();
 }
 
 std::size_t WorldState::size() const noexcept { return ids_.size(); }
@@ -295,6 +378,23 @@ std::optional<CellId> WorldState::lineage_parent(CellId id) const noexcept {
   return found->second;
 }
 
+WorldStateCheckpoint WorldState::checkpoint() const {
+  validate();
+  WorldStateCheckpoint result{
+      .species_count = species_count_,
+      .next_id = next_id_,
+      .cells = cells(),
+      .lineage = {},
+  };
+  result.lineage.reserve(lineage_.size());
+  for (const auto& [child, parent] : lineage_) {
+    result.lineage.push_back({.child = child, .parent = parent});
+  }
+  std::ranges::sort(result.lineage, {}, &LineageEntry::child);
+  result.validate();
+  return result;
+}
+
 void WorldState::validate() const {
   const auto expected = ids_.size();
   const std::array sizes{
@@ -317,10 +417,16 @@ void WorldState::validate() const {
   if (!std::ranges::all_of(species_, [](float value) { return std::isfinite(value); })) {
     throw std::logic_error("world species levels must be finite");
   }
+  if (next_id_ == invalid_cell_id) {
+    throw std::logic_error("world next cell identifier is invalid");
+  }
   for (std::size_t index = 0; index < expected; ++index) {
     const auto id = ids_[index];
     if (id == invalid_cell_id) {
       throw std::logic_error("active cell has an invalid identifier");
+    }
+    if (id >= next_id_) {
+      throw std::logic_error("active cell identifier is outside the allocated range");
     }
     const auto found = id_to_slot_.find(id);
     if (found == id_to_slot_.end() || found->second != static_cast<Slot>(index)) {
@@ -338,6 +444,12 @@ void WorldState::validate() const {
     validate_cell(value, species_count_);
     if (std::abs(norm(value.direction) - 1.0F) > 1.0e-5F) {
       throw std::logic_error("cell direction is not normalized");
+    }
+  }
+  for (const auto& [child, parent] : lineage_) {
+    if (child == invalid_cell_id || parent == invalid_cell_id || parent >= child ||
+        child >= next_id_) {
+      throw std::logic_error("world lineage violates monotonic cell identity");
     }
   }
 }

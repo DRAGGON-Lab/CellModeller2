@@ -101,15 +101,29 @@ NB_MODULE(_core, module) {
       .def_rw("species", &cm2::CellInit::species);
 
   nb::class_<cm2::CellSnapshot>(module, "CellSnapshot")
-      .def_ro("id", &cm2::CellSnapshot::id)
-      .def_ro("slot", &cm2::CellSnapshot::slot)
-      .def_ro("position", &cm2::CellSnapshot::position)
-      .def_ro("direction", &cm2::CellSnapshot::direction)
-      .def_ro("length", &cm2::CellSnapshot::length)
-      .def_ro("radius", &cm2::CellSnapshot::radius)
-      .def_ro("growth_rate", &cm2::CellSnapshot::growth_rate)
-      .def_ro("cell_type", &cm2::CellSnapshot::cell_type)
-      .def_ro("species", &cm2::CellSnapshot::species);
+      .def(nb::init<>())
+      .def_rw("id", &cm2::CellSnapshot::id)
+      .def_rw("slot", &cm2::CellSnapshot::slot)
+      .def_rw("position", &cm2::CellSnapshot::position)
+      .def_rw("direction", &cm2::CellSnapshot::direction)
+      .def_rw("length", &cm2::CellSnapshot::length)
+      .def_rw("radius", &cm2::CellSnapshot::radius)
+      .def_rw("growth_rate", &cm2::CellSnapshot::growth_rate)
+      .def_rw("cell_type", &cm2::CellSnapshot::cell_type)
+      .def_rw("species", &cm2::CellSnapshot::species);
+
+  nb::class_<cm2::LineageEntry>(module, "_LineageEntry")
+      .def(nb::init<>())
+      .def_rw("child", &cm2::LineageEntry::child)
+      .def_rw("parent", &cm2::LineageEntry::parent);
+
+  nb::class_<cm2::WorldStateCheckpoint>(module, "_WorldStateCheckpoint")
+      .def(nb::init<>())
+      .def_rw("species_count", &cm2::WorldStateCheckpoint::species_count)
+      .def_rw("next_id", &cm2::WorldStateCheckpoint::next_id)
+      .def_rw("cells", &cm2::WorldStateCheckpoint::cells)
+      .def_rw("lineage", &cm2::WorldStateCheckpoint::lineage)
+      .def("validate", &cm2::WorldStateCheckpoint::validate);
 
   nb::class_<cm2::RateInstruction>(module, "RateInstruction")
       .def(nb::init<>())
@@ -183,6 +197,37 @@ NB_MODULE(_core, module) {
       .def_rw("coefficient", &cm2::SphereConstraintInit::coefficient)
       .def_rw("allowed_region", &cm2::SphereConstraintInit::allowed_region);
 
+  nb::class_<cm2::PlaneConstraint>(module, "_PlaneConstraint")
+      .def(nb::init<>())
+      .def_rw("id", &cm2::PlaneConstraint::id)
+      .def_rw("point", &cm2::PlaneConstraint::point)
+      .def_rw("inward_normal", &cm2::PlaneConstraint::inward_normal)
+      .def_rw("coefficient", &cm2::PlaneConstraint::coefficient);
+
+  nb::class_<cm2::SphereConstraint>(module, "_SphereConstraint")
+      .def(nb::init<>())
+      .def_rw("id", &cm2::SphereConstraint::id)
+      .def_rw("center", &cm2::SphereConstraint::center)
+      .def_rw("radius", &cm2::SphereConstraint::radius)
+      .def_rw("coefficient", &cm2::SphereConstraint::coefficient)
+      .def_rw("allowed_region", &cm2::SphereConstraint::allowed_region);
+
+  nb::class_<cm2::ConstraintSetCheckpoint>(module, "_ConstraintSetCheckpoint")
+      .def(nb::init<>())
+      .def_rw("next_id", &cm2::ConstraintSetCheckpoint::next_id)
+      .def_rw("planes", &cm2::ConstraintSetCheckpoint::planes)
+      .def_rw("spheres", &cm2::ConstraintSetCheckpoint::spheres)
+      .def("validate", &cm2::ConstraintSetCheckpoint::validate);
+
+  nb::class_<cm2::SimulationCheckpoint>(module, "_SimulationCheckpoint")
+      .def(nb::init<>())
+      .def_rw("schema_version", &cm2::SimulationCheckpoint::schema_version)
+      .def_rw("time", &cm2::SimulationCheckpoint::time)
+      .def_rw("world", &cm2::SimulationCheckpoint::world)
+      .def_rw("constraints", &cm2::SimulationCheckpoint::constraints)
+      .def_rw("species_rate_plan", &cm2::SimulationCheckpoint::species_rate_plan)
+      .def("validate", &cm2::SimulationCheckpoint::validate);
+
   nb::class_<cm2::ConstraintContactParameters>(module, "ConstraintContactParameters")
       .def(nb::init<>())
       .def_rw("activation_margin", &cm2::ConstraintContactParameters::activation_margin)
@@ -247,6 +292,8 @@ NB_MODULE(_core, module) {
   nb::class_<cm2::Simulation>(module, "Simulation")
       .def(nb::init<cm2::BackendKind, std::size_t, std::size_t>(),
            "backend"_a = cm2::BackendKind::cpu, "reserved_capacity"_a = 0, "species_count"_a = 0)
+      .def(nb::init<cm2::BackendKind, const cm2::SimulationCheckpoint&>(), "backend"_a,
+           "checkpoint"_a)
       .def_prop_ro("backend_info", &cm2::Simulation::backend_info)
       .def("supports", &cm2::Simulation::supports, "feature"_a)
       .def_prop_ro("time", &cm2::Simulation::time)
@@ -280,5 +327,6 @@ NB_MODULE(_core, module) {
       .def("cell", &cm2::Simulation::cell, "id"_a)
       .def("cells", &cm2::Simulation::cells)
       .def("lineage_parent", &cm2::Simulation::lineage_parent, "id"_a)
+      .def("_checkpoint", &cm2::Simulation::checkpoint)
       .def("validate", &cm2::Simulation::validate);
 }

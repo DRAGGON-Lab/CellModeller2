@@ -56,8 +56,19 @@ struct SphereConstraint {
   SphereRegion allowed_region{SphereRegion::outside};
 };
 
+struct ConstraintSetCheckpoint {
+  ConstraintId next_id{1};
+  std::vector<PlaneConstraint> planes;
+  std::vector<SphereConstraint> spheres;
+
+  void validate() const;
+};
+
 class ConstraintSet {
  public:
+  ConstraintSet() = default;
+  explicit ConstraintSet(const ConstraintSetCheckpoint& checkpoint);
+
   ConstraintId add_plane(const PlaneConstraintInit& plane);
   ConstraintId add_sphere(const SphereConstraintInit& sphere);
 
@@ -67,6 +78,8 @@ class ConstraintSet {
   [[nodiscard]] std::span<const PlaneConstraint> planes() && = delete;
   [[nodiscard]] std::span<const SphereConstraint> spheres() const& noexcept;
   [[nodiscard]] std::span<const SphereConstraint> spheres() && = delete;
+  [[nodiscard]] ConstraintSetCheckpoint checkpoint() const;
+  void validate() const;
 
  private:
   [[nodiscard]] ConstraintId allocate_id();

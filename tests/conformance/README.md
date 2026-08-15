@@ -36,6 +36,15 @@ daughter geometry, inherited cell attributes, and simulation time are checked.
 Floating-point length and position checks use the same `1e-6` absolute and
 relative tolerances as the growth scenario; lifecycle identities are exact.
 
+## Checkpoint conformance scenario
+
+The checkpoint scenario captures a divided colony with a typed species plan,
+mixed constraints, inactive ancestry, and nontrivial identity frontiers. Every
+available backend must restore all persisted host fields exactly, then execute
+the next growth/species step within `1e-5` of a fresh CPU restore. The Python
+suite separately verifies the JSON envelope, atomic write behavior, provenance,
+integrity digest, and malformed-input rejection.
+
 ## Contact conformance scenario
 
 The contact scenario compares each contact-capable backend with the exhaustive

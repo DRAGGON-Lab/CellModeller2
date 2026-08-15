@@ -34,6 +34,20 @@ struct CellSnapshot {
   std::vector<float> species;
 };
 
+struct LineageEntry {
+  CellId child{invalid_cell_id};
+  CellId parent{invalid_cell_id};
+};
+
+struct WorldStateCheckpoint {
+  std::size_t species_count{0};
+  CellId next_id{1};
+  std::vector<CellSnapshot> cells;
+  std::vector<LineageEntry> lineage;
+
+  void validate() const;
+};
+
 struct GrowthStateView {
   std::span<float> lengths;
   std::span<const float> growth_rates;
@@ -73,6 +87,7 @@ struct ConstSpeciesStateView {
 class WorldState {
  public:
   explicit WorldState(std::size_t reserved_capacity = 0, std::size_t species_count = 0);
+  explicit WorldState(const WorldStateCheckpoint& checkpoint);
 
   [[nodiscard]] std::size_t size() const noexcept;
   [[nodiscard]] bool empty() const noexcept;
@@ -93,6 +108,7 @@ class WorldState {
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;
   [[nodiscard]] std::optional<CellId> lineage_parent(CellId id) const noexcept;
+  [[nodiscard]] WorldStateCheckpoint checkpoint() const;
 
   void validate() const;
 

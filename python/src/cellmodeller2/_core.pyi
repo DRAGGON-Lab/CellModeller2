@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import overload
 
 class BackendKind(Enum):
     CPU: BackendKind
@@ -95,24 +96,32 @@ class CellInit:
     def __init__(self) -> None: ...
 
 class CellSnapshot:
-    @property
-    def id(self) -> int: ...
-    @property
-    def slot(self) -> int: ...
-    @property
-    def position(self) -> Vec3: ...
-    @property
-    def direction(self) -> Vec3: ...
-    @property
-    def length(self) -> float: ...
-    @property
-    def radius(self) -> float: ...
-    @property
-    def growth_rate(self) -> float: ...
-    @property
-    def cell_type(self) -> int: ...
-    @property
-    def species(self) -> list[float]: ...
+    id: int
+    slot: int
+    position: Vec3
+    direction: Vec3
+    length: float
+    radius: float
+    growth_rate: float
+    cell_type: int
+    species: list[float]
+
+    def __init__(self) -> None: ...
+
+class _LineageEntry:
+    child: int
+    parent: int
+
+    def __init__(self) -> None: ...
+
+class _WorldStateCheckpoint:
+    species_count: int
+    next_id: int
+    cells: list[CellSnapshot]
+    lineage: list[_LineageEntry]
+
+    def __init__(self) -> None: ...
+    def validate(self) -> None: ...
 
 class RateInstruction:
     operation: RateOp
@@ -192,6 +201,41 @@ class SphereConstraintInit:
 
     def __init__(self) -> None: ...
 
+class _PlaneConstraint:
+    id: int
+    point: Vec3
+    inward_normal: Vec3
+    coefficient: float
+
+    def __init__(self) -> None: ...
+
+class _SphereConstraint:
+    id: int
+    center: Vec3
+    radius: float
+    coefficient: float
+    allowed_region: SphereRegion
+
+    def __init__(self) -> None: ...
+
+class _ConstraintSetCheckpoint:
+    next_id: int
+    planes: list[_PlaneConstraint]
+    spheres: list[_SphereConstraint]
+
+    def __init__(self) -> None: ...
+    def validate(self) -> None: ...
+
+class _SimulationCheckpoint:
+    schema_version: int
+    time: float
+    world: _WorldStateCheckpoint
+    constraints: _ConstraintSetCheckpoint
+    species_rate_plan: SpeciesRatePlan
+
+    def __init__(self) -> None: ...
+    def validate(self) -> None: ...
+
 class ConstraintContactParameters:
     activation_margin: float
     degeneracy_epsilon: float
@@ -269,12 +313,15 @@ class MechanicsSolveResult:
     def report(self) -> SolverReport: ...
 
 class Simulation:
+    @overload
     def __init__(
         self,
         backend: BackendKind = BackendKind.CPU,
         reserved_capacity: int = 0,
         species_count: int = 0,
     ) -> None: ...
+    @overload
+    def __init__(self, backend: BackendKind, checkpoint: _SimulationCheckpoint) -> None: ...
     @property
     def backend_info(self) -> BackendInfo: ...
     def supports(self, feature: BackendFeature) -> bool: ...
@@ -311,4 +358,5 @@ class Simulation:
     def cell(self, id: int) -> CellSnapshot: ...
     def cells(self) -> list[CellSnapshot]: ...
     def lineage_parent(self, id: int) -> int | None: ...
+    def _checkpoint(self) -> _SimulationCheckpoint: ...
     def validate(self) -> None: ...

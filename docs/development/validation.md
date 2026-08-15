@@ -40,6 +40,15 @@ independent CUDA C++ interpreter compiles and links against the CUDA 12.8
 toolkit; execution of this fixture on NVIDIA hardware remains its conformance
 gate.
 
+Checkpoint fixtures compare every persisted field exactly before taking a
+resumed step. They then continue the same typed species model on each available
+backend and compare with a fresh CPU restore under the species tolerance. File
+tests cover atomic replacement, provenance, version rejection, duplicate and
+unknown structure, finite-number bounds, SHA-256 corruption detection, and
+native state validation. Passing on CPU establishes exact host restoration;
+passing with Metal or CUDA enabled additionally establishes backend-independent
+reconstruction and continued execution on that hardware.
+
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while
