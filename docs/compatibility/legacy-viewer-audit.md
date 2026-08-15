@@ -46,9 +46,32 @@ The maintained rod-cell workflows use a smaller set of capabilities:
 - display scalar signaling-grid slices.
 
 The renderer file also contains sphere, plant, periodic-image, static-mesh,
-and experimental mesh renderers. These are not general viewer requirements.
-They depend on engine concepts that CellModeller2 does not currently expose and
-must be specified as engine features before a viewer can represent them.
+and experimental mesh renderers. Their dispositions are now explicit rather
+than implicit future scope.
+
+## Renderer-family dispositions
+
+The machine-readable contract is
+`compatibility/legacy-renderers-v1.json`. It authenticates `Renderers.py` at
+CellModeller commit `4896f543c6250f053eea2312e628cc3a96bf7408` and classifies
+all ten renderer classes. Repository-wide call-site search found that all 25
+bundled examples select `GLBacteriumRenderer`, four also select
+`GLGridRenderer`, and none selects another renderer class.
+
+| Family | Source evidence | Disposition |
+|---|---|---|
+| rod cells (`GLBacteriumRenderer`, `GLCelBacteriumRenderer`, `GL2DBacteriumRenderer`) | rods, stable cell IDs, selection, arbitrary color fields | replaced by scene-v1 rods, typed color mappings, and the independent viewer |
+| signal grid (`GLGridRenderer`) | direct reads from the signaling integrator | replaced by complete scene-v1 grids and viewer-owned channel/slice selection |
+| sphere cells (`GLSphereRenderer`) | a distinct spherical cell morphology; no bundled call site; picking references an undefined radius | deliberately retired; this does not retire typed inside/outside sphere constraints, whose bundled example uses the rod renderer |
+| plant cells (`GLPlantRenderer`, `GLPlantSignalRenderer`) | polygon `nodep`/`wallp` geometry and arbitrary signal attributes; no bundled call site or plant engine | deliberately retired |
+| periodic cell images (`GLBacteriumRendererWithPeriodicImages`) | four visual copies offset by mutable collision-grid bounds; no declared periodic cell topology or bundled call site | deliberately retired; typed periodic signal boundaries remain supported |
+| dynamic collision mesh (`GLWillsMeshRenderer`) | lines over mutable `CLBacterium` broad-phase bins; no bundled call site | deliberately retired as a debugging overlay, not scientific state |
+| static triangle mesh (`GLStaticMeshRenderer`) | external mesh/regulator object graphs; no bundled call site or checkpoint representation | deliberately retired |
+
+These retirements close the CellModeller compatibility surface. A future
+spherical-cell, plant-tissue, periodic-cell-domain, or mesh simulation would be
+a new typed engine proposal with checkpoint and scene semantics, not a delayed
+port of renderer code.
 
 ## Compatibility hazards
 

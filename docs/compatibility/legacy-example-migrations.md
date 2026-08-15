@@ -34,13 +34,12 @@ perturbation geometry but deliberately moves its draws into the explicit
 controller stream. This is reproducible replacement behavior, not a claim of
 bitwise identity with an unseeded legacy NumPy global.
 
-Every migrated model currently requests one exact mechanics pass per biological
-step. That matches the existing adapter behavior but does not resolve how
-legacy `max_substeps=8` should map to the new solver; the outer-relaxation
-decision remains gated on colony-level trajectory evidence. Legacy renderer
-colors are also not encoded into simulation state. Their preserve/replace/retire
-decision belongs to the renderer-family audit rather than the biochemical
-equation port.
+Every migrated model requests one exact mechanics pass per biological step.
+The callback adapter separately maps legacy `max_substeps` to bounded
+new-contact-frontier relaxation, and recorded colony trajectories now establish
+both contracts. Legacy renderer colors are not encoded into simulation state;
+the renderer-family audit replaces them with typed viewer mappings and records
+the explicit disposition of every other legacy renderer.
 
 ## Coupled-rate translation
 

@@ -67,6 +67,7 @@ schema change or a typed extension, not arbitrary object traversal.
   through the same boundary.
 - Headless batch execution has no UI dependency.
 - Scene files are safe to inspect but cannot resume a run.
-- Arbitrary legacy renderers are not automatically portable. Plant, mesh, and
-  periodic-domain views wait for typed engine concepts.
+- Legacy sphere-cell, plant, periodic-image, collision-grid, and static-mesh
+  renderers are explicitly retired from compatibility. A future feature in one
+  of those domains requires a new typed engine, checkpoint, and scene proposal.
 - The viewer can evolve or be replaced without changing backend kernels.
