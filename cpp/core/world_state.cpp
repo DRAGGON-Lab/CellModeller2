@@ -287,6 +287,15 @@ void WorldState::set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, flo
   length_[index] = length;
 }
 
+void WorldState::set_cell_attributes(CellId id, float growth_rate, std::int32_t cell_type) {
+  if (!std::isfinite(growth_rate)) {
+    throw std::invalid_argument("cell growth rate must be finite");
+  }
+  const auto index = static_cast<std::size_t>(slot_for(id));
+  growth_rate_[index] = growth_rate;
+  cell_type_[index] = cell_type;
+}
+
 void WorldState::set_species(CellId id, std::span<const float> levels) {
   if (levels.size() != species_count_) {
     throw std::invalid_argument("cell species count does not match the world state");

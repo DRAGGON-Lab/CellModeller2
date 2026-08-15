@@ -210,6 +210,21 @@ def test_cpu_mechanics_reports_convergence() -> None:
     assert result.corrections[1].translation.y > 0.0
 
 
+def test_cell_attributes_can_be_updated_by_stable_id() -> None:
+    simulation = Simulation()
+    cell_id = simulation.add_cell(CellInit())
+    simulation.set_cell_attributes(cell_id, growth_rate=2.5, cell_type=7)
+
+    cell = simulation.cell(cell_id)
+    assert cell.id == cell_id
+    assert cell.growth_rate == 2.5
+    assert cell.cell_type == 7
+
+    with pytest.raises(ValueError, match="finite"):
+        simulation.set_cell_attributes(cell_id, growth_rate=math.nan, cell_type=8)
+    assert simulation.cell(cell_id).cell_type == 7
+
+
 @pytest.mark.parametrize("backend", list(BackendKind))
 def test_plane_constraint_graph_is_typed_and_incident(backend: BackendKind) -> None:
     if not backend_available(backend):

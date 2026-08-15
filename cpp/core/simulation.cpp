@@ -104,6 +104,10 @@ ConstraintId Simulation::add_sphere_constraint(const SphereConstraintInit& spher
   return constraints_.add_sphere(sphere);
 }
 
+void Simulation::set_cell_attributes(CellId id, float growth_rate, std::int32_t cell_type) {
+  state_.set_cell_attributes(id, growth_rate, cell_type);
+}
+
 void Simulation::set_species(CellId id, std::span<const float> levels) {
   state_.set_species(id, levels);
 }

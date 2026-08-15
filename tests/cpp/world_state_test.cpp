@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 #include "cm2/simulation.hpp"
@@ -88,6 +89,27 @@ void test_invalid_state_fails_explicitly() {
   assert(rejected);
 }
 
+void test_mutable_cell_attributes_keep_stable_identity() {
+  cm2::Simulation simulation;
+  const auto id = simulation.add_cell(cm2::CellInit{});
+  simulation.set_cell_attributes(id, 2.5F, 7);
+
+  const auto updated = simulation.cell(id);
+  assert(updated.id == id);
+  assert(close(updated.growth_rate, 2.5F));
+  assert(updated.cell_type == 7);
+
+  bool rejected = false;
+  try {
+    simulation.set_cell_attributes(id, std::numeric_limits<float>::quiet_NaN(), 8);
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  assert(rejected);
+  assert(close(simulation.cell(id).growth_rate, 2.5F));
+  assert(simulation.cell(id).cell_type == 7);
+}
+
 void test_unavailable_backends_do_not_fall_back() {
   assert(cm2::backend_device_count(cm2::BackendKind::cpu) == 1);
   assert(cm2::backend_available(cm2::BackendKind::cpu, 0));
@@ -124,6 +146,7 @@ int main() {
   test_growth_uses_stable_ids();
   test_division_reuses_slot_but_not_identity();
   test_invalid_state_fails_explicitly();
+  test_mutable_cell_attributes_keep_stable_identity();
   test_unavailable_backends_do_not_fall_back();
   return 0;
 }
