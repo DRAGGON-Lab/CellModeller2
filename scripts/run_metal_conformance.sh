@@ -26,6 +26,12 @@ finish() {
     printf 'exit_code\t%s\n' "${status}"
     printf 'completed_utc\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"${report_dir}/result.tsv"
+  (
+    cd "${report_dir}"
+    find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | while IFS= read -r file; do
+      cmake -E sha256sum "${file}"
+    done
+  ) >"${report_dir}/SHA256SUMS"
   printf 'Metal conformance %s; evidence: %s\n' "${result}" "${report_dir}"
   exit "${status}"
 }
@@ -65,7 +71,7 @@ xcodebuild -version >"${report_dir}/xcode.txt"
 clang --version >"${report_dir}/clang.txt"
 system_profiler SPDisplaysDataType -json >"${report_dir}/displays.json"
 
-cmake --preset metal-debug 2>&1 | tee "${report_dir}/configure.log"
-cmake --build --preset metal-debug 2>&1 | tee "${report_dir}/build.log"
+cmake --preset metal-debug --fresh 2>&1 | tee "${report_dir}/configure.log"
+cmake --build --preset metal-debug --clean-first 2>&1 | tee "${report_dir}/build.log"
 ctest --preset metal-debug --no-tests=error \
   --output-junit "${report_dir}/ctest.xml" 2>&1 | tee "${report_dir}/ctest.log"

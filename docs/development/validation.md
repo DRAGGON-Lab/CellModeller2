@@ -25,7 +25,8 @@ cannot turn an omitted feature into a green feature-complete build.
 Every Metal-enabled test build includes `metal_runtime_gate`, which constructs
 each enumerated device and compiles every embedded MSL library. Run
 `scripts/run_metal_conformance.sh` on Apple hardware to preserve the exact
-commit, device and toolchain inventory, logs, JUnit results, and final status.
+commit, device and toolchain inventory, clean-build logs, JUnit results, final
+status, and SHA-256 digest manifest.
 The manual `Metal conformance` workflow routes this command to a self-hosted
 macOS runner with the custom `metal` label and always uploads the evidence.
 
@@ -156,7 +157,9 @@ Toolkit, configure/build logs, JUnit results, and final status under `build/`.
 The manual `CUDA conformance` workflow routes the same command to a self-hosted
 Linux x64 runner with the custom `gpu` label and uploads the evidence on both
 success and failure. It has no pull-request trigger; hardware acceptance must
-be an explicit action by a repository maintainer.
+be an explicit action by a repository maintainer. Both hardware runners force
+a fresh configure and clean rebuild before testing, and their standard
+`SHA256SUMS` files cover every other evidence artifact.
 
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.

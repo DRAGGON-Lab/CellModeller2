@@ -26,6 +26,12 @@ finish() {
     printf 'exit_code\t%s\n' "${status}"
     printf 'completed_utc\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"${report_dir}/result.tsv"
+  (
+    cd "${report_dir}"
+    find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | while IFS= read -r file; do
+      cmake -E sha256sum "${file}"
+    done
+  ) >"${report_dir}/SHA256SUMS"
   printf 'CUDA conformance %s; evidence: %s\n' "${result}" "${report_dir}"
   exit "${status}"
 }
@@ -70,7 +76,7 @@ nvidia-smi \
 nvcc --version >"${report_dir}/nvcc.txt"
 nvidia-smi -q >"${report_dir}/nvidia-smi.txt"
 
-cmake --preset cuda-debug 2>&1 | tee "${report_dir}/configure.log"
-cmake --build --preset cuda-debug 2>&1 | tee "${report_dir}/build.log"
+cmake --preset cuda-debug --fresh 2>&1 | tee "${report_dir}/configure.log"
+cmake --build --preset cuda-debug --clean-first 2>&1 | tee "${report_dir}/build.log"
 ctest --preset cuda-debug --no-tests=error \
   --output-junit "${report_dir}/ctest.xml" 2>&1 | tee "${report_dir}/ctest.log"

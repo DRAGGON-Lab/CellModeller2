@@ -10,10 +10,11 @@ scripts/run_metal_conformance.sh
 
 Every Metal-enabled test build includes a mandatory `metal_runtime_gate`; it
 constructs each enumerated native device and therefore compiles every embedded
-MSL library. The runner requires a clean worktree, executes the complete CTest
-suite, and records the source commit, display-device inventory, macOS, Xcode,
-Clang, Metal framework, logs, JUnit results, and final status in a timestamped
-directory under `build/`.
+MSL library. The runner requires a clean worktree, performs a fresh configure
+and clean rebuild, executes the complete CTest suite, and records the source
+commit, display-device inventory, macOS, Xcode, Clang, Metal framework, logs,
+JUnit results, final status, and `SHA256SUMS` for every recorded artifact in a
+timestamped directory under `build/`.
 
 The manually dispatched `Metal conformance` workflow runs the same gate on a
 self-hosted macOS runner with the custom `metal` label and always uploads its

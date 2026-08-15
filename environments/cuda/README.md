@@ -16,11 +16,12 @@ scripts/run_cuda_conformance.sh
 `CM2_ENABLE_CUDA` is off by default so a CPU build never acquires an accidental
 CUDA toolchain dependency. Every CUDA-enabled test build includes a mandatory
 `cuda_runtime_gate`; it fails when the runtime cannot discover and construct
-the native backend. The runner requires a clean worktree, executes the complete
-CTest suite, and writes a timestamped evidence directory under `build/` with
-the source commit, device inventory, driver and toolkit details, logs, JUnit
-results, and an explicit pass/fail record. Pass a path as its sole argument to
-choose a different new evidence directory.
+the native backend. The runner requires a clean worktree, performs a fresh
+configure and clean rebuild, executes the complete CTest suite, and writes a
+timestamped evidence directory under `build/` with the source commit, device
+inventory, driver and toolkit details, logs, JUnit results, an explicit
+pass/fail record, and `SHA256SUMS` for every recorded artifact. Pass a path as
+its sole argument to choose a different new evidence directory.
 
 The manually dispatched `CUDA conformance` GitHub Actions workflow runs this
 same gate on a self-hosted runner carrying the default `self-hosted`, `linux`,
