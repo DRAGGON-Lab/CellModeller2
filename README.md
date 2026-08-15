@@ -30,11 +30,11 @@ with the native CUDA Runtime API and CUDA C++, but remains unadvertised until
 the conformance suite passes on NVIDIA hardware. Deterministic equal division
 is backend-neutral and conformed on CPU and Metal. Metal mechanics runs native
 MSL row assembly, operator, vector, and reduction kernels and matches the CPU
-solver on Apple GPU hardware. Applying corrections to simulation state and the
-native CUDA mechanics solver remain pending. Metal contact geometry passes the
-exhaustive reference suite; CUDA contact geometry compiles and links but still
-needs NVIDIA hardware validation. Both GPU paths use an exhaustive correctness
-stage while the scalable broad phase is under construction.
+solver on Apple GPU hardware. CUDA now has the equivalent native mechanics
+implementation, but both its contact and mechanics conformance still require
+execution on NVIDIA hardware. Applying corrections to simulation state remains
+pending. Both GPU contact paths use an exhaustive correctness stage while the
+scalable broad phase is under construction.
 
 ## Build the C++ reference tests
 

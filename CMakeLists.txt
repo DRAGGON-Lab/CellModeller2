@@ -109,6 +109,7 @@ if(CM2_ENABLE_CUDA)
     cpp/cuda/cuda_backend.cu
     cpp/cuda/kernels/contacts.cu
     cpp/cuda/kernels/growth.cu
+    cpp/cuda/kernels/mechanics.cu
   )
   target_compile_definitions(cm2_core PRIVATE CM2_HAS_CUDA=1)
   target_link_libraries(cm2_core PRIVATE CUDA::cudart)
