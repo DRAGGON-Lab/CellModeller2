@@ -1,237 +1,98 @@
 # Validation workflow
 
-The project uses vertical conformance slices. For every feature:
+CellModeller2 validates scientific behavior in vertical slices. CPU is the readable numerical reference, Metal is the feature-complete Apple GPU backend, and CUDA is the native NVIDIA backend under active development. A backend is accepted only when its own implementation passes the same observable contracts without silently falling back to another backend.
+
+## Validation layers
+
+Each feature progresses through the same sequence:
 
 1. State the governing equation and discrete algorithm.
-2. Identify whether legacy behavior is authoritative, merely informative, or
-   an apparent defect.
+2. Classify legacy behavior as authoritative, informative, or defective.
 3. Add focused CPU unit tests.
-4. Add a small scenario fixture with declared tolerances.
-5. Implement Metal and CUDA independently.
-6. Run the same fixture on real Apple and NVIDIA hardware.
-7. Add scaling and long-run statistical tests only after stage-level parity.
+4. Add a shared scenario with declared tolerances.
+5. Implement the Metal and CUDA paths independently.
+6. Run the shared scenario on real backend hardware.
+7. Compose the feature into application and legacy-trajectory tests.
+8. Add scaling, sanitizer, and long-run tests after correctness is established.
 
-The first shared scenario is `growth_conformance`. Every test-enabled build
-runs the same fixture against every enumerated device of each backend compiled
-into that build; the remaining shared scenarios use the same iteration helper.
-Its exact state checks and numerical tolerances are recorded beside the test in
-`tests/conformance/README.md`.
+Passing compilation is necessary but not sufficient. GPU conformance always means execution on the corresponding hardware, and a complete application claim additionally requires the Python, checkpoint, legacy-model, viewer, and analysis workflows.
 
-`backend_contract_conformance` separately requires every constructed device to
-advertise the complete growth, species, contact, mechanics, constraint, signal,
-and coupled-rate contract. Capability guards in individual fixtures therefore
-cannot turn an omitted feature into a green feature-complete build.
+## Backend contract
 
-`trajectory_conformance` then composes those capabilities over three steps:
-coupled rates and transport, native contact and constraint geometry, fixed-cell
-mechanics, integration, and division all feed the following stage. This catches
-cross-feature failures that isolated one-step fixtures cannot expose.
+Every test-enabled build runs the shared scenarios against every enumerated device compiled into that build. `backend_contract_conformance` requires each constructed device to advertise growth, species, contacts, mechanics, constraints, signals, and coupled rates. Capability guards in individual tests may help diagnose partial development builds, but they cannot turn a missing capability into a green complete-backend result.
 
-Every Metal-enabled test build includes `metal_runtime_gate`, which constructs
-each enumerated device and compiles every embedded MSL library. Run
-`scripts/run_metal_conformance.sh` on Apple hardware to preserve the exact
-commit, device and toolchain inventory, clean-build logs, JUnit results, final
-status, and SHA-256 digest manifest.
-The manual `Metal conformance` workflow routes this command to a self-hosted
-macOS runner with the custom `metal` label and always uploads the evidence.
+`trajectory_conformance` composes coupled rates and transport, contact and constraint geometry, fixed-cell mechanics, integration, and division over three steps. It catches cross-feature errors that isolated one-step tests cannot expose. The exact scenarios, problem sizes, and numerical tolerances are maintained in the [conformance test reference](../../tests/conformance/README.md).
 
-The same workflow then runs `scripts/run_metal_application_conformance.sh`.
-That gate performs a locked build of the Python extension with Metal explicitly
-enabled, requires a real Metal device, and executes the complete Python suite
-against the pinned legacy checkout. It also runs all 24 executable rows of the
-25-example matrix on CPU and every enumerated Metal device. The application
-workflow test independently composes native-controller batch execution, exact
-checkpoint/resume, live scene generation and reset, and analysis export with
-derived cell and constraint contacts on CPU and each requested hardware device.
-Both stages publish separate checksummed evidence directories.
+## CPU and Metal release baseline
 
-External constraint geometry begins with focused CPU fixtures covering plane
-normal normalization, one- and two-endpoint weighting, inside/outside sphere
-orientation, stable typed IDs, and deterministic sphere-center degeneracy.
-These fixtures become shared backend conformance tests when the native Metal
-and CUDA geometry pipelines are added.
+The CPU and Metal backends form the current feature-complete baseline. Release evidence comprises both the native C++ gate and the application gate.
 
-CPU mechanics fixtures additionally verify the external-row operator and
-right-hand side directly, solver convergence for a plane, and correction
-orientation for inside and outside spheres. Metal runs the shared geometry and
-mechanics fixtures on Apple GPU hardware. CUDA has independent native geometry
-and mechanics implementations; NVIDIA hardware execution remains its
-conformance gate.
+```console
+scripts/run_metal_conformance.sh
+CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_metal_application_conformance.sh
+```
 
-Species fixtures validate fixed schema, zero initialization, division
-inheritance, plan topology, legacy-compatible effective-volume dilution,
-post-dilution rate evaluation, and simultaneous Euler updates. The shared
-513-cell scenario crosses common GPU launch boundaries and compares native
-state with the CPU reference after heterogeneous time steps. A backend does not
-advertise species support until that scenario executes on its hardware.
-The native MSL interpreter passes this gate on Apple GPU hardware. The
-independent CUDA C++ interpreter compiles and links against the CUDA 12.8
-toolkit; execution of this fixture on NVIDIA hardware remains its conformance
-gate.
+The native gate performs a fresh Metal-enabled build, constructs every enumerated device, compiles every embedded MSL library, and runs the complete CTest suite. The application gate builds the Python extension with Metal enabled, runs the full Python and recorded-trajectory suites, and executes the complete legacy-example matrix on CPU and every Metal device.
 
-SBML fixtures parse Level 3 Version 2 XML through libSBML, compile ordered
-species metadata, local and global parameters, stoichiometry, arithmetic,
-power, exponential, and logarithmic MathML into `SpeciesRatePlan`, and execute
-the result through every available native species backend. Rejection fixtures
-cover malformed input, non-unit compartments, rules, unsupported MathML, and
-unresolved valid SBML symbols. These tests validate the semantic compiler;
-the existing 513-cell species fixture remains the scaling and native-device
-interpreter gate.
+Together, these gates cover:
 
-Scene fixtures capture the same rod, lineage, species, and signal-grid state
-from every available backend and compare the presentation semantics after
-normalizing the expected backend identity fields. Format tests cover exact
-round trips, atomic writes, SHA-256 tamper detection, closed schemas, malformed
-input, float32 geometry invariants, grid cardinality, and unsigned 64-bit IDs
-beyond JavaScript's exact integer range.
+- growth, equal and asymmetric division, stable identity, and lineage;
+- cell contacts, plane and sphere constraints, fixed cells, and mechanics relaxation;
+- species, signal transport, Forward Euler, Crank-Nicolson, and coupled rates;
+- checkpoint migration, exact controller resume, and deterministic runtime random state;
+- batch execution, stopping rules, output collision handling, and run manifests;
+- scene capture, live-viewer reset and checkpoint behavior, and protocol validation;
+- Parquet/Zarr analysis export, native contact derivation, and verified Polars recipes; and
+- all 24 runnable rows of the pinned 25-example CellModeller compatibility matrix.
 
-The independent viewer validates with `pnpm --dir viewer format:check`,
-`check`, `test`, and `build`. Its unit suite verifies a Python-authored RFC 8785
-digest, strict browser decoding, tamper rejection, browser-safe cell IDs,
-categorical and scalar color mappings, and every signal-slice indexing path.
-Rendered browser QA loads `examples/viewer_scene.py` output and exercises rod
-picking, selection clearing, species coloring, and signal-axis changes while
-checking the console for warnings and errors.
+Each runner requires a clean source tree and writes a checksummed evidence directory containing the exact commit, device and toolchain inventory, configure/build logs, JUnit results, and final status. The manual `Metal conformance` workflow runs the same commands on a self-hosted macOS runner carrying the `metal` label.
 
-Live-viewer fixtures run a real model through the same resettable factory used
-by `cm2 view`. They test stepping, deterministic rebuild, atomic checkpoint
-output, strict command parsing, same-origin and bearer-token rejection, and a
-real loopback WebSocket exchange. Browser protocol tests independently verify
-the embedded scene digest and reject unknown or tampered messages. Rendered
-live QA additionally exercises play, pause, step, reset, and checkpoint while
-confirming that camera and presentation state remain browser-owned.
+## Legacy compatibility evidence
 
-Checkpoint fixtures compare every persisted field exactly before taking a
-resumed step. They then continue the same typed species model on each available
-backend and compare with a fresh CPU restore under the species tolerance. File
-tests cover atomic replacement, provenance, version rejection, duplicate and
-unknown structure, finite-number bounds, SHA-256 corruption detection, and
-native state validation. Passing on CPU establishes exact host restoration;
-passing with Metal or CUDA enabled additionally establishes backend-independent
-reconstruction and continued execution on that hardware.
+The application gate pins the original example sources at CellModeller commit `4896f543c6250f053eea2312e628cc3a96bf7408`. It authenticates 15 unchanged callback models and 9 typed equation migrations, advances all 24 runnable scenarios, and records `load.py` as the one migration-only row. Set `CM2_LEGACY_ROOT` to that checkout to enable the suite.
 
-Batch fixtures execute a real model file through both the Python API and the
-`cm2` entry point. They verify seeded construction, JSON parameters, periodic
-checkpoint names, collision preflight, model and resume hashes, exact resumed
-time, and machine-readable device discovery. The same model and seed must
-produce the same serialized simulation state. Cell-count fixtures cover an
-initially satisfied threshold, an actual legacy division crossing the
-threshold, maximum-step provenance, completed-periodic reporting, and rejection
-of zero, negative, boolean, or overflowing thresholds.
+Recorded trajectories independently compare five representative workflows with values produced by the original Apple OpenCL runtime:
 
-Run-manifest fixtures prove that loading a manifest has no model side effects,
-then execute exactly one selected job through the CLI. They verify manifest and
-job provenance, relative path resolution, duplicate IDs, invalid fields,
-non-finite parameters, final/periodic cross-job collisions, and duplicate JSON
-keys. A mismatch fixture uses a model with an import-time filesystem side
-effect and confirms its declared digest fails before that code executes.
+- a growing 2D colony;
+- a constrained 3D colony;
+- a neighbor-dependent model;
+- a species model; and
+- a coupled signaling model.
 
-Signal-grid CPU fixtures cover mass-conserving no-flux diffusion, fixed
-reservoir values, periodic upwind advection, reduced-dimensional and 3D
-trilinear samples, paired-periodic validation, explicit stability rejection,
-checkpoint round trips, v1-through-v5 migration, and diagnosed Crank-Nicolson
-convergence. The shared anisotropic 630-value scenario executes both Forward
-Euler and Crank-Nicolson through native MSL transport on Apple GPU hardware and
-compares them with the CPU reference at `5e-6`. The independent
-CUDA Forward Euler and Crank-Nicolson kernels compile and link against the CUDA
-12.8 toolkit, but compilation and driverless test execution are not
-conformance; the same gate must execute on NVIDIA hardware.
+This evidence prevents a semantic change shared by CPU and Metal from masquerading as compatibility. The [legacy example matrix](../compatibility/legacy-example-matrix.md) and [trajectory evidence](../compatibility/legacy-trajectory-evidence.md) record the exact coverage.
 
-Coupled-rate CPU fixtures verify that sampling and scatter use the same
-trilinear weights, cell signal outputs are amount-per-time divided by voxel
-volume, transport samples the old field, species rates see post-growth diluted
-concentrations, invalid cell positions fail before growth, and the complete
-plan survives a v3 checkpoint round trip. Checkpoint tests separately verify
-that v1 and v2 files migrate with no coupled plan. A backend must execute the
-same coupled stage without a host fallback before advertising coupled-rate
-support.
-The shared fixture uses 513 heterogeneous cells, two signals, three species,
-anisotropic transport, fractional samples, and repeated scatter destinations;
-native implementations compare every committed value with the CPU reference.
-The native Metal stage passes that fixture in both Forward Euler and
-Crank-Nicolson modes on Apple GPU hardware. It evaluates cells and gathers grid
-sources in two MSL kernels within one command buffer;
-the grid-thread gather is deterministic and avoids a floating-point atomic
-requirement while keeping intermediate samples and rates device-resident.
-The independent CUDA C++ stage uses the same stream ordering, adding native
-Jacobi and residual-reduction kernels for Crank-Nicolson, and compiles and links
-for `sm_75` with the CUDA 12.8.1 toolkit. Driverless tests
-exercise only the CPU paths because no CUDA device can be constructed; the
-513-cell fixture, empty-colony path, and failed-source atomicity check remain
-mandatory on NVIDIA hardware before CUDA conformance is claimed.
+## CUDA development gates
 
-A CUDA toolkit-only build proves source and link compatibility, not backend
-conformance. `scripts/run_cuda_compile_check.sh` makes that boundary explicit:
-it mounts the clean source tree read-only in an ephemeral CUDA development
-container, builds every native target, lists but does not execute the registered
-tests, and records checksummed image and compiler evidence. CUDA rows advance
-only after the shared executable runs on an NVIDIA device. The hosted `CUDA
-compile check` workflow runs the compile-only command for pull requests and
-`main`; it cannot advance a feature-ledger row. `backend_available` reports
-runtime device availability, while `Simulation.supports` reports features
-implemented by a constructed backend.
+CUDA development uses three distinct gates:
 
-Every CUDA-enabled test build adds `cuda_runtime_gate`, so a Toolkit-only host
-cannot report a green CTest suite by exercising only the CPU paths. On an
-NVIDIA host, run `scripts/run_cuda_conformance.sh`; it requires a clean source
-tree and preserves the exact commit, GPU inventory, compute capability, driver,
-Toolkit, configure/build logs, JUnit results, and final status under `build/`.
-The manual `CUDA conformance` workflow routes the same command to a self-hosted
-Linux x64 runner with the custom `gpu` label and uploads the evidence on both
-success and failure. It has no pull-request trigger; hardware acceptance must
-be an explicit action by a repository maintainer. Both hardware runners force
-a fresh configure and clean rebuild before testing, and their standard
-`SHA256SUMS` files cover every other evidence artifact.
+```console
+scripts/run_cuda_compile_check.sh
+scripts/run_cuda_conformance.sh
+CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
+```
 
-The CUDA workflow then runs `scripts/run_cuda_application_conformance.sh`. It
-builds the Python extension with native CUDA explicitly enabled, requires a
-runtime device, runs the complete Python and recorded-trajectory suites, and
-executes all 24 runnable legacy-example rows on CPU and every enumerated CUDA
-device. The shared application test adds exact controller resume, live scene
-semantics, and analysis export with native derived cell and constraint
-contacts. CUDA application support is implemented but remains evidence-pending
-until this workflow passes on the NVIDIA runner.
+The compile check mounts the source read-only in an ephemeral CUDA 12.8.1 development container, builds every native target, lists the registered tests, and records the image and compiler evidence. It is a source/link portability check and does not require an NVIDIA driver or device.
 
-Pull requests must not claim a backend supports a feature when it invokes the
-CPU reference or transfers the full state to the host to complete the step.
+The native conformance runner requires an NVIDIA GPU. `cuda_runtime_gate` prevents a CUDA-enabled build from succeeding through CPU-only execution, and the runner records the GPU inventory, compute capability, driver, toolkit, clean-build logs, JUnit output, result, and checksums.
 
-The application-level legacy gate pins all 25 example sources at CellModeller
-commit `4896f543c6250f053eea2312e628cc3a96bf7408`. The matrix runner authenticates
-the 15 unchanged callback models and 9 typed migrations, then advances all 24
-runnable scenarios on every requested backend device; the Metal and CUDA
-application workflows pair their native backend with CPU, and `load.py` is the
-one explicit migration-only row. The recorded trajectory suite independently
-checks growing 2D, constrained 3D, neighbor-dependent, species, and coupled
-signaling behavior against values produced by the original Apple OpenCL
-runtime. Set `CM2_LEGACY_ROOT` to the pinned checkout to enable those tests.
+The application runner builds the Python extension with CUDA enabled, requires a runtime device, runs the Python and recorded-trajectory suites, and executes the legacy-example matrix on CPU and every enumerated CUDA device. It also covers exact controller resume, live scene semantics, and analysis export with native cell and constraint contact derivation.
 
-Fixed-cell fixtures verify stable-ID mutation, division inheritance,
-checkpoint v6 persistence, migration of v1-through-v5 cells to movable state,
-the projected mechanics operator and right-hand side, and integration that
-rejects contact correction while retaining declared growth. The shared
-relaxation scenario passes on CPU and native Metal, including exact zero
-correction and unchanged geometry for the fixed cell. Native solver
-initialization projects the stored right-hand side itself so later exact
-residual recomputation cannot reintroduce a force on fixed cells. CUDA hardware
-execution remains required before CUDA fixed-cell support is claimed; the
-independent CUDA mask upload and projected mechanics kernels compile and link
-with the CUDA 12.8.1 toolkit.
+The hosted `CUDA compile check` workflow runs for pull requests and `main`. Hardware and application conformance are manually dispatched to a self-hosted Linux x64 runner carrying the `gpu` label so untrusted pull-request code is not executed automatically on a persistent GPU host. CUDA graduates from active development when these gates pass on the supported NVIDIA architecture matrix and their evidence is attached to the exact release commit.
 
-Analysis-export fixtures read the published artifacts back through PyArrow and
-Zarr rather than trusting writer completion. They verify explicit Arrow types,
-stable and parent identities, cylinder versus full-capsule length, long-form
-species rows, complete typed cell and constraint contacts, source and
-reconstruction backend provenance, five-dimensional signal order, signal
-epoch boundaries, source-path privacy, time ordering, and non-destructive
-output collision handling. CPU and native Metal contact derivation pass the
-application workflow. Native CUDA derivation is selected without a CPU fallback
-and is included in the NVIDIA application gate.
+## Focused fixture coverage
 
-Recipe fixtures reopen a digest-verified dataset and evaluate the lazy Polars
-plans. They cover exact radial and length bin boundaries, retained empty bins,
-null means for absent species channels, full-capsule length weighting, contact
-row collapse, null-safe sister lineage, and invalid-edge rejection. Signal
-fixtures address arrays by the declared `(frame, channel, x, y, z)` order and
-verify both a named 2D plane and one voxel's physical-time course. Separate
-tamper cases alter a Parquet file and manifest options and must fail before a
-recipe reads scientific values.
+The Python and C++ suites exercise more than numerical parity:
+
+- Species fixtures cover schema validation, initialization, inheritance, plan topology, effective-volume dilution, simultaneous updates, and all typed instruction operations.
+- SBML fixtures cover supported Level 3 Version 2 Core symbols and operators, ordered metadata, local and global parameters, stoichiometry, and explicit rejection of unsupported semantics.
+- Signal fixtures cover mass conservation, fixed reservoirs, periodic upwind advection, reduced dimensions, 3D interpolation, stability rejection, checkpoint migration, and diagnosed solver convergence.
+- Coupled fixtures cover old-field sampling, post-growth intracellular rates, amount-to-voxel conversion, repeated scatter destinations, empty colonies, and failure atomicity.
+- Contact and mechanics fixtures cover sparse and dense candidate staging, coincident cells, stable ordering after slot reuse, operator properties, convergence and breakdown diagnostics, buffer growth, fixed-cell projection, and integrated geometry.
+- Checkpoint fixtures compare every persisted field before continuing execution and reject corrupt, malformed, non-finite, duplicate, unknown, or unsupported data.
+- Batch and manifest fixtures cover seed reproducibility, model digests, periodic output names, stopping rules, path resolution, collision preflight, and import-before-authentication hazards.
+- Scene and viewer fixtures cover strict cross-language decoding, RFC 8785 digests, browser-safe identities, coloring, signal slicing, token and origin checks, WebSocket messages, reset, and checkpointing.
+- Analysis fixtures read generated Parquet and Zarr artifacts back, verify schemas and provenance, and test geometry, species, contact, lineage, and signal recipes at boundary cases.
+
+## Evidence policy
+
+Pull requests must not claim backend support when an implementation invokes the CPU reference or transfers full state to the host to complete a device operation. Every hardware runner must use a clean build and retain its machine-readable results. A backend-affecting change invalidates evidence from an earlier commit and requires the corresponding gate to run again.

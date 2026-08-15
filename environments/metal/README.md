@@ -1,29 +1,35 @@
 # Metal environment
 
-The native Metal backend compiles its independent MSL kernels at runtime
-through `MTLDevice`. Validate the complete backend against the CPU reference on
-real Apple GPU hardware with:
+Metal is the feature-complete Apple GPU backend. It is implemented directly with the Metal API and independent Metal Shading Language kernels, and it is validated against both the CPU reference and recorded behavior from the original CellModeller OpenCL runtime.
+
+Metal is enabled by default on Apple platforms. It compiles embedded MSL source at runtime through `MTLDevice`, making kernel compilation part of device construction and validation.
+
+## Native conformance
+
+Run the complete C++ backend gate on Apple GPU hardware:
 
 ```console
 scripts/run_metal_conformance.sh
 ```
 
-Every Metal-enabled test build includes a mandatory `metal_runtime_gate`; it
-constructs each enumerated native device and therefore compiles every embedded
-MSL library. The runner requires a clean worktree, performs a fresh configure
-and clean rebuild, executes the complete CTest suite, and records the source
-commit, display-device inventory, macOS, Xcode, Clang, Metal framework, logs,
-JUnit results, final status, and `SHA256SUMS` for every recorded artifact in a
-timestamped directory under `build/`.
+Every Metal-enabled test build includes `metal_runtime_gate`, which constructs each enumerated device and compiles every embedded MSL library. The runner requires a clean worktree, performs a fresh configure and clean rebuild, executes the complete CTest suite, and writes a timestamped evidence directory under `build/`. The evidence records the source commit, display-device inventory, macOS, Xcode, Clang, Metal framework, logs, JUnit results, final status, and `SHA256SUMS`.
 
-The manually dispatched `Metal conformance` workflow runs the same gate on a
-self-hosted macOS runner with the custom `metal` label and always uploads its
-evidence. It has no pull-request trigger.
+## Application conformance
 
-Contact geometry uses deterministic sweep-and-prune capsule candidates followed
-by native MSL count, inclusive-scan, and fill pipelines.
+Run the Python, compatibility, and application gate with a checkout of the pinned original CellModeller source:
 
-Rod mechanics uses native MSL Jacobian assembly, matrix-free `B` and `B^T`
-applications, vector updates, pairwise reductions, and a host-orchestrated CG
-loop. Only scalar reduction results cross back to the host during iteration;
-the per-cell vectors remain in Metal buffers until the final correction result.
+```console
+CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_metal_application_conformance.sh
+```
+
+This gate builds the Python extension with Metal enabled, runs the full Python and recorded-trajectory suites, executes all 24 runnable legacy examples on CPU and every Metal device, and exercises controller resume, viewer scene semantics, and analysis export with native derived contacts.
+
+The manually dispatched `Metal conformance` workflow runs both gates on a self-hosted macOS runner carrying the `metal` label and always uploads its evidence. It is intentionally not triggered by pull requests.
+
+## Implementation notes
+
+Contact geometry uses deterministic sweep-and-prune capsule candidates followed by native MSL count, inclusive-scan, and fill pipelines.
+
+Rod mechanics uses native MSL Jacobian assembly, matrix-free `B` and `B^T` applications, vector updates, pairwise reductions, and a host-orchestrated conjugate-gradient loop. Only scalar reduction results cross back to the host during iteration; per-cell vectors remain in Metal buffers until the final correction result.
+
+See the [validation workflow](../../docs/development/validation.md) for the complete acceptance policy.

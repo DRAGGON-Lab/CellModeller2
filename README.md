@@ -1,71 +1,80 @@
 # CellModeller2
 
-CellModeller2 is a clean, scientifically testable successor to CellModeller.
-It keeps Python as the modeling interface while implementing the simulation
-engine in C++23 with independent native CPU, Apple Metal, and NVIDIA CUDA
-backends.
+CellModeller2 is a modern, scientifically testable successor to [CellModeller](https://github.com/cellmodeller/CellModeller) for individual-based multicellular modeling. It keeps Python as the modeling interface and moves the simulation engine to C++23, with independent implementations for the CPU, Apple Metal, and NVIDIA CUDA.
 
-The project is being built as vertical, cross-backend slices. A feature is not
-considered implemented until its scientific behavior is specified, the CPU
-reference is tested, and every advertised GPU backend passes the same
-conformance scenarios without silently falling back to the CPU.
+## Project status
 
-Compatibility is evidence-driven rather than file-count-driven. The legacy
-`NeighbourDiffusion` experiment is explicitly retired because it is
-non-runnable and does not define a physically weighted transport contract; a
-future contact-flux model would be a new cross-backend feature.
+| Backend | Status | Role |
+| --- | --- | --- |
+| CPU | **Feature complete** | Readable numerical reference and portable execution backend |
+| Apple Metal | **Feature complete** | Native Apple GPU implementation, validated against the CPU and original CellModeller behavior |
+| NVIDIA CUDA | **Under active development** | Native CUDA C++ implementation progressing through compile, hardware, and application conformance |
 
-## Current slice
+CPU and Metal cover the complete CellModeller modeling workflow: growth and division, rod mechanics and constraints, species and signaling, model regulation, checkpoint/resume, batch execution, visualization, and analysis. Compatibility is defined by scientific behavior rather than by reproducing the original OpenCL implementation line for line. The [feature ledger](docs/compatibility/feature-ledger.md), [legacy example matrix](docs/compatibility/legacy-example-matrix.md), and [recorded trajectory evidence](docs/compatibility/legacy-trajectory-evidence.md) document that boundary.
 
-The initial slice establishes:
+CUDA uses the native CUDA Runtime API and CUDA C++; it does not use a portability layer or translate Metal kernels. Its current development and validation workflow is documented in the [CUDA environment guide](environments/cuda/README.md).
 
-- stable cell identifiers separated from compact storage slots;
-- structure-of-arrays state owned by the engine;
-- deterministic growth and division semantics;
-- persistent fixed rod cells with continuing biological state and native projected mechanics;
-- fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
-- versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
-- deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
-- immutable Parquet/Zarr analysis exports with typed provenance and stable identities;
-- validated CPU and native Metal signal grids with explicit transport boundaries,
-  plus a diagnosed CPU Crank-Nicolson reference solver;
-- typed coupled cell/grid rate plans with simultaneous CPU and native Metal stages;
-- CPU capsule contacts and native Metal/CUDA contact implementations;
-- typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
-- matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
-- a C++ CPU reference backend;
-- a small Python API backed by nanobind;
-- C++ and Python conformance tests;
-- native Metal growth and CUDA growth implementations;
-- explicit backend device enumeration and selection;
-- the cross-backend architecture and feature ledger.
+## Highlights
 
-Metal growth is validated on Apple GPU hardware. CUDA growth is implemented
-with the native CUDA Runtime API and CUDA C++, but remains unadvertised until
-the conformance suite passes on NVIDIA hardware. Deterministic equal division
-is backend-neutral and conformed on CPU and Metal. Metal mechanics runs native
-MSL row assembly, operator, vector, and reduction kernels and matches the CPU
-solver on Apple GPU hardware. CUDA now has the equivalent native mechanics
-implementation, but both its contact and mechanics conformance still require
-execution on NVIDIA hardware. `relax_cell_mechanics` applies a converged result
-through the shared bounded-rotation and non-shortening integration contract.
-Both GPU contact paths consume deterministic sweep-and-prune capsule candidates
-before their native narrow phases. Plane and sphere constraints have native
-Metal and CUDA geometry and mechanics paths, where their rows participate in
-the same matrix-free solve and relaxation path as cell-cell contacts. Metal is
-conformant on Apple GPU hardware; the CUDA implementation compiles against the
-12.8 toolkit but still requires execution of the shared fixtures on NVIDIA
-hardware. Fixed cells use the same native projection in each mechanics system;
-the CUDA fixed-cell cases share that pending hardware gate.
+- Native CPU, Metal, and CUDA backends behind one explicit device API
+- Stable cell identities separated from compact simulation storage
+- Deterministic growth, equal and asymmetric division, and lineage tracking
+- Capsule contacts, plane and sphere constraints, fixed cells, and matrix-free rod mechanics
+- Typed species and coupled cell/grid rate plans with no generated shader source
+- Forward Euler and Crank-Nicolson signal integration with declared boundary conditions
+- Restartable native controllers with seeded, checkpointed runtime randomness
+- Versioned, integrity-checked JSON checkpoints with exact resume
+- Reproducible batch runs and data-only run manifests
+- A standalone Three.js viewer and authenticated live-viewer protocol
+- Immutable Parquet/Zarr analysis datasets with typed provenance
+- A compatibility loader for maintained CellModeller Python models
+- A one-way migration path for trusted legacy pickle snapshots
 
-The typed species plan is conformant on CPU and native Metal, including every
-declared instruction, legacy-compatible effective-volume dilution, and
-simultaneous Euler updates. CUDA has an independent native interpreter that
-compiles against the 12.8 toolkit; the same shared scenario still needs to run
-on NVIDIA hardware before CUDA species conformance is claimed.
+## Quick start
 
-`RatePlanBuilder` keeps native model equations readable without introducing a
-shader language or code generation layer:
+CellModeller2 requires Python 3.12, CMake, Ninja, a C++23 compiler, and [uv](https://docs.astral.sh/uv/). The default Python build uses the CPU backend.
+
+```console
+uv sync --group dev
+uv run cm2 devices
+uv run cm2 run \
+  --model examples/batch_model.py \
+  --backend cpu \
+  --seed 42 \
+  --parameter growth_rate=0.25 \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/colony.cm2.json
+```
+
+Run the test suite with:
+
+```console
+uv run pytest
+```
+
+## Write a model
+
+A native model is trusted Python code that defines `build(context)`. The context constructs the requested backend, exposes the seeded model random stream, and carries JSON parameters supplied by the CLI.
+
+```python
+from cellmodeller2 import CellInit, Vec3
+
+
+def build(context):
+    simulation = context.simulation()
+    cell = CellInit()
+    cell.position = Vec3(context.rng.uniform(-0.1, 0.1), 0.0, 0.0)
+    cell.length = float(context.parameters.get("initial_length", 4.0))
+    cell.radius = 0.5
+    cell.growth_rate = float(context.parameters.get("growth_rate", 0.2))
+    simulation.add_cell(cell)
+    return simulation
+```
+
+Models that need regulation, division policy, mechanics, or runtime stochastic state can return a `SimulationController`. `NativeController` provides the standard restartable lifecycle: regulation produces a typed `StepPlan`, native integration advances the biological state, division requests are applied deterministically, and `MechanicsConfig` controls relaxation. See [`examples/native_controller.py`](examples/native_controller.py) for a complete `build` and `resume` implementation.
+
+Rate equations are expressed as a small typed instruction representation shared by all backends:
 
 ```python
 from cellmodeller2 import RatePlanBuilder
@@ -76,56 +85,79 @@ production = 2.0 / (1.0 + x * x)
 simulation.set_species_rate_plan(rates.species_plan(1, (production,)))
 ```
 
-The result is the same inspectable instruction IR checkpointed and interpreted
-by the independent CPU, Metal, and CUDA implementations.
+Each backend interprets that validated plan with its own native C++, Metal Shading Language, or CUDA C++ implementation. This keeps models inspectable and checkpoints data-only without introducing a shader language or runtime source generation.
 
-Run `scripts/run_cuda_compile_check.sh` to reproduce the driverless native CUDA
-source/link gate in the versioned CUDA development container. Its passing result
-is deliberately distinct from `scripts/run_cuda_conformance.sh`, which requires
-an NVIDIA GPU and is the only command that can establish CUDA conformance.
+## Run and resume simulations
 
-Signal-grid state has CPU, native Metal, and native CUDA implementations for
-conventional diffusion, conservative vector upwind advection,
-no-flux/periodic/fixed boundaries, trilinear sampling, stability checks, and
-non-negative concentration updates. The MSL transport kernel is conformant on
-Apple GPU hardware. The independent CUDA kernel compiles and links against the
-12.8 toolkit; its shared conformance scenario still requires NVIDIA hardware.
-The checkpointed Crank-Nicolson option has diagnosed CPU, native Metal, and
-native CUDA solvers. The CUDA implementation compiles and links for `sm_75`;
-its shared conformance cases still require NVIDIA hardware.
+Choose a backend and device explicitly:
 
-Coupled rate plans add sampled-signal inputs and separate intracellular
-concentration-rate and extracellular amount-rate outputs. CPU and native Metal
-implement the complete old-grid sample, post-growth dilution, transport,
-trilinear scatter, and simultaneous commit contract. Metal runs cell and grid
-kernels in one command buffer and passes the shared 513-cell hardware gate on
-Apple GPU hardware. Its deterministic grid-thread gather is the correctness
-path; a sparse source reduction remains a scaling optimization. Native CUDA
-now implements the same two-kernel operation and compiles with the 12.8
-toolkit; the shared fixture still requires execution on NVIDIA hardware.
-
-Checkpoints preserve compact slot order, stable identity allocation, complete
-lineage, constraints, species rates, signal-grid geometry and levels,
-concentrations, cell geometry, coupled rates, and simulation time. Schema v5
-adds the signal integration and solver configuration, and schema v6 adds the
-persistent fixed-cell attribute. The reader explicitly migrates v1 through v5,
-using Forward Euler defaults for older signal grids and movable cells for older
-cell records. Files
-contain data only: loading never imports a model or evaluates source text.
-Writes use an atomic replace and each file carries a SHA-256 digest over the
-simulation payload.
-
-```python
-from cellmodeller2 import load_checkpoint, save_checkpoint
-
-save_checkpoint(simulation, "run.cm2.json", provenance={"model": "colony-a"})
-resumed = load_checkpoint("run.cm2.json")
+```console
+uv run cm2 devices
+uv run cm2 run \
+  --model examples/native_controller.py \
+  --backend metal \
+  --device-index 0 \
+  --seed 42 \
+  --steps 100 \
+  --dt 0.05 \
+  --checkpoint-every 25 \
+  --output results/colony.cm2.json
 ```
 
-## Import a typed SBML rate model
+Resume on any available backend:
 
-Install the optional `sbml` dependency, then compile a bounded SBML Level 3
-Version 2 Core model into the same data-only rate plan used by native models:
+```console
+uv run cm2 run \
+  --model examples/native_controller.py \
+  --resume results/colony.cm2.json \
+  --backend cpu \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/colony-resumed.cm2.json
+```
+
+Checkpoints contain simulation and controller data, never executable model code. Resume verifies the model digest before compiling the explicitly supplied source. Bare simulation checkpoints can resume without a model when their controller state is null. Existing outputs are not replaced unless `--overwrite` is provided.
+
+For parameter sweeps and scheduler jobs, use the strict [run manifest v1 format](docs/formats/run-manifest-v1.md):
+
+```console
+uv run cm2 run-manifest experiments/gamma.cm2.runs.json \
+  --job gamma-0.10-replicate-001
+```
+
+## Run CellModeller models
+
+Maintained CellModeller growth, mechanics, regulation, constraint, neighbor, and host-species models run through the explicit compatibility loader:
+
+```console
+uv run cm2 run \
+  --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
+  --backend metal \
+  --seed 42 \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/legacy.cm2.json
+```
+
+The nine bundled examples that previously embedded OpenCL species or signaling equations have typed CellModeller2 ports under [`examples/legacy`](examples/legacy). Legacy OpenCL source strings are not executed: their equations become typed rate plans so CPU, Metal, and CUDA retain independent native implementations.
+
+Trusted CellModeller pickle snapshots use a deliberately explicit, one-way migration command:
+
+```console
+uv run cm2 import-legacy-pickle data/step-00100.pickle \
+  --output results/step-00100.cm2.json \
+  --dt 0.05 \
+  --trust-legacy-pickle \
+  --native-state-only
+```
+
+The converter preserves geometry, species, stable identity, and lineage. It records that callback attributes, constraints, random state, and rate equations cannot be reconstructed from the old executable format.
+
+## Signaling and SBML
+
+Signal grids support diffusion, conservative vector upwind advection, no-flux, periodic, and fixed boundaries, trilinear sampling, non-negative concentration updates, and checkpointed Forward Euler or diagnosed Crank-Nicolson integration. Coupled plans compose intracellular rates, sampled extracellular signals, transport, and trilinear source scatter into a simultaneous update contract.
+
+The optional SBML importer compiles a bounded SBML Level 3 Version 2 Core subset into the same typed species-rate representation:
 
 ```console
 uv sync --extra sbml
@@ -142,14 +174,11 @@ simulation.add_cell(cell)
 simulation.set_species_rate_plan(model.rate_plan)
 ```
 
-The importer uses libSBML for parsing and consistency diagnostics. It accepts
-the explicit subset in [ADR 0011](docs/architecture/0011-sbml-import.md) and
-fails on unsupported semantics; it never generates or evaluates source code.
+Unsupported semantics fail explicitly; the importer never generates or evaluates source code. [ADR 0011](docs/architecture/0011-sbml-import.md) defines the accepted subset.
 
-## Export a viewer scene
+## Visualize a simulation
 
-Capture presentation data without exposing engine or device memory to the
-viewer:
+Export an integrity-checked scene without exposing engine or device memory:
 
 ```python
 from cellmodeller2 import capture_scene, save_scene
@@ -158,12 +187,7 @@ frame = capture_scene(simulation)
 save_scene(frame, "colony.cm2.scene.json")
 ```
 
-Scene v1 preserves rods, stable IDs and active lineage parents, scalar cell
-fields, every species channel, and an optional signaling grid. It is strict,
-integrity-checked JSON and intentionally cannot resume a simulation. The
-[scene format](docs/formats/scene-v1.md) defines its complete wire layout.
-
-Generate a deterministic example and open the standalone viewer:
+The standalone TypeScript/Three.js viewer provides instanced rods, orbit controls, cell inspection, declarative coloring, and signal-grid slicing:
 
 ```console
 uv run python examples/viewer_scene.py --output viewer-demo.cm2.scene.json
@@ -171,12 +195,7 @@ pnpm --dir viewer install
 pnpm --dir viewer dev
 ```
 
-The TypeScript/Three.js viewer verifies the cross-language digest before it
-renders anything. It provides instanced rods, orbit/pan/zoom, cell picking and
-inspection, declarative cell coloring, and signal-grid slicing without owning
-or importing the simulation engine. See the [viewer README](viewer/README.md).
-
-Build the viewer once, then launch an authenticated live session from a model:
+For interactive runs, build the viewer and launch an authenticated loopback session:
 
 ```console
 uv sync --group dev --extra viewer
@@ -185,23 +204,16 @@ uv run cm2 view \
   --model examples/batch_model.py \
   --backend cpu \
   --seed 42 \
-  --parameter growth_rate=0.2 \
   --dt 0.05 \
   --checkpoint-output results/live.cm2.json \
   --open
 ```
 
-The Python process remains the sole owner of the model, backend, clock, reset,
-and checkpoint destination. It prints a per-process tokenized loopback URL;
-the browser can request only play, pause, bounded steps, reset, the current
-frame, and a checkpoint to that preconfigured path. Every live frame is a full
-verified scene-v1 document. The wire contract is documented in the
-[live viewer protocol](docs/protocols/live-viewer-v1.md).
+The Python process remains the sole owner of the model, backend, clock, reset behavior, and checkpoint destination. The browser owns presentation state and communicates through the bounded [live viewer protocol](docs/protocols/live-viewer-v1.md). See the [viewer guide](viewer/README.md) and [scene format](docs/formats/scene-v1.md) for details.
 
 ## Export analysis datasets
 
-Install the optional analysis dependencies, then export an explicit,
-time-ordered checkpoint series:
+Install the analysis dependencies and export an ordered checkpoint series:
 
 ```console
 uv sync --extra analysis
@@ -213,215 +225,58 @@ uv run cm2 export-analysis \
   --external-contacts
 ```
 
-The immutable dataset contains explicit-schema Parquet frame, cell, and
-species tables. Requested cell and constraint contacts are reconstructed on
-the selected native backend and record their device and parameters. Signal
-fields are stored as Zarr v3 arrays in named `(frame, channel, x, y, z)`
-dimensions; a geometry change starts a new epoch. The manifest records source
-checkpoint digests, schema versions, model provenance, table schemas, row
-counts, derivations, and output digests without embedding absolute input paths
-unless `--path-provenance` is passed. Existing datasets require the explicit
-`--overwrite` flag.
+Exports contain explicit-schema Parquet frame, cell, species, and contact tables. Signal fields use named `(frame, channel, x, y, z)` Zarr v3 arrays. The manifest records schemas, row counts, derivations, model provenance, source checkpoint digests, and output digests. The [analysis recipe guide](docs/analysis/recipes.md) provides verified lazy Polars workflows for colony geometry, species, lineage, contacts, and signals.
 
-Contact reconstruction defaults to the CPU reference. Metal and CUDA are
-selectable explicitly and execute their native geometry implementations with
-no CPU fallback. Their application conformance workflows exercise cell and
-constraint contact export on real Apple and NVIDIA hardware before the
-corresponding backend is described as conformant.
+## Build native tests
 
-Verified lazy Polars recipes cover radial counts and species means, cylinder
-or full-capsule length histograms, the legacy length-weighted XY line-density
-proxy, unique stable-ID neighbor edges, sister-neighbor counts, and named
-signal slices and voxel time courses. Their bin, null, weighting, lineage, and
-dimension semantics are documented in the [analysis recipe guide](docs/analysis/recipes.md).
-
-`backend_device_count(kind)` enumerates native devices and every `Simulation`
-constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
-not inherit mutable process-thread device selection, and Metal does not
-silently substitute the system default for a requested index.
-
-## Run a batch model
-
-List the devices visible to the native runtimes, then run a model on an
-explicit backend and device:
+CPU:
 
 ```console
-uv run cm2 devices
-uv run cm2 run \
-  --model examples/batch_model.py \
-  --backend metal \
-  --device-index 0 \
-  --seed 42 \
-  --parameter growth_rate=0.25 \
-  --steps 100 \
-  --dt 0.05 \
-  --stop-cell-count 10000 \
-  --checkpoint-every 25 \
-  --output results/colony.cm2.json
+cmake --preset cpu-debug
+cmake --build --preset cpu-debug
+ctest --preset cpu-debug
 ```
 
-A model is trusted Python code and must define `build(context)`. Construct the
-simulation with `context.simulation()`, use `context.rng` for seeded model
-randomness, and read JSON parameters from `context.parameters`. `build` may
-return the simulation directly or a structural `SimulationController` owning
-it. Controllers implement `step(dt)` and return complete finite, non-null JSON
-from `controller_state()`. The runner rejects native state on another backend
-or device. Existing final or periodic outputs are never replaced without
-`--overwrite`.
-
-Runtime-stochastic controllers should persist dedicated streams with
-`capture_random_state` and restore them with `restore_random_state`. To resume a
-controller checkpoint, the same explicitly selected model defines
-`resume(context, checkpoint)` and must wrap `checkpoint.simulation`:
+Metal on macOS:
 
 ```console
-uv run cm2 run \
-  --model models/regulated_colony.py \
-  --resume results/colony.cm2.json \
-  --backend metal \
-  --steps 100 \
-  --dt 0.05 \
-  --output results/colony-resumed.cm2.json
+scripts/run_metal_conformance.sh
+CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_metal_application_conformance.sh
 ```
 
-The model digest is checked against checkpoint provenance before its source is
-compiled. CellModeller2 never executes a model path merely because it appears
-in a checkpoint. Bare native checkpoints with a null controller still resume
-with `--resume` alone.
-
-`NativeController` provides the standard lifecycle for new models. Regulation
-returns a typed `StepPlan`; the controller validates all cell updates and
-division requests before applying them, runs native integration, then performs
-the exact number of mechanics passes in `MechanicsConfig`. Its standard payload
-also persists model JSON state, controller step count, model identity, random
-state, and mechanics configuration. See
-[`examples/native_controller.py`](examples/native_controller.py) for a complete
-`build`/`resume` model.
-
-`--steps` is always the deterministic maximum. When `--stop-cell-count` is
-present, the runner also stops before the first step if the initial colony has
-already reached the threshold, or immediately after the first step that does.
-The final checkpoint records the requested maximum, actual completed steps,
-threshold, and whether `step_limit` or `cell_count` ended the run. This replaces
-legacy termination tied indirectly to preallocated cell capacity.
-
-Parameter sweeps and replicates can be declared as strict data rather than
-hard-coded shell or Python loops. Each run-manifest job fixes its ID, model
-path and digest, backend/device, seed, JSON parameters, complete stopping rule,
-checkpoint interval, and output path. Execute one named job per scheduler task:
+CUDA development:
 
 ```console
-uv run cm2 run-manifest experiments/gamma.cm2.runs.json \
-  --job gamma-0.10-replicate-001
+scripts/run_cuda_compile_check.sh
+scripts/run_cuda_conformance.sh
+CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
 ```
 
-Manifest parsing never imports a model, and execution checks the model digest
-before compilation. Relative paths resolve from the manifest location, output
-names are checked for cross-job periodic collisions, and the manifest/job
-identity enters checkpoint provenance. See the
-[run manifest v1 format](docs/formats/run-manifest-v1.md).
+The conformance runners require clean source trees and emit checksummed evidence containing the exact commit, environment, device inventory, logs, and machine-readable results. See [validation](docs/development/validation.md), the [Metal environment guide](environments/metal/README.md), and the [CUDA environment guide](environments/cuda/README.md).
 
-Resume a data-only checkpoint on any available backend:
+## Architecture
 
-```console
-uv run cm2 run \
-  --resume results/colony.cm2.json \
-  --backend cpu \
-  --device-index 0 \
-  --steps 100 \
-  --dt 0.05 \
-  --output results/colony-resumed.cm2.json
-```
+The engine is deliberately organized around semantic contracts rather than a lowest-common-denominator GPU abstraction:
 
-Maintained CellModeller 1 growth/mechanics models can run unchanged through the
-explicit compatibility loader. Resuming reloads the same source only after its
-digest has been checked, then restores callback attributes and random state from
-the authenticated controller payload:
+- [`cpp/core`](cpp/core) owns backend-neutral state, orchestration, checkpoints, and typed plans.
+- [`cpp/cpu`](cpp/cpu) is the readable numerical reference.
+- [`cpp/metal`](cpp/metal) contains native Metal host code and MSL kernels.
+- [`cpp/cuda`](cpp/cuda) contains native CUDA host code and CUDA C++ kernels.
+- [`python/src/cellmodeller2`](python/src/cellmodeller2) provides modeling, compatibility, batch, analysis, and viewer APIs.
+- [`viewer`](viewer) is an independent presentation client with no simulation-engine ownership.
 
-```console
-uv run cm2 run \
-  --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
-  --backend metal \
-  --seed 42 \
-  --steps 100 \
-  --dt 0.05 \
-  --output results/legacy.cm2.json
+Start with the following design documents:
 
-uv run cm2 run \
-  --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
-  --resume results/legacy.cm2.json \
-  --backend metal \
-  --steps 100 \
-  --dt 0.05 \
-  --output results/legacy-resumed.cm2.json
-```
+- [Native backend policy](docs/architecture/0001-native-backends.md)
+- [Contact and mechanics design](docs/architecture/0002-contact-mechanics.md)
+- [Species-rate representation](docs/architecture/0003-species-rates.md)
+- [Checkpoint and resume contract](docs/architecture/0004-checkpoints.md)
+- [Batch execution](docs/architecture/0005-batch-execution.md)
+- [Grid signaling](docs/architecture/0006-grid-signaling.md)
+- [Native controllers](docs/architecture/0014-native-controllers.md)
+- [Numerical contract](docs/architecture/numerical-contract.md)
+- [Validation workflow](docs/development/validation.md)
 
-Legacy OpenCL rate-source strings are intentionally not accepted. Species and
-signaling models must migrate their equations to the typed rate-plan APIs so
-Metal and CUDA continue to use native kernels.
+## Provenance and license
 
-Trusted CellModeller 1 snapshots have a separate, explicitly lossy one-way
-converter. It preserves native geometry, species, stable identity, and lineage;
-the required flag acknowledges that callback attributes, constraints, random
-state, and rate equations cannot be reconstructed from the old format:
-
-```console
-uv run cm2 import-legacy-pickle data/step-00100.pickle \
-  --output results/step-00100.cm2.json \
-  --dt 0.05 \
-  --trust-legacy-pickle \
-  --native-state-only
-```
-
-## Build the C++ reference tests
-
-```console
-cmake -S . -B build/cpu -G Ninja \
-  -DCM2_BUILD_PYTHON=OFF \
-  -DCM2_BUILD_TESTS=ON
-cmake --build build/cpu
-ctest --test-dir build/cpu --output-on-failure
-```
-
-## Build and test the Python package
-
-```console
-uv sync --group dev
-uv run pytest
-```
-
-## Repository policy
-
-- `cpp/core` contains backend-neutral orchestration and state semantics.
-- `cpp/cpu` is the readable numerical reference.
-- `cpp/metal` contains native Metal host code and Metal Shading Language kernels.
-- `cpp/cuda` contains CUDA C++ host code and kernels.
-- Model equations are shared through a typed model representation; mechanics
-  kernels remain explicitly native and independently optimized.
-
-See [ADR 0001](docs/architecture/0001-native-backends.md) and the
-[feature ledger](docs/compatibility/feature-ledger.md). The contact/mechanics
-redesign is specified in [ADR 0002](docs/architecture/0002-contact-mechanics.md)
-and grounded in the [legacy mechanics audit](docs/compatibility/legacy-mechanics-audit.md).
-The species state and rate representation is specified in
-[ADR 0003](docs/architecture/0003-species-rates.md).
-The checkpoint schema and exact-resume boundary are specified in
-[ADR 0004](docs/architecture/0004-checkpoints.md).
-The command-line model and batch-run contract is specified in
-[ADR 0005](docs/architecture/0005-batch-execution.md).
-The grid transport and conservative cell-coupling contract is specified in
-[ADR 0006](docs/architecture/0006-grid-signaling.md) and grounded in the
-[legacy signaling audit](docs/compatibility/legacy-signaling-audit.md).
-The equal and asymmetric lifecycle geometry is specified in
-[ADR 0007](docs/architecture/0007-division.md).
-The host callback compatibility boundary is grounded in the
-[legacy Python model audit](docs/compatibility/legacy-python-models.md).
-The trusted one-way snapshot boundary is specified in the
-[legacy pickle migration audit](docs/compatibility/legacy-pickle-import.md).
-The independent interactive-viewer boundary is specified in
-[ADR 0012](docs/architecture/0012-viewer-boundary.md) and grounded in the
-[legacy viewer audit](docs/compatibility/legacy-viewer-audit.md).
-The columnar analysis boundary is specified in
-[ADR 0013](docs/architecture/0013-analysis-datasets.md) and grounded in the
-[legacy analysis audit](docs/compatibility/legacy-analysis-audit.md). Concrete
-queries are documented in the [analysis recipe guide](docs/analysis/recipes.md).
+CellModeller2 is a clean-slate successor inspired by CellModeller, created by Tim Rudge, PJ Steiner, Jim Haseloff, and contributors at the University of Cambridge. No legacy source code has been copied into this implementation. The project owner has not yet selected a license for new CellModeller2 code; see [NOTICE.md](NOTICE.md) for the full provenance statement.

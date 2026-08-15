@@ -1,56 +1,45 @@
-# CUDA environment
+# CUDA development environment
 
-The native CUDA growth, contact-geometry, mechanics, signaling, and
-coupled-rate slices use CUDA C++ kernels and the CUDA Runtime API directly.
-Contact generation has native count, inclusive-scan, and fill kernels.
-Mechanics has native Jacobian assembly, matrix-free operator, vector update,
-and pairwise reduction kernels with a host-orchestrated CG loop. Coupled rates
-use ordered cell and grid kernels with device-resident sampling,
-interpretation, transport, and deterministic source gathering. Configure,
-build, and test them on a machine with the CUDA Toolkit and an NVIDIA GPU:
+CUDA is the NVIDIA backend under active development. It is implemented directly in CUDA C++ with the CUDA Runtime API: no portability layer, translated Metal source, or CPU computational fallback is used.
 
-```console
-scripts/run_cuda_conformance.sh
-```
+The current implementation includes native growth, species-rate interpretation, contact geometry, constraints, mechanics, signaling, and coupled-rate stages. Contact generation uses count, inclusive-scan, and fill kernels over deterministic sweep-and-prune candidates. Mechanics uses native Jacobian assembly, matrix-free operators, vector updates, and reduction kernels with a host-orchestrated conjugate-gradient loop. Coupled rates keep sampling, interpretation, transport, and deterministic source gathering device-resident.
 
-`CM2_ENABLE_CUDA` is off by default so a CPU build never acquires an accidental
-CUDA toolchain dependency. Every CUDA-enabled test build includes a mandatory
-`cuda_runtime_gate`; it fails when the runtime cannot discover and construct
-the native backend. The runner requires a clean worktree, performs a fresh
-configure and clean rebuild, executes the complete CTest suite, and writes a
-timestamped evidence directory under `build/` with the source commit, device
-inventory, driver and toolkit details, logs, JUnit results, an explicit
-pass/fail record, and `SHA256SUMS` for every recorded artifact. Pass a path as
-its sole argument to choose a different new evidence directory.
+`CM2_ENABLE_CUDA` is off by default so ordinary CPU builds do not acquire a CUDA toolchain dependency.
 
-The manually dispatched `CUDA conformance` GitHub Actions workflow runs this
-same gate on a self-hosted runner carrying the default `self-hosted`, `linux`,
-and `x64` labels plus the custom `gpu` label. It is intentionally not triggered
-by pull requests, so untrusted branch code is not sent automatically to a
-persistent GPU host. Keep the Actions runner current enough for
-`actions/checkout@v6` and `actions/upload-artifact@v7`; the workflow always
-uploads the evidence directory, including a failed gate's `result.tsv`.
+## Compile check
 
-The CUDA 12.8 toolkit compiles and links the full CUDA-enabled project in
-NVIDIA's official development container. Reproduce that driverless gate with:
+Run the driverless source and link gate in NVIDIA's CUDA 12.8.1 development container:
 
 ```console
 scripts/run_cuda_compile_check.sh
 ```
 
-The script mounts the source read-only, configures and links all native CUDA
-targets inside an ephemeral CUDA 12.8.1 container, lists the registered tests
-without executing them, and records the exact container image plus checksummed
-logs. Override `CM2_CUDA_ARCHITECTURES` or `CM2_CUDA_CONTAINER_IMAGE` when a
-different compile target is required. This proves source and link compatibility
-only; it does not establish CUDA conformance. Every CUDA hardware gate remains
-pending until the shared tests are recorded on an NVIDIA device. Hardware test
-reports must include the device, driver, toolkit, and target compute capability.
+The script mounts the source read-only, builds all CUDA-enabled native targets, lists the registered tests without executing them, and writes checksummed compiler, image, configure, and build evidence. Override `CM2_CUDA_ARCHITECTURES` or `CM2_CUDA_CONTAINER_IMAGE` to test another target or toolkit image.
 
-The `CUDA compile check` workflow runs this container gate for pull requests,
-pushes to `main`, and manual dispatches on GitHub's hosted Ubuntu 24.04 runner.
-It uploads the checksummed compile evidence even when the build fails. It never
-replaces or advances the manually dispatched GPU conformance gate.
+The `CUDA compile check` workflow runs this gate for pull requests, pushes to `main`, and manual dispatches on GitHub's hosted Ubuntu runner. Compilation establishes toolchain compatibility, not numerical or application behavior.
 
-Contact generation uses deterministic sweep-and-prune capsule-bound staging,
-then native CUDA count, scan, and fill kernels for the narrow phase.
+## Native hardware conformance
+
+On a Linux host with the CUDA Toolkit and an NVIDIA GPU, run:
+
+```console
+scripts/run_cuda_conformance.sh
+```
+
+Every CUDA-enabled test build includes `cuda_runtime_gate`, which fails if the runtime cannot enumerate and construct a native CUDA backend. The conformance runner requires a clean worktree, performs a fresh configure and clean rebuild, runs the complete CTest suite on every enumerated device, and writes a timestamped evidence directory under `build/`. The evidence records the exact commit, device inventory, compute capability, driver and toolkit, logs, JUnit results, final status, and `SHA256SUMS`.
+
+Pass a path as the script's sole argument to select a different new evidence directory.
+
+## Application conformance
+
+Run the Python, compatibility, and application gate with a checkout of the pinned original CellModeller source:
+
+```console
+CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
+```
+
+This gate builds the Python extension with CUDA enabled, runs the full Python and recorded-trajectory suites, executes all 24 runnable legacy examples on CPU and every CUDA device, and exercises controller resume, viewer scene semantics, and analysis export with native derived contacts.
+
+The manually dispatched `CUDA conformance` workflow runs both hardware gates on a self-hosted runner with the `self-hosted`, `linux`, `x64`, and `gpu` labels. It always uploads evidence, including failed results, and is intentionally not triggered by pull requests. Keep the runner compatible with the workflow's pinned action versions.
+
+See the [validation workflow](../../docs/development/validation.md) for the complete acceptance policy.
