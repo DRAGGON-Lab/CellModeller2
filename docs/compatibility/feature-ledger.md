@@ -19,7 +19,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Batch execution | batch scripts | `cm2 run`, backend/device/seed selection | implemented with deterministic construction, collision preflight, periodic checkpoints, and provenance |
 | P1 | Legacy Python model adapter | module regulator | adapter for maintained `setup/init/update/divide` models | growth/mechanics callbacks, setup facade, and exact batch resume implemented; signaling models require typed-plan migration |
 | P1 | Legacy pickle import | `Simulator` | one-way migration into the new checkpoint schema | trusted native-state importer implemented with explicit loss provenance |
-| P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | CPU and native Metal standalone/coupled solvers conformant; native CUDA pending |
+| P1 | Crank-Nicolson signaling | `CLCrankNicIntegrator` | implement intended equation after legacy behavior audit | CPU and native Metal standalone/coupled solvers conformant; native CUDA builds with NVIDIA hardware validation pending |
 | P1 | Neighbor reporting | `CLBacterium` | stable cell IDs derived from current contact graph | implemented as deterministic backend-neutral graph views |
 | P2 | Fixed-position cells | `CLFixedPosition` | reference and native growth-only state | audit needed |
 | P2 | Neighbor diffusion | `NeighbourDiffusion` | retain only after model and attribute audit | dormant/ambiguous |

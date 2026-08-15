@@ -62,9 +62,9 @@ checkpoint round trips, v1-through-v4 migration, and diagnosed Crank-Nicolson
 convergence. The shared anisotropic 630-value scenario executes both Forward
 Euler and Crank-Nicolson through native MSL transport on Apple GPU hardware and
 compares them with the CPU reference at `5e-6`. The independent
-CUDA transport kernel compiles and links against the CUDA 12.8 toolkit, but
-compilation and driverless test execution are not conformance; the same gate
-must execute on NVIDIA hardware.
+CUDA Forward Euler and Crank-Nicolson kernels compile and link against the CUDA
+12.8 toolkit, but compilation and driverless test execution are not
+conformance; the same gate must execute on NVIDIA hardware.
 
 Coupled-rate CPU fixtures verify that sampling and scatter use the same
 trilinear weights, cell signal outputs are amount-per-time divided by voxel
@@ -82,8 +82,9 @@ Crank-Nicolson modes on Apple GPU hardware. It evaluates cells and gathers grid
 sources in two MSL kernels within one command buffer;
 the grid-thread gather is deterministic and avoids a floating-point atomic
 requirement while keeping intermediate samples and rates device-resident.
-The independent CUDA C++ stage uses the same two-launch stream ordering and
-compiles and links for `sm_75` with the CUDA 12.8.1 toolkit. Driverless tests
+The independent CUDA C++ stage uses the same stream ordering, adding native
+Jacobi and residual-reduction kernels for Crank-Nicolson, and compiles and links
+for `sm_75` with the CUDA 12.8.1 toolkit. Driverless tests
 exercise only the CPU paths because no CUDA device can be constructed; the
 513-cell fixture, empty-colony path, and failed-source atomicity check remain
 mandatory on NVIDIA hardware before CUDA conformance is claimed.

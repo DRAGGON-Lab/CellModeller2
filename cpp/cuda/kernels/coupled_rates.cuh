@@ -18,6 +18,6 @@ cudaError_t launch_advance_coupled(
     float* cell_signal_rates, std::uint32_t* error, SignalGridBoundariesGpu boundaries,
     SignalGridShapeGpu shape, float4 origin, float4 spacing, float dt, std::uint32_t species_count,
     std::uint32_t signal_count, std::uint32_t instruction_count, std::uint32_t cell_count,
-    std::uint32_t level_count, cudaStream_t stream);
+    std::uint32_t level_count, bool crank_nicolson, cudaStream_t stream);
 
 }  // namespace cm2::cuda

@@ -265,9 +265,6 @@ class CudaBackend final : public ComputeBackend {
   }
 
   SignalSolveReport advance_signal_grid(SignalGrid& grid, float dt) override {
-    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
-      throw std::runtime_error("CUDA Crank-Nicolson signal integration is not implemented");
-    }
     activate_device();
     grid.validate();
     grid.validate_step(dt);
@@ -327,34 +324,50 @@ class CudaBackend final : public ComputeBackend {
         .z = spec.shape.z,
         .sites = static_cast<std::uint32_t>(spec.site_count()),
     };
+    const auto crank_nicolson = spec.integration == SignalIntegrationKind::crank_nicolson;
     cuda::launch_advance_signal_grid(
         signal_levels_.data(), signal_output_.data(), signal_diffusion_.data(),
         signal_advection_.data(), signal_fixed_values_.data(), signal_error_.data(), boundaries,
         shape, make_float4(spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F), dt, signal_count,
-        level_count, stream_);
+        level_count, crank_nicolson, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-grid kernel");
 
     std::uint32_t error = 0;
-    std::vector<float> output(levels.size());
     check_cuda(cudaMemcpyAsync(&error, signal_error_.data(), sizeof(error), cudaMemcpyDeviceToHost,
                                stream_),
                "failed to download the CUDA signal-grid error flag");
-    copy_to_host(output, signal_output_, "failed to download CUDA signal-grid levels");
     check_cuda(cudaStreamSynchronize(stream_), "CUDA signal-grid execution failed");
     if (error != 0) {
       throw std::domain_error(
           "CUDA signal-grid kernel produced a non-finite or negative concentration");
     }
+    const float* result_device = signal_output_.data();
+    SignalSolveReport report;
+    if (crank_nicolson) {
+      const auto solve = solve_signal_crank_nicolson(
+          signal_levels_.data(), signal_output_.data(), signal_diffusion_.data(),
+          signal_advection_.data(), signal_fixed_values_.data(), signal_error_.data(), boundaries,
+          shape, make_float4(spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F), dt,
+          signal_count, level_count, spec.solver);
+      result_device = solve.first;
+      report = solve.second;
+      if (!report.converged) {
+        throw std::runtime_error("CUDA Crank-Nicolson signal solve did not converge after " +
+                                 std::to_string(report.iterations) + " iterations");
+      }
+    }
+    std::vector<float> output(levels.size());
+    check_cuda(cudaMemcpyAsync(output.data(), result_device, output.size() * sizeof(float),
+                               cudaMemcpyDeviceToHost, stream_),
+               "failed to download CUDA signal-grid levels");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA signal-grid download failed");
     grid.replace_levels(std::move(output));
-    return {};
+    return report;
   }
 
   SignalSolveReport advance_coupled(WorldState& state, SignalGrid& grid,
                                     const CoupledRatePlan& plan,
                                     std::span<const float> previous_lengths, float dt) override {
-    if (grid.spec().integration == SignalIntegrationKind::crank_nicolson) {
-      throw std::runtime_error("CUDA Crank-Nicolson coupled integration is not implemented");
-    }
     activate_device();
     validate_coupled_step(state, grid, plan, previous_lengths, dt);
     const auto checked_product = [](std::size_t left, std::size_t right, const char* name) {
@@ -494,6 +507,7 @@ class CudaBackend final : public ComputeBackend {
         .z = spec.shape.z,
         .sites = static_cast<std::uint32_t>(spec.site_count()),
     };
+    const auto crank_nicolson = spec.integration == SignalIntegrationKind::crank_nicolson;
     check_cuda(
         cuda::launch_advance_coupled(
             coupled_species_levels_.data(), coupled_previous_lengths_.data(),
@@ -509,7 +523,7 @@ class CudaBackend final : public ComputeBackend {
             static_cast<std::uint32_t>(signal_count_size),
             static_cast<std::uint32_t>(instruction_count_size),
             static_cast<std::uint32_t>(cell_count_size),
-            static_cast<std::uint32_t>(grid_level_count), stream_),
+            static_cast<std::uint32_t>(grid_level_count), crank_nicolson, stream_),
         "failed to launch the CUDA coupled kernels");
 
     std::uint32_t error = 0;
@@ -521,18 +535,38 @@ class CudaBackend final : public ComputeBackend {
       throw std::domain_error("CUDA coupled kernels produced an invalid value");
     }
 
+    const float* result_device = coupled_grid_output_.data();
+    SignalSolveReport report;
+    if (crank_nicolson) {
+      const auto solve = solve_signal_crank_nicolson(
+          coupled_grid_levels_.data(), coupled_grid_output_.data(), coupled_diffusion_.data(),
+          coupled_advection_.data(), coupled_fixed_values_.data(), coupled_error_.data(),
+          boundaries, shape, make_float4(spec.spacing.x, spec.spacing.y, spec.spacing.z, 0.0F), dt,
+          static_cast<std::uint32_t>(signal_count_size),
+          static_cast<std::uint32_t>(grid_level_count), spec.solver);
+      result_device = solve.first;
+      report = solve.second;
+      if (!report.converged) {
+        throw std::runtime_error(
+            "CUDA Crank-Nicolson coupled signal solve did not converge after " +
+            std::to_string(report.iterations) + " iterations");
+      }
+    }
+
     std::vector<float> next_species(species_level_count);
     std::vector<float> next_grid(grid_level_count);
     if (!next_species.empty()) {
       copy_to_host(next_species, coupled_species_levels_,
                    "failed to download CUDA coupled species levels");
     }
-    copy_to_host(next_grid, coupled_grid_output_, "failed to download CUDA coupled grid levels");
+    check_cuda(cudaMemcpyAsync(next_grid.data(), result_device, next_grid.size() * sizeof(float),
+                               cudaMemcpyDeviceToHost, stream_),
+               "failed to download CUDA coupled grid levels");
     check_cuda(cudaStreamSynchronize(stream_), "CUDA coupled download failed");
     SignalGridCheckpoint{.spec = spec, .levels = next_grid}.validate();
     std::ranges::copy(next_species, species_state.levels.begin());
     grid.replace_levels(std::move(next_grid));
-    return {};
+    return report;
   }
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
@@ -1162,6 +1196,112 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaGetLastError(), "failed to launch the CUDA mechanics-regularizer kernel");
   }
 
+  void ensure_signal_solve_capacity(std::uint32_t level_count) {
+    signal_cn_a_.reserve(level_count, "signal Jacobi field A");
+    signal_cn_b_.reserve(level_count, "signal Jacobi field B");
+    signal_cn_terms_.reserve(level_count, "signal residual terms");
+    signal_cn_reduce_a_.reserve(level_count, "signal reduction A");
+    signal_cn_reduce_b_.reserve(level_count, "signal reduction B");
+  }
+
+  [[nodiscard]] float reduce_signal_terms(std::uint32_t level_count, const char* operation) {
+    const float* input = signal_cn_terms_.data();
+    float* output = signal_cn_reduce_a_.data();
+    auto element_count = level_count;
+    while (element_count > 1) {
+      cuda::launch_reduce_sum_pairs(input, output, element_count, stream_);
+      check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-reduction kernel");
+      input = output;
+      output = output == signal_cn_reduce_a_.data() ? signal_cn_reduce_b_.data()
+                                                    : signal_cn_reduce_a_.data();
+      element_count = (element_count + 1) / 2;
+    }
+    float result = 0.0F;
+    check_cuda(cudaMemcpyAsync(&result, input, sizeof(result), cudaMemcpyDeviceToHost, stream_),
+               "failed to download a CUDA signal reduction");
+    check_cuda(cudaStreamSynchronize(stream_), operation);
+    return result;
+  }
+
+  [[nodiscard]] float signal_rhs_rms(const float* right_hand_side, std::uint32_t level_count) {
+    cuda::launch_signal_square_terms(right_hand_side, signal_cn_terms_.data(), level_count,
+                                     stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-norm kernel");
+    return std::sqrt(reduce_signal_terms(level_count, "CUDA signal norm failed") /
+                     static_cast<float>(level_count));
+  }
+
+  [[nodiscard]] float signal_residual_rms(const float* current, const float* right_hand_side,
+                                          const float* diffusion, const float4* advection,
+                                          const float* fixed_values,
+                                          cuda::SignalGridBoundariesGpu boundaries,
+                                          cuda::SignalGridShapeGpu shape, float4 spacing,
+                                          float half_dt, std::uint32_t signal_count,
+                                          std::uint32_t level_count) {
+    cuda::launch_signal_crank_nicolson_residual_terms(
+        current, right_hand_side, signal_cn_terms_.data(), diffusion, advection, fixed_values,
+        boundaries, shape, spacing, half_dt, signal_count, level_count, stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-residual kernel");
+    return std::sqrt(reduce_signal_terms(level_count, "CUDA signal residual failed") /
+                     static_cast<float>(level_count));
+  }
+
+  [[nodiscard]] std::pair<const float*, SignalSolveReport> solve_signal_crank_nicolson(
+      const float* initial, const float* right_hand_side, const float* diffusion,
+      const float4* advection, const float* fixed_values, std::uint32_t* error,
+      cuda::SignalGridBoundariesGpu boundaries, cuda::SignalGridShapeGpu shape, float4 spacing,
+      float dt, std::uint32_t signal_count, std::uint32_t level_count,
+      const SignalSolveParameters& parameters) {
+    ensure_signal_solve_capacity(level_count);
+    const auto half_dt = 0.5F * dt;
+    const auto right_hand_side_rms = signal_rhs_rms(right_hand_side, level_count);
+    const auto threshold =
+        parameters.absolute_tolerance + (parameters.relative_tolerance * right_hand_side_rms);
+    SignalSolveReport report;
+    report.residual_rms =
+        signal_residual_rms(initial, right_hand_side, diffusion, advection, fixed_values,
+                            boundaries, shape, spacing, half_dt, signal_count, level_count);
+    if (std::isfinite(report.residual_rms) && report.residual_rms <= threshold) {
+      return {initial, report};
+    }
+    if (!std::isfinite(report.residual_rms) || !std::isfinite(threshold)) {
+      report.converged = false;
+      return {initial, report};
+    }
+
+    check_cuda(cudaMemsetAsync(error, 0, sizeof(std::uint32_t), stream_),
+               "failed to clear the CUDA signal solver error flag");
+    const float* current = initial;
+    for (std::uint32_t iteration = 1; iteration <= parameters.max_iterations; ++iteration) {
+      float* output = current == signal_cn_a_.data() ? signal_cn_b_.data() : signal_cn_a_.data();
+      cuda::launch_signal_crank_nicolson_jacobi(
+          current, output, right_hand_side, diffusion, advection, fixed_values, error, boundaries,
+          shape, spacing, half_dt, signal_count, level_count, stream_);
+      check_cuda(cudaGetLastError(), "failed to launch the CUDA signal Jacobi kernel");
+      report.residual_rms =
+          signal_residual_rms(output, right_hand_side, diffusion, advection, fixed_values,
+                              boundaries, shape, spacing, half_dt, signal_count, level_count);
+      report.iterations = iteration;
+      current = output;
+
+      std::uint32_t error_value = 0;
+      check_cuda(cudaMemcpyAsync(&error_value, error, sizeof(error_value), cudaMemcpyDeviceToHost,
+                                 stream_),
+                 "failed to download the CUDA signal solver error flag");
+      check_cuda(cudaStreamSynchronize(stream_), "CUDA signal solver error check failed");
+      if (error_value != 0 || !std::isfinite(report.residual_rms)) {
+        report.converged = false;
+        return {current, report};
+      }
+      if (report.residual_rms <= threshold) {
+        report.converged = true;
+        return {current, report};
+      }
+    }
+    report.converged = false;
+    return {current, report};
+  }
+
   [[nodiscard]] float reduce_mechanics_dot(const cuda::MechanicsDofsGpu* left,
                                            const cuda::MechanicsDofsGpu* right,
                                            std::uint32_t cell_count, const char* operation) {
@@ -1297,6 +1437,11 @@ class CudaBackend final : public ComputeBackend {
   CudaBuffer<float4> signal_advection_;
   CudaBuffer<float> signal_fixed_values_;
   CudaBuffer<std::uint32_t> signal_error_;
+  CudaBuffer<float> signal_cn_a_;
+  CudaBuffer<float> signal_cn_b_;
+  CudaBuffer<float> signal_cn_terms_;
+  CudaBuffer<float> signal_cn_reduce_a_;
+  CudaBuffer<float> signal_cn_reduce_b_;
 
   CudaBuffer<float> coupled_species_levels_;
   CudaBuffer<float> coupled_previous_lengths_;

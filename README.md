@@ -62,8 +62,9 @@ no-flux/periodic/fixed boundaries, trilinear sampling, stability checks, and
 non-negative concentration updates. The MSL transport kernel is conformant on
 Apple GPU hardware. The independent CUDA kernel compiles and links against the
 12.8 toolkit; its shared conformance scenario still requires NVIDIA hardware.
-The checkpointed Crank-Nicolson option has diagnosed CPU and native Metal
-solvers; native CUDA is the remaining backend checkpoint.
+The checkpointed Crank-Nicolson option has diagnosed CPU, native Metal, and
+native CUDA solvers. The CUDA implementation compiles and links for `sm_75`;
+its shared conformance cases still require NVIDIA hardware.
 
 Coupled rate plans add sampled-signal inputs and separate intracellular
 concentration-rate and extracellular amount-rate outputs. CPU and native Metal

@@ -227,7 +227,7 @@ __global__ void advance_coupled_grid(const float* levels, float* output, const f
                                      std::uint32_t* error, SignalGridBoundariesGpu boundaries,
                                      SignalGridShapeGpu shape, float4 origin, float4 spacing,
                                      float dt, std::uint32_t signal_count, std::uint32_t cell_count,
-                                     std::uint32_t level_count) {
+                                     std::uint32_t level_count, bool crank_nicolson) {
   const auto index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index >= level_count) {
     return;
@@ -299,9 +299,10 @@ __global__ void advance_coupled_grid(const float* levels, float* output, const f
     const auto weight = cell_site_weight(centers[cell], shape, origin, spacing, x, y, z);
     source += weight * cell_signal_rates[cell * signal_count + signal] * inverse_voxel_volume;
   }
-  const auto candidate = current + dt * (rate + source);
+  const auto transport_scale = crank_nicolson ? 0.5F * dt : dt;
+  const auto candidate = current + transport_scale * rate + dt * source;
   output[index] = candidate;
-  if (!isfinite(candidate) || candidate < 0.0F) {
+  if (!isfinite(candidate) || (!crank_nicolson && candidate < 0.0F)) {
     atomicOr(error, 2U);
   }
 }
@@ -317,7 +318,7 @@ cudaError_t launch_advance_coupled(
     float* cell_signal_rates, std::uint32_t* error, SignalGridBoundariesGpu boundaries,
     SignalGridShapeGpu shape, float4 origin, float4 spacing, float dt, std::uint32_t species_count,
     std::uint32_t signal_count, std::uint32_t instruction_count, std::uint32_t cell_count,
-    std::uint32_t level_count, cudaStream_t stream) {
+    std::uint32_t level_count, bool crank_nicolson, cudaStream_t stream) {
   if (cell_count != 0) {
     const auto cell_blocks = ((cell_count - 1) / threads_per_block) + 1;
     advance_coupled_cells<<<cell_blocks, threads_per_block, 0, stream>>>(
@@ -332,7 +333,8 @@ cudaError_t launch_advance_coupled(
   const auto grid_blocks = ((level_count - 1) / threads_per_block) + 1;
   advance_coupled_grid<<<grid_blocks, threads_per_block, 0, stream>>>(
       grid_levels, grid_output, diffusion, advection, fixed_values, centers, cell_signal_rates,
-      error, boundaries, shape, origin, spacing, dt, signal_count, cell_count, level_count);
+      error, boundaries, shape, origin, spacing, dt, signal_count, cell_count, level_count,
+      crank_nicolson);
   return cudaGetLastError();
 }
 
