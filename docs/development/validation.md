@@ -135,6 +135,11 @@ A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while
 `Simulation.supports` reports features implemented by a constructed backend.
+Every CUDA-enabled test build adds `cuda_runtime_gate`, so a Toolkit-only host
+cannot report a green CTest suite by exercising only the CPU paths. On an
+NVIDIA host, run `scripts/run_cuda_conformance.sh`; it requires a clean source
+tree and preserves the exact commit, GPU inventory, compute capability, driver,
+Toolkit, configure/build logs, JUnit results, and final status under `build/`.
 
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.

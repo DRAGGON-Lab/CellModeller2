@@ -49,8 +49,8 @@ solver on Apple GPU hardware. CUDA now has the equivalent native mechanics
 implementation, but both its contact and mechanics conformance still require
 execution on NVIDIA hardware. `relax_cell_mechanics` applies a converged result
 through the shared bounded-rotation and non-shortening integration contract.
-Both GPU contact paths use an exhaustive correctness stage while the scalable
-broad phase is under construction. Plane and sphere constraints have native
+Both GPU contact paths consume deterministic sweep-and-prune capsule candidates
+before their native narrow phases. Plane and sphere constraints have native
 Metal and CUDA geometry and mechanics paths, where their rows participate in
 the same matrix-free solve and relaxation path as cell-cell contacts. Metal is
 conformant on Apple GPU hardware; the CUDA implementation compiles against the

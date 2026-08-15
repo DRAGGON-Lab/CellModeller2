@@ -290,4 +290,13 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_constraint_mechanics_conformance_test PRIVATE cm2::core)
   add_test(NAME constraint_mechanics_conformance COMMAND cm2_constraint_mechanics_conformance_test)
   set_tests_properties(constraint_mechanics_conformance PROPERTIES LABELS conformance)
+
+  if(CM2_ENABLE_CUDA)
+    add_executable(cm2_cuda_runtime_gate_test
+      tests/conformance/cuda_runtime_gate_test.cpp
+    )
+    target_link_libraries(cm2_cuda_runtime_gate_test PRIVATE cm2::core)
+    add_test(NAME cuda_runtime_gate COMMAND cm2_cuda_runtime_gate_test)
+    set_tests_properties(cuda_runtime_gate PROPERTIES LABELS "conformance;cuda")
+  endif()
 endif()
