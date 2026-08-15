@@ -273,6 +273,15 @@ compiled. CellModeller2 never executes a model path merely because it appears
 in a checkpoint. Bare native checkpoints with a null controller still resume
 with `--resume` alone.
 
+`NativeController` provides the standard lifecycle for new models. Regulation
+returns a typed `StepPlan`; the controller validates all cell updates and
+division requests before applying them, runs native integration, then performs
+the exact number of mechanics passes in `MechanicsConfig`. Its standard payload
+also persists model JSON state, controller step count, model identity, random
+state, and mechanics configuration. See
+[`examples/native_controller.py`](examples/native_controller.py) for a complete
+`build`/`resume` model.
+
 `--steps` is always the deterministic maximum. When `--stop-cell-count` is
 present, the runner also stops before the first step if the initial colony has
 already reached the threshold, or immediately after the first step that does.

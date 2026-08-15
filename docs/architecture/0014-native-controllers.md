@@ -46,6 +46,28 @@ including its Gaussian cache. Native controllers use these helpers rather than
 ambient module randomness. Model-specific state remains model-defined JSON and
 must be validated by the model's resume entry point.
 
+`NativeController` is the standard implementation of the protocol. A regulation
+callback receives immutable cell snapshots plus the controller's explicit RNG
+and mutable JSON model state, then returns a `StepPlan`. The plan contains typed
+`CellUpdate` and `DivisionRequest` records and is validated in full before native
+state changes. Optional division callbacks receive the parent and both native
+daughter snapshots. The fixed step order is:
+
+1. compute and validate host regulation;
+2. apply cell attributes, species, and fixed-state updates;
+3. apply division requests and division callbacks;
+4. execute `Simulation.step(dt)` for growth and typed rate plans; and
+5. execute exactly `MechanicsConfig.passes` contact/relaxation passes when
+   mechanics is configured.
+
+The standard payload records a stable model ID and version, completed-step
+counter, model JSON state, random stream, and every mechanics parameter.
+`NativeController.from_checkpoint` validates and restores that payload while
+the checkpoint's native state retains rate plans, signal grids, geometry, and
+lineage. Exact mechanics passes are a new explicit controller contract; how the
+legacy `max_substeps` option maps onto it remains a separate compatibility
+decision requiring trajectory evidence.
+
 ## Consequences
 
 - Native models can compose runtime policy without coupling the engine to one
@@ -56,5 +78,5 @@ must be validated by the model's resume entry point.
   source paths.
 - A model source change deliberately invalidates existing controller resumes
   unless a future explicit migration workflow is introduced.
-- Typed orchestration helpers can be built on this protocol without changing
-  the runner or checkpoint format.
+- Additional typed orchestration helpers can be built on this protocol without
+  changing the runner or checkpoint format.
