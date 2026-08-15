@@ -147,7 +147,7 @@ kernel void add_mechanics_regularizer(
 }
 
 kernel void initialize_mechanics_vectors(
-    device const MechanicsDofs* right_hand_side [[buffer(0)]],
+    device MechanicsDofs* right_hand_side [[buffer(0)]],
     device MechanicsDofs* solution [[buffer(1)]], device MechanicsDofs* residual [[buffer(2)]],
     device MechanicsDofs* search_direction [[buffer(3)]],
     constant uint& cell_count [[buffer(4)]], device const uchar* fixed [[buffer(5)]],
@@ -157,6 +157,7 @@ kernel void initialize_mechanics_vectors(
   }
   solution[cell] = zero_dofs();
   MechanicsDofs projected_rhs = fixed[cell] == 0 ? right_hand_side[cell] : zero_dofs();
+  right_hand_side[cell] = projected_rhs;
   residual[cell] = projected_rhs;
   search_direction[cell] = projected_rhs;
 }

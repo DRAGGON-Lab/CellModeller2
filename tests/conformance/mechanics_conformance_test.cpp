@@ -1,6 +1,9 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <iostream>
+#include <string_view>
 
 #include "cm2/simulation.hpp"
 
@@ -31,22 +34,33 @@ void populate_mixed_colony(cm2::Simulation& simulation) {
   add_capsule(simulation, {4.8F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
 }
 
+void require_close(float actual, float expected, std::string_view scenario, std::size_t index,
+                   std::string_view field) {
+  if (close(actual, expected)) {
+    return;
+  }
+  std::cerr << scenario << " correction " << index << ' ' << field << ": actual=" << actual
+            << " expected=" << expected << '\n';
+  std::abort();
+}
+
 void compare_corrections(const cm2::MechanicsSolveResult& actual,
-                         const cm2::MechanicsSolveResult& expected) {
+                         const cm2::MechanicsSolveResult& expected, std::string_view scenario) {
   assert(actual.report.status == expected.report.status);
   assert(actual.report.breakdown == expected.report.breakdown);
-  assert(close(actual.report.initial_residual_rms, expected.report.initial_residual_rms));
+  require_close(actual.report.initial_residual_rms, expected.report.initial_residual_rms, scenario,
+                0, "initial_residual_rms");
   assert(actual.corrections.size() == expected.corrections.size());
   for (std::size_t index = 0; index < expected.corrections.size(); ++index) {
     const auto& left = actual.corrections[index];
     const auto& right = expected.corrections[index];
-    assert(close(left.translation.x, right.translation.x));
-    assert(close(left.translation.y, right.translation.y));
-    assert(close(left.translation.z, right.translation.z));
-    assert(close(left.rotation.x, right.rotation.x));
-    assert(close(left.rotation.y, right.rotation.y));
-    assert(close(left.rotation.z, right.rotation.z));
-    assert(close(left.length, right.length));
+    require_close(left.translation.x, right.translation.x, scenario, index, "translation.x");
+    require_close(left.translation.y, right.translation.y, scenario, index, "translation.y");
+    require_close(left.translation.z, right.translation.z, scenario, index, "translation.z");
+    require_close(left.rotation.x, right.rotation.x, scenario, index, "rotation.x");
+    require_close(left.rotation.y, right.rotation.y, scenario, index, "rotation.y");
+    require_close(left.rotation.z, right.rotation.z, scenario, index, "rotation.z");
+    require_close(left.length, right.length, scenario, index, "length");
   }
 }
 
@@ -62,7 +76,7 @@ void run_converged_colony(cm2::BackendKind backend) {
   const auto actual = candidate.solve_cell_mechanics(parameters);
   assert(expected.report.status == cm2::SolverStatus::converged);
   assert(actual.report.final_residual_rms <= parameters.residual_rms_tolerance);
-  compare_corrections(actual, expected);
+  compare_corrections(actual, expected, "converged colony");
 }
 
 void run_iteration_limit(cm2::BackendKind backend) {
@@ -78,7 +92,7 @@ void run_iteration_limit(cm2::BackendKind backend) {
   const auto actual = candidate.solve_cell_mechanics(parameters);
   assert(expected.report.status == cm2::SolverStatus::iteration_limit);
   assert(actual.report.iterations == 1);
-  compare_corrections(actual, expected);
+  compare_corrections(actual, expected, "iteration limit");
 }
 
 void run_empty_systems(cm2::BackendKind backend) {
@@ -125,7 +139,7 @@ void run_integrated_relaxation(cm2::BackendKind backend) {
   parameters.residual_rms_tolerance = 2.0e-5F;
   const auto expected = reference.relax_cell_mechanics(parameters);
   const auto actual = candidate.relax_cell_mechanics(parameters);
-  compare_corrections(actual, expected);
+  compare_corrections(actual, expected, "integrated relaxation");
   const auto expected_cells = reference.cells();
   const auto actual_cells = candidate.cells();
   assert(actual_cells.size() == expected_cells.size());
@@ -159,7 +173,7 @@ void run_fixed_cell_relaxation(cm2::BackendKind backend) {
   parameters.residual_rms_tolerance = 2.0e-5F;
   const auto expected = reference.solve_cell_mechanics(parameters);
   const auto actual = candidate.solve_cell_mechanics(parameters);
-  compare_corrections(actual, expected);
+  compare_corrections(actual, expected, "fixed-cell solve");
   assert(actual.report.status == cm2::SolverStatus::converged);
   assert(actual.corrections[0].translation.x == 0.0F);
   assert(actual.corrections[0].translation.y == 0.0F);
@@ -172,7 +186,7 @@ void run_fixed_cell_relaxation(cm2::BackendKind backend) {
 
   const auto expected_relaxation = reference.relax_cell_mechanics(parameters);
   const auto actual_relaxation = candidate.relax_cell_mechanics(parameters);
-  compare_corrections(actual_relaxation, expected_relaxation);
+  compare_corrections(actual_relaxation, expected_relaxation, "fixed-cell relaxation");
   assert(candidate.cell(candidate_fixed).position.x == 0.0F);
   assert(candidate.cell(candidate_fixed).position.y == 0.0F);
   assert(candidate.cell(candidate_fixed).position.z == 0.0F);

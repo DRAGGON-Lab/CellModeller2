@@ -39,7 +39,7 @@ void launch_add_mechanics_regularizer(const float4* axes, const float4* geometry
                                       const std::uint8_t* fixed, float mu_a, float gamma,
                                       std::uint32_t cell_count, cudaStream_t stream);
 
-void launch_initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_side,
+void launch_initialize_mechanics_vectors(MechanicsDofsGpu* right_hand_side,
                                          MechanicsDofsGpu* solution, MechanicsDofsGpu* residual,
                                          MechanicsDofsGpu* search_direction,
                                          const std::uint8_t* fixed, std::uint32_t cell_count,

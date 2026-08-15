@@ -178,7 +178,7 @@ __global__ void add_mechanics_regularizer(const float4* axes, const float4* geom
   output[cell].rotation.z += regularization * inertia_rotation.z;
 }
 
-__global__ void initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_side,
+__global__ void initialize_mechanics_vectors(MechanicsDofsGpu* right_hand_side,
                                              MechanicsDofsGpu* solution, MechanicsDofsGpu* residual,
                                              MechanicsDofsGpu* search_direction,
                                              const std::uint8_t* fixed,
@@ -189,6 +189,7 @@ __global__ void initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_
   }
   solution[cell] = zero_dofs();
   const auto projected_rhs = fixed[cell] == 0 ? right_hand_side[cell] : zero_dofs();
+  right_hand_side[cell] = projected_rhs;
   residual[cell] = projected_rhs;
   search_direction[cell] = projected_rhs;
 }
@@ -292,7 +293,7 @@ void launch_add_mechanics_regularizer(const float4* axes, const float4* geometry
       axes, geometry, input, output, fixed, mu_a, gamma, cell_count);
 }
 
-void launch_initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_side,
+void launch_initialize_mechanics_vectors(MechanicsDofsGpu* right_hand_side,
                                          MechanicsDofsGpu* solution, MechanicsDofsGpu* residual,
                                          MechanicsDofsGpu* search_direction,
                                          const std::uint8_t* fixed, std::uint32_t cell_count,
