@@ -36,15 +36,15 @@ CellModeller2 requires Python 3.12, CMake, Ninja, a C++23 compiler, and [uv](htt
 
 ```console
 uv sync --group dev
-uv run cm2 devices
-uv run cm2 run \
+uv run cm devices
+uv run cm run \
   --model examples/batch_model.py \
   --backend cpu \
   --seed 42 \
   --parameter growth_rate=0.25 \
   --steps 100 \
   --dt 0.05 \
-  --output results/colony.cm2.json
+  --output results/colony.json
 ```
 
 Run the test suite with:
@@ -92,8 +92,8 @@ Each backend interprets that validated plan with its own native C++, Metal Shadi
 Choose a backend and device explicitly:
 
 ```console
-uv run cm2 devices
-uv run cm2 run \
+uv run cm devices
+uv run cm run \
   --model examples/native_controller.py \
   --backend metal \
   --device-index 0 \
@@ -101,19 +101,19 @@ uv run cm2 run \
   --steps 100 \
   --dt 0.05 \
   --checkpoint-every 25 \
-  --output results/colony.cm2.json
+  --output results/colony.json
 ```
 
 Resume on any available backend:
 
 ```console
-uv run cm2 run \
+uv run cm run \
   --model examples/native_controller.py \
-  --resume results/colony.cm2.json \
+  --resume results/colony.json \
   --backend cpu \
   --steps 100 \
   --dt 0.05 \
-  --output results/colony-resumed.cm2.json
+  --output results/colony-resumed.json
 ```
 
 Checkpoints contain simulation and controller data, never executable model code. Resume verifies the model digest before compiling the explicitly supplied source. Bare simulation checkpoints can resume without a model when their controller state is null. Existing outputs are not replaced unless `--overwrite` is provided.
@@ -121,7 +121,7 @@ Checkpoints contain simulation and controller data, never executable model code.
 For parameter sweeps and scheduler jobs, use the strict [run manifest v1 format](docs/formats/run-manifest-v1.md):
 
 ```console
-uv run cm2 run-manifest experiments/gamma.cm2.runs.json \
+uv run cm run-manifest experiments/gamma.runs.json \
   --job gamma-0.10-replicate-001
 ```
 
@@ -130,13 +130,13 @@ uv run cm2 run-manifest experiments/gamma.cm2.runs.json \
 Maintained CellModeller growth, mechanics, regulation, constraint, neighbor, and host-species models run through the explicit compatibility loader:
 
 ```console
-uv run cm2 run \
+uv run cm run \
   --legacy-model ../CellModeller/Examples/ex1a_simpleGrowth2D.py \
   --backend metal \
   --seed 42 \
   --steps 100 \
   --dt 0.05 \
-  --output results/legacy.cm2.json
+  --output results/legacy.json
 ```
 
 The nine bundled examples that previously embedded OpenCL species or signaling equations have typed CellModeller2 ports under [`examples/legacy`](examples/legacy). Legacy OpenCL source strings are not executed: their equations become typed rate plans so CPU, Metal, and CUDA retain independent native implementations.
@@ -144,8 +144,8 @@ The nine bundled examples that previously embedded OpenCL species or signaling e
 Trusted CellModeller pickle snapshots use a deliberately explicit, one-way migration command:
 
 ```console
-uv run cm2 import-legacy-pickle data/step-00100.pickle \
-  --output results/step-00100.cm2.json \
+uv run cm import-legacy-pickle data/step-00100.pickle \
+  --output results/step-00100.json \
   --dt 0.05 \
   --trust-legacy-pickle \
   --native-state-only
@@ -184,13 +184,13 @@ Export an integrity-checked scene without exposing engine or device memory:
 from cellmodeller2 import capture_scene, save_scene
 
 frame = capture_scene(simulation)
-save_scene(frame, "colony.cm2.scene.json")
+save_scene(frame, "colony.scene.json")
 ```
 
 The standalone TypeScript/Three.js viewer provides instanced rods, orbit controls, cell inspection, declarative coloring, and signal-grid slicing:
 
 ```console
-uv run python examples/viewer_scene.py --output viewer-demo.cm2.scene.json
+uv run python examples/viewer_scene.py --output viewer-demo.scene.json
 pnpm --dir viewer install
 pnpm --dir viewer dev
 ```
@@ -200,12 +200,12 @@ For interactive runs, build the viewer and launch an authenticated loopback sess
 ```console
 uv sync --group dev --extra viewer
 pnpm --dir viewer build
-uv run cm2 view \
+uv run cm view \
   --model examples/batch_model.py \
   --backend cpu \
   --seed 42 \
   --dt 0.05 \
-  --checkpoint-output results/live.cm2.json \
+  --checkpoint-output results/live.json \
   --open
 ```
 
@@ -217,10 +217,10 @@ Install the analysis dependencies and export an ordered checkpoint series:
 
 ```console
 uv sync --extra analysis
-uv run cm2 export-analysis \
-  results/step-00025.cm2.json \
-  results/step-00050.cm2.json \
-  --output results/run.cm2.dataset \
+uv run cm export-analysis \
+  results/step-00025.json \
+  results/step-00050.json \
+  --output results/run.dataset \
   --contacts \
   --external-contacts
 ```
@@ -264,6 +264,8 @@ The engine is deliberately organized around semantic contracts rather than a low
 - [`cpp/cuda`](cpp/cuda) contains native CUDA host code and CUDA C++ kernels.
 - [`python/src/cellmodeller2`](python/src/cellmodeller2) provides modeling, compatibility, batch, analysis, and viewer APIs.
 - [`viewer`](viewer) is an independent presentation client with no simulation-engine ownership.
+
+The public C++ namespace, CMake target prefix, environment-variable prefix, and command-line executable all use `cm`. The Python distribution and import path remain `cellmodeller2`, and existing `.cm2.json` artifacts remain readable.
 
 Start with the following design documents:
 

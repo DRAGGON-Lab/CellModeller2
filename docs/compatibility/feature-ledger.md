@@ -17,7 +17,7 @@ This ledger defines the scientific and workflow boundary inherited from CellMode
 | P0 | Grid signaling | `GridDiffusion` | Diffusion, optional advection, declared boundaries, explicit stability checks, and checkpointed state | Complete |
 | P0 | Coupled cell/grid rates | Signal integrators | Device-resident sample, rate, transport, scatter, and simultaneous commit | Complete |
 | P0 | Checkpoint and exact resume | Pickle output | Versioned non-executable JSON checkpoint with provenance, integrity, schema migration, and authenticated controller state | Complete |
-| P0 | Batch execution | Batch scripts | Deterministic `cm2 run`, explicit backend/device/seed selection, stopping rules, collision safety, and data-only run manifests | Complete |
+| P0 | Batch execution | Batch scripts | Deterministic `cm run`, explicit backend/device/seed selection, stopping rules, collision safety, and data-only run manifests | Complete |
 | P0 | Native model orchestration | Simulator/module lifecycle | Restartable controller with typed regulation, division, exact-pass mechanics, model state, and runtime RNG | Complete |
 | P1 | Legacy Python model adapter | Module regulator | Compatibility for maintained setup/init/update/divide models, constraints, neighbors, division, host species, and exact resume | Complete |
 | P1 | Legacy pickle import | `Simulator` | Explicitly trusted, lossy, one-way migration into the new checkpoint schema | Complete |

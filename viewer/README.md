@@ -7,12 +7,12 @@ This package is a TypeScript and Three.js consumer of `cellmodeller2-scene` docu
 From the repository root:
 
 ```console
-uv run python examples/viewer_scene.py --output viewer-demo.cm2.scene.json
+uv run python examples/viewer_scene.py --output viewer-demo.scene.json
 pnpm --dir viewer install
 pnpm --dir viewer dev
 ```
 
-Open the local URL printed by Vite and load `viewer-demo.cm2.scene.json`. The viewer also accepts a scene by drag and drop.
+Open the local URL printed by Vite and load `viewer-demo.scene.json`. The viewer also accepts a scene by drag and drop.
 
 ## Run a live session
 
@@ -21,14 +21,14 @@ From the repository root:
 ```console
 uv sync --group dev --extra viewer
 pnpm --dir viewer build
-uv run cm2 view \
+uv run cm view \
   --model examples/batch_model.py \
   --dt 0.05 \
-  --checkpoint-output results/live.cm2.json \
+  --checkpoint-output results/live.json \
   --open
 ```
 
-Without `--open`, open the tokenized loopback URL printed by `cm2`. The live transport can play, pause, advance one step, rebuild the original model, and write to the configured checkpoint destination. Camera position, display mapping, grid slice, and selected-cell identity survive frame updates.
+Without `--open`, open the tokenized loopback URL printed by `cm`. The live transport can play, pause, advance one step, rebuild the original model, and write to the configured checkpoint destination. Camera position, display mapping, grid slice, and selected-cell identity survive frame updates.
 
 ## Capabilities
 

@@ -28,7 +28,7 @@ Every new connection receives a `frame` message. The server also broadcasts a fr
 A successful checkpoint command returns the server-configured absolute path:
 
 ```json
-{ "type": "checkpoint", "path": "/configured/path/run.cm2.json" }
+{ "type": "checkpoint", "path": "/configured/path/run.json" }
 ```
 
 Rejected commands and model failures return a data-only error:

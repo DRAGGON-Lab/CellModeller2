@@ -14,6 +14,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import NoReturn, cast
 
+from ._artifact_paths import periodic_checkpoint_parts
 from ._core import BackendKind  # pyright: ignore[reportMissingModuleSource]
 from .checkpoint import JSONValue
 from .runner import (
@@ -245,21 +246,13 @@ def _job(value: object, path: str, directory: Path) -> RunJob:
     )
 
 
-def _periodic_stem(output: Path) -> tuple[Path, str]:
-    suffix = ".cm2.json"
-    name = output.name
-    stem = name[: -len(suffix)] if name.endswith(suffix) else name
-    return output.parent, stem
-
-
 def _periodic_contains(job: RunJob, candidate: Path) -> bool:
     if job.checkpoint_every == 0 or job.checkpoint_every > job.maximum_steps:
         return False
-    parent, stem = _periodic_stem(job.output)
+    parent, stem, suffix = periodic_checkpoint_parts(job.output)
     if candidate.parent != parent:
         return False
     prefix = f"{stem}.step-"
-    suffix = ".cm2.json"
     name = candidate.name
     if not name.startswith(prefix) or not name.endswith(suffix):
         return False
@@ -280,8 +273,8 @@ def _validate_output_disjointness(jobs: tuple[RunJob, ...]) -> None:
             raise RunManifestError(
                 f"jobs {first.id!r} and {second.id!r} have colliding final/periodic outputs"
             )
-        first_parent, first_stem = _periodic_stem(first.output)
-        second_parent, second_stem = _periodic_stem(second.output)
+        first_parent, first_stem, first_suffix = periodic_checkpoint_parts(first.output)
+        second_parent, second_stem, second_suffix = periodic_checkpoint_parts(second.output)
         if (
             first.checkpoint_every > 0
             and second.checkpoint_every > 0
@@ -289,6 +282,7 @@ def _validate_output_disjointness(jobs: tuple[RunJob, ...]) -> None:
             and second.checkpoint_every <= second.maximum_steps
             and first_parent == second_parent
             and first_stem == second_stem
+            and first_suffix == second_suffix
             and math.lcm(first.checkpoint_every, second.checkpoint_every)
             <= min(first.maximum_steps, second.maximum_steps)
         ):

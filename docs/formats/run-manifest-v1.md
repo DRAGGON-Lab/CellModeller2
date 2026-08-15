@@ -1,6 +1,6 @@
 # Run manifest v1
 
-A run manifest is strict, data-only JSON that names reproducible batch jobs. Parsing it does not import or execute model code. Execution remains explicit: one `cm2 run-manifest --job` invocation runs exactly one job, so a local shell, CI system, or cluster scheduler retains ownership of parallelism and retries.
+A run manifest is strict, data-only JSON that names reproducible batch jobs. Parsing it does not import or execute model code. Execution remains explicit: one `cm run-manifest --job` invocation runs exactly one job, so a local shell, CI system, or cluster scheduler retains ownership of parallelism and retries.
 
 ## Document shape
 
@@ -25,7 +25,7 @@ A run manifest is strict, data-only JSON that names reproducible batch jobs. Par
         "cell_count": 10000
       },
       "checkpoint_every": 1000,
-      "output": "../results/gamma-0.10-replicate-001.cm2.json"
+      "output": "../results/gamma-0.10-replicate-001.json"
     }
   ]
 }
@@ -40,8 +40,8 @@ The model digest is over the exact source bytes. It is checked before those byte
 ## Execution
 
 ```console
-uv run cm2 run-manifest experiments/gamma.cm2.runs.json \
+uv run cm run-manifest experiments/gamma.runs.json \
   --job gamma-0.10-replicate-001
 ```
 
-Use `--quiet` or `--progress-every` as with `cm2 run`. Existing outputs require the explicit `--overwrite` execution flag. The manifest intentionally contains no worker count, queue, cloud, or cluster configuration.
+Use `--quiet` or `--progress-every` as with `cm run`. Existing outputs require the explicit `--overwrite` execution flag. The manifest intentionally contains no worker count, queue, cloud, or cluster configuration.

@@ -12,6 +12,7 @@ from pathlib import Path
 from types import MappingProxyType, ModuleType
 from typing import Literal, cast
 
+from ._artifact_paths import periodic_checkpoint_path
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendKind,
     Simulation,
@@ -138,10 +139,7 @@ def _checkpoint_model_context(
 
 
 def _periodic_path(output: Path, step: int) -> Path:
-    suffix = ".cm2.json"
-    name = output.name
-    stem = name[: -len(suffix)] if name.endswith(suffix) else name
-    return output.with_name(f"{stem}.step-{step:08d}{suffix}")
+    return periodic_checkpoint_path(output, step)
 
 
 def _run_provenance(

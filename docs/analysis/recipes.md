@@ -12,7 +12,7 @@ Open and verify the dataset once, then reuse the resulting handle. The reader ac
 from cellmodeller2.analysis import open_dataset
 from cellmodeller2.analysis_recipes import radial_counts
 
-dataset = open_dataset("results/run.cm2.dataset")
+dataset = open_dataset("results/run.dataset")
 counts = radial_counts(dataset, edges=[0.0, 5.0, 10.0, 20.0]).collect()
 ```
 

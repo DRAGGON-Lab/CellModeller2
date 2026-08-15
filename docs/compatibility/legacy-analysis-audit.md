@@ -6,9 +6,9 @@ This audit covers the legacy `Scripts/` directory and the code cells in `Scripts
 
 | Source | Observed behavior | CellModeller2 disposition |
 | --- | --- | --- |
-| `batch.py` | selects an OpenCL platform/device interactively, then runs until a fixed cell-capacity margin | replace device selection with `cm2 devices`; add a declared cell-count stopping criterion rather than capacity coupling |
+| `batch.py` | selects an OpenCL platform/device interactively, then runs until a fixed cell-capacity margin | replace device selection with `cm devices`; add a declared cell-count stopping criterion rather than capacity coupling |
 | `multi_batch.py` | repeats the same unseeded run three times | replace with explicit run manifests whose replicate IDs, seeds, parameters, and outputs are reviewable data |
-| `batch_iter.py` | hard-coded gamma sweep over eight values | replace with manifest generation plus ordinary `cm2 run` jobs; a scheduler is not part of the simulator |
+| `batch_iter.py` | hard-coded gamma sweep over eight values | replace with manifest generation plus ordinary `cm run` jobs; a scheduler is not part of the simulator |
 | `batchFile.py` | cluster-specific model defaults, timestamped pickle directories, and private physics setup calls | retire; checkpoints, provenance, and explicit output paths supersede it |
 | `CellModellerGUI.py` | starts the PyQt/OpenGL GUI | replaced by the independent scene viewer and live controller |
 | `LengthHistogram.py` | writes radial position and full capsule length to a global CSV | preserve the two quantities in typed cell tables; the old `length + 2 * radius` value must be named `capsule_length` |

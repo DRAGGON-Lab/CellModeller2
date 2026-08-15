@@ -69,7 +69,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("viewer-demo.cm2.scene.json"),
+        default=Path("viewer-demo.scene.json"),
     )
     arguments = parser.parse_args()
     save_scene(capture_scene(build_scene()), arguments.output)

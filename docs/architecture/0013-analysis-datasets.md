@@ -14,7 +14,7 @@ CellModeller2 checkpoints are safe, exact restart artifacts, but JSON is not an 
 CellModeller2 analysis exports are immutable dataset directories with this logical layout:
 
 ```text
-run.cm2.dataset/
+run.dataset/
   manifest.json
   frames.parquet
   cells.parquet
@@ -61,7 +61,7 @@ Checkpoint state exports are backend-neutral because loading reconstructs the sa
 
 ## Experiment manifests
 
-Replicate and parameter-sweep planning uses data-only run manifests containing one explicit run ID, seed, parameter map, source model digest, backend/device, stopping rule, and output path per job. Execution remains ordinary `cm2 run` invocations under a caller-chosen local, CI, or cluster scheduler. The engine does not embed a second job scheduler.
+Replicate and parameter-sweep planning uses data-only run manifests containing one explicit run ID, seed, parameter map, source model digest, backend/device, stopping rule, and output path per job. Execution remains ordinary `cm run` invocations under a caller-chosen local, CI, or cluster scheduler. The engine does not embed a second job scheduler.
 
 Cell-count stopping is a first-class run condition rather than the legacy scripts' implicit relationship to preallocated capacity. A maximum step count is still required so a non-growing model terminates deterministically.
 

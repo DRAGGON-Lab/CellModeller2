@@ -5,7 +5,7 @@ CellModeller 1 writes Python pickle snapshots in two families:
 - current mapping snapshots contain `cellStates`, `lineage`, `stepNum`, the model name and source, and optional species or signal arrays;
 - older tuple snapshots contain cell states plus lineage, with an optional signaling tuple, but no step number or model source.
 
-Pickle is an executable serialization format. `cm2 import-legacy-pickle` therefore refuses to read a file unless `--trust-legacy-pickle` is present. A restricted unpickler admits the historical `CellState` representation, numeric NumPy arrays, and the small set of reconstruction globals those values need; all other globals fail before they are resolved. This reduces accidental exposure but is not a security boundary for adversarial files. Import snapshots only from a trusted simulation run.
+Pickle is an executable serialization format. `cm import-legacy-pickle` therefore refuses to read a file unless `--trust-legacy-pickle` is present. A restricted unpickler admits the historical `CellState` representation, numeric NumPy arrays, and the small set of reconstruction globals those values need; all other globals fail before they are resolved. This reduces accidental exposure but is not a security boundary for adversarial files. Import snapshots only from a trusted simulation run.
 
 ## One-way native-state boundary
 
@@ -23,8 +23,8 @@ The resulting file is an ordinary authenticated CellModeller2 JSON checkpoint wi
 The old snapshots do not contain plane or sphere constraints, callback random state, or enough information to reconstruct a typed rate plan. Signal grid geometry lacks complete transport semantics. Those omissions are recorded in provenance and are never guessed. User-defined callback attributes such as division thresholds and display colors are reported as dropped fields; use the legacy callback loader and a fresh model start when those fields are required.
 
 ```console
-uv run cm2 import-legacy-pickle data/step-00100.pickle \
-  --output results/step-00100.cm2.json \
+uv run cm import-legacy-pickle data/step-00100.pickle \
+  --output results/step-00100.json \
   --dt 0.05 \
   --trust-legacy-pickle \
   --native-state-only

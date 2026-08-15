@@ -11,11 +11,11 @@ Checkpoint loading must also remain distinct from Python model execution. A chec
 
 ## Decision
 
-The batch-facing `cm2` operations are:
+The batch-facing `cm` operations are:
 
-- `cm2 devices` enumerates native CPU, Metal, and CUDA devices; and
-- `cm2 run` either executes a Python file supplied with `--model` or restores a data-only checkpoint supplied with `--resume`; and
-- `cm2 run-manifest` executes exactly one named job from a strict data-only experiment manifest.
+- `cm devices` enumerates native CPU, Metal, and CUDA devices; and
+- `cm run` either executes a Python file supplied with `--model` or restores a data-only checkpoint supplied with `--resume`; and
+- `cm run-manifest` executes exactly one named job from a strict data-only experiment manifest.
 
 A Python model exports `build(context)` and returns either a `Simulation` created by `context.simulation()` or a structural `SimulationController` that owns one. The context owns the selected backend and device, an unsigned 64-bit seed, a dedicated Python pseudorandom generator, and immutable JSON parameters. The runner rejects native state on another backend or device. Controllers own per-step policy and return complete data-only state for checkpoints. They resume through an explicit `resume(context, checkpoint)` entry point after model-digest verification and must reuse the restored native simulation. Models remain ordinary Python and may define typed helper layers without coupling the engine to a particular modeling DSL. See ADR 0014.
 

@@ -234,15 +234,15 @@ def test_manifest_job_accepts_a_native_controller(tmp_path: Path) -> None:
 def test_manifest_rejects_duplicate_ids_and_output_collisions(tmp_path: Path) -> None:
     digest = _write_model(tmp_path / "model.py")
     manifest_path = tmp_path / "invalid.json"
-    duplicate = _job(job_id="same", model_sha256=digest, output="first.cm2.json")
-    _write_manifest(manifest_path, [duplicate, {**duplicate, "output": "second.cm2.json"}])
+    duplicate = _job(job_id="same", model_sha256=digest, output="first.json")
+    _write_manifest(manifest_path, [duplicate, {**duplicate, "output": "second.json"}])
     with pytest.raises(RunManifestError, match="IDs must be unique"):
         load_run_manifest(manifest_path)
 
     first = _job(
         job_id="first",
         model_sha256=digest,
-        output="runs/colony.cm2.json",
+        output="runs/colony.json",
         checkpoint_every=2,
     )
     second = _job(
@@ -256,7 +256,13 @@ def test_manifest_rejects_duplicate_ids_and_output_collisions(tmp_path: Path) ->
         load_run_manifest(manifest_path)
 
     second["checkpoint_every"] = 0
-    second["output"] = "runs/colony.step-00000002.cm2.json"
+    second["output"] = "runs/colony.step-00000002.json"
+    _write_manifest(manifest_path, [first, second])
+    with pytest.raises(RunManifestError, match="colliding final/periodic outputs"):
+        load_run_manifest(manifest_path)
+
+    first["output"] = "runs/legacy.cm2.json"
+    second["output"] = "runs/legacy.step-00000002.cm2.json"
     _write_manifest(manifest_path, [first, second])
     with pytest.raises(RunManifestError, match="colliding final/periodic outputs"):
         load_run_manifest(manifest_path)

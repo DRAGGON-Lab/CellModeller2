@@ -104,7 +104,7 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
     )
     simulation, provenance = build_model(model, context)
     assert isinstance(simulation, Simulation)
-    output = tmp_path / "run.cm2.json"
+    output = tmp_path / "run.json"
     progress_steps: list[int] = []
     summary = run_simulation(
         simulation,
@@ -119,7 +119,7 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
     assert summary.output == output
     assert summary.stop_reason == "step_limit"
     assert summary.cell_count_threshold is None
-    assert summary.periodic_checkpoints == (tmp_path / "run.step-00000002.cm2.json",)
+    assert summary.periodic_checkpoints == (tmp_path / "run.step-00000002.json",)
     assert summary.periodic_checkpoints[0].exists()
     assert progress_steps == [1, 2, 3]
     restored = load_checkpoint(output)
@@ -161,6 +161,24 @@ def test_batch_library_is_deterministic_and_preflights_outputs(tmp_path: Path) -
         provenance=second_provenance,
     )
     assert _document(second_output)["simulation"] == document["simulation"]
+
+
+def test_periodic_checkpoint_preserves_legacy_suffix(tmp_path: Path) -> None:
+    model = tmp_path / "model.py"
+    _write_model(model)
+    simulation, provenance = build_model(model, ModelContext(BackendKind.CPU, 0, seed=7))
+    assert isinstance(simulation, Simulation)
+
+    summary = run_simulation(
+        simulation,
+        steps=1,
+        dt=0.1,
+        output=tmp_path / "legacy.cm2.json",
+        checkpoint_every=1,
+        provenance=provenance,
+    )
+
+    assert summary.periodic_checkpoints == (tmp_path / "legacy.step-00000001.cm2.json",)
 
 
 def test_native_controller_resumes_exact_runtime_state(tmp_path: Path) -> None:
