@@ -69,6 +69,7 @@ from .controller import (
 from .legacy import LegacyCell, LegacyCompatibilityError, LegacyModelAdapter
 from .legacy_loader import build_legacy_model, resume_legacy_model
 from .legacy_pickle import LegacyPickleError, LegacyPickleImport, import_legacy_pickle
+from .rates import RateExpression, RatePlanBuilder, RatePlanError
 from .run_manifest import (
     MAX_RUN_MANIFEST_BYTES,
     RUN_MANIFEST_FORMAT,
@@ -156,8 +157,11 @@ __all__ = [
     "ModelContext",
     "NativeController",
     "PlaneConstraintInit",
+    "RateExpression",
     "RateInstruction",
     "RateOp",
+    "RatePlanBuilder",
+    "RatePlanError",
     "RegulationCallback",
     "RodEndpoint",
     "RunJob",

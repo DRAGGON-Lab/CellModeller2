@@ -64,6 +64,21 @@ simultaneous Euler updates. CUDA has an independent native interpreter that
 compiles against the 12.8 toolkit; the same shared scenario still needs to run
 on NVIDIA hardware before CUDA species conformance is claimed.
 
+`RatePlanBuilder` keeps native model equations readable without introducing a
+shader language or code generation layer:
+
+```python
+from cellmodeller2 import RatePlanBuilder
+
+rates = RatePlanBuilder()
+x = rates.species(0)
+production = 2.0 / (1.0 + x * x)
+simulation.set_species_rate_plan(rates.species_plan(1, (production,)))
+```
+
+The result is the same inspectable instruction IR checkpointed and interpreted
+by the independent CPU, Metal, and CUDA implementations.
+
 Run `scripts/run_cuda_compile_check.sh` to reproduce the driverless native CUDA
 source/link gate in the versioned CUDA development container. Its passing result
 is deliberately distinct from `scripts/run_cuda_conformance.sh`, which requires

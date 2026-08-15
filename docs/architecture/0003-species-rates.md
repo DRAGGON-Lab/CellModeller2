@@ -47,7 +47,16 @@ updates fail explicitly.
 - Models are backend-neutral data rather than executable source fragments.
 - Checkpoints can persist both species state and the exact rate plan.
 - Native kernels can use an interpreter first and specialize or generate
-  backend-native code later without changing model semantics.
+backend-native code later without changing model semantics.
+
+Native Python models construct this IR through `RatePlanBuilder`. Each source
+method returns an immutable `RateExpression`; ordinary arithmetic operators and
+typed comparison/select methods append validated, backward-only instructions.
+`species_plan` and `coupled_plan` close the graph with the declared output
+vectors. Expressions carry their builder identity, so mixing graphs fails
+before a plan reaches native validation. The builder is authoring syntax only:
+the checkpoint still stores the same backend-neutral instruction data and each
+backend still executes its native interpreter.
 - Plan validation isolates structural errors before a simulation step.
 - The initial plan does not yet contain grid-signal reads; those enter with the
   coupled cell/grid rate contract.
