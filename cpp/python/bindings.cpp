@@ -112,6 +112,11 @@ NB_MODULE(_core, module) {
       .def_rw("residual_rms_tolerance", &cm2::MechanicsParameters::residual_rms_tolerance)
       .def_rw("max_iterations", &cm2::MechanicsParameters::max_iterations);
 
+  nb::class_<cm2::MechanicsIntegrationParameters>(module, "MechanicsIntegrationParameters")
+      .def(nb::init<>())
+      .def_rw("max_rotation_radians", &cm2::MechanicsIntegrationParameters::max_rotation_radians)
+      .def_rw("require_convergence", &cm2::MechanicsIntegrationParameters::require_convergence);
+
   nb::class_<cm2::SolverReport>(module, "SolverReport")
       .def_ro("status", &cm2::SolverReport::status)
       .def_ro("breakdown", &cm2::SolverReport::breakdown)
@@ -138,6 +143,10 @@ NB_MODULE(_core, module) {
       .def("solve_cell_mechanics", &cm2::Simulation::solve_cell_mechanics,
            "mechanics_parameters"_a = cm2::MechanicsParameters{},
            "contact_parameters"_a = cm2::ContactParameters{})
+      .def("relax_cell_mechanics", &cm2::Simulation::relax_cell_mechanics,
+           "mechanics_parameters"_a = cm2::MechanicsParameters{},
+           "contact_parameters"_a = cm2::ContactParameters{},
+           "integration_parameters"_a = cm2::MechanicsIntegrationParameters{})
       .def("cell", &cm2::Simulation::cell, "id"_a)
       .def("cells", &cm2::Simulation::cells)
       .def("lineage_parent", &cm2::Simulation::lineage_parent, "id"_a)

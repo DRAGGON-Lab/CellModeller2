@@ -8,6 +8,7 @@ from cellmodeller2 import (
     BackendKind,
     CellInit,
     ContactParameters,
+    MechanicsIntegrationParameters,
     MechanicsParameters,
     Simulation,
     SolverBreakdown,
@@ -110,6 +111,25 @@ def test_cpu_mechanics_reports_convergence() -> None:
     assert len(result.corrections) == 2
     assert result.corrections[0].translation.y < 0.0
     assert result.corrections[1].translation.y > 0.0
+
+
+def test_cpu_mechanics_relaxation_updates_geometry() -> None:
+    simulation = Simulation()
+    first = CellInit()
+    first.length = 4.0
+    second = CellInit()
+    second.position = Vec3(0.0, 0.8, 0.0)
+    second.length = 4.0
+    first_id = simulation.add_cell(first)
+    second_id = simulation.add_cell(second)
+
+    integration = MechanicsIntegrationParameters()
+    result = simulation.relax_cell_mechanics(integration_parameters=integration)
+
+    assert result.report.status == SolverStatus.CONVERGED
+    assert simulation.cell(first_id).position.y < 0.0
+    assert simulation.cell(second_id).position.y > 0.8
+    assert math.isclose(simulation.cell(first_id).length, 4.0)
 
 
 @pytest.mark.parametrize("backend", [BackendKind.METAL, BackendKind.CUDA])

@@ -49,7 +49,18 @@ struct MechanicsSolveResult {
   SolverReport report;
 };
 
+struct MechanicsIntegrationParameters {
+  float max_rotation_radians{0.0872664626F};
+  bool require_convergence{true};
+};
+
 void validate_mechanics_parameters(const MechanicsParameters& parameters);
+void validate_mechanics_integration_parameters(const MechanicsIntegrationParameters& parameters);
+
+void integrate_mechanics_result(
+    WorldState& state, const MechanicsSolveResult& result,
+    const MechanicsIntegrationParameters& parameters = MechanicsIntegrationParameters{},
+    std::span<const float> desired_length_increments = {});
 
 [[nodiscard]] std::vector<CellCorrection> apply_mechanics_operator_cpu(
     const WorldState& state, const ContactGraph& contacts, std::span<const CellCorrection> input,

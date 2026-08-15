@@ -63,6 +63,15 @@ Apparent convergence is checked by recomputing `B^T b - A delta_q`; non-finite
 residuals, non-finite curvature, and non-positive curvature are reported as
 typed breakdowns rather than allowed to contaminate the simulation.
 
+Integration is a separate backend-neutral operation over a solver result. It
+requires convergence by default, applies translation directly, interprets the
+rotation vector as axis-angle and caps it at five degrees, and computes the
+length increment as `max(0, desired_increment + delta_l)`. This preserves the
+legacy rule that mechanics may suppress requested elongation but may not
+directly shorten a cell. All updates are validated before any world-state array
+is mutated. `Simulation.step` remains the growth-only primitive;
+`relax_cell_mechanics` is the explicit contact-relaxation operation.
+
 CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal
 compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.

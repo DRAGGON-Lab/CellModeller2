@@ -115,6 +115,32 @@ void run_buffer_growth(cm2::BackendKind backend) {
   assert(grown.corrections.size() == 9);
 }
 
+void run_integrated_relaxation(cm2::BackendKind backend) {
+  cm2::Simulation reference(cm2::BackendKind::cpu);
+  cm2::Simulation candidate(backend);
+  populate_mixed_colony(reference);
+  populate_mixed_colony(candidate);
+
+  cm2::MechanicsParameters parameters;
+  parameters.residual_rms_tolerance = 2.0e-5F;
+  const auto expected = reference.relax_cell_mechanics(parameters);
+  const auto actual = candidate.relax_cell_mechanics(parameters);
+  compare_corrections(actual, expected);
+  const auto expected_cells = reference.cells();
+  const auto actual_cells = candidate.cells();
+  assert(actual_cells.size() == expected_cells.size());
+  for (std::size_t index = 0; index < expected_cells.size(); ++index) {
+    assert(actual_cells[index].id == expected_cells[index].id);
+    assert(close(actual_cells[index].position.x, expected_cells[index].position.x));
+    assert(close(actual_cells[index].position.y, expected_cells[index].position.y));
+    assert(close(actual_cells[index].position.z, expected_cells[index].position.z));
+    assert(close(actual_cells[index].direction.x, expected_cells[index].direction.x));
+    assert(close(actual_cells[index].direction.y, expected_cells[index].direction.y));
+    assert(close(actual_cells[index].direction.z, expected_cells[index].direction.z));
+    assert(close(actual_cells[index].length, expected_cells[index].length));
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -131,6 +157,7 @@ int main() {
     run_converged_colony(backend);
     run_iteration_limit(backend);
     run_buffer_growth(backend);
+    run_integrated_relaxation(backend);
   }
   return 0;
 }

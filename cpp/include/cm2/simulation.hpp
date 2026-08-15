@@ -27,6 +27,11 @@ class Simulation {
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
       const MechanicsParameters& mechanics_parameters = MechanicsParameters{},
       const ContactParameters& contact_parameters = ContactParameters{});
+  [[nodiscard]] MechanicsSolveResult relax_cell_mechanics(
+      const MechanicsParameters& mechanics_parameters = MechanicsParameters{},
+      const ContactParameters& contact_parameters = ContactParameters{},
+      const MechanicsIntegrationParameters& integration_parameters =
+          MechanicsIntegrationParameters{});
 
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;

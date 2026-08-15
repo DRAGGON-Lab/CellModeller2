@@ -62,6 +62,7 @@ class WorldState {
   CellId add_cell(const CellInit& cell);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void advance_growth(float dt);
+  void set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, float length);
   [[nodiscard]] GrowthStateView growth_state() noexcept;
   [[nodiscard]] CellGeometryView geometry_state() const noexcept;
 

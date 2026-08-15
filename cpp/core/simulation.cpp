@@ -85,6 +85,14 @@ MechanicsSolveResult Simulation::solve_cell_mechanics(
   return backend_->solve_cell_mechanics(state_, contacts, mechanics_parameters);
 }
 
+MechanicsSolveResult Simulation::relax_cell_mechanics(
+    const MechanicsParameters& mechanics_parameters, const ContactParameters& contact_parameters,
+    const MechanicsIntegrationParameters& integration_parameters) {
+  auto result = solve_cell_mechanics(mechanics_parameters, contact_parameters);
+  integrate_mechanics_result(state_, result, integration_parameters);
+  return result;
+}
+
 CellSnapshot Simulation::cell(CellId id) const { return state_.cell(id); }
 
 std::vector<CellSnapshot> Simulation::cells() const { return state_.cells(); }

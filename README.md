@@ -32,9 +32,10 @@ is backend-neutral and conformed on CPU and Metal. Metal mechanics runs native
 MSL row assembly, operator, vector, and reduction kernels and matches the CPU
 solver on Apple GPU hardware. CUDA now has the equivalent native mechanics
 implementation, but both its contact and mechanics conformance still require
-execution on NVIDIA hardware. Applying corrections to simulation state remains
-pending. Both GPU contact paths use an exhaustive correctness stage while the
-scalable broad phase is under construction.
+execution on NVIDIA hardware. `relax_cell_mechanics` applies a converged result
+through the shared bounded-rotation and non-shortening integration contract.
+Both GPU contact paths use an exhaustive correctness stage while the scalable
+broad phase is under construction.
 
 ## Build the C++ reference tests
 

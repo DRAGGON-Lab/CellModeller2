@@ -117,6 +117,11 @@ CellModeller2 resolves item 6 with a finite-radius, full-rank rotational inertia
 tensor. This is a deliberate departure from numerically defined legacy output,
 not an accidental consequence of a backend port.
 
+Correction integration retains the five-degree angular cap and the
+`max(0, desired elongation + length correction)` non-shortening rule. It makes
+solver convergence a checked precondition and validates the entire update
+before mutating geometry, neither of which the legacy path enforced.
+
 These differences require explicit fixtures before any claim of legacy parity.
 They are not grounds for silently adopting an accidental result.
 

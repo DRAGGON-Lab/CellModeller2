@@ -19,6 +19,7 @@ option(CM2_ENABLE_METAL "Build the native Apple Metal backend" ${CM2_METAL_DEFAU
 
 add_library(cm2_core STATIC
   cpp/core/contact_graph.cpp
+  cpp/core/mechanics_integration.cpp
   cpp/core/world_state.cpp
   cpp/core/simulation.cpp
   cpp/cpu/cpu_backend.cpp
@@ -150,6 +151,10 @@ if(CM2_BUILD_TESTS)
   add_executable(cm2_mechanics_operator_test tests/cpp/mechanics_operator_test.cpp)
   target_link_libraries(cm2_mechanics_operator_test PRIVATE cm2::core)
   add_test(NAME mechanics_operator COMMAND cm2_mechanics_operator_test)
+
+  add_executable(cm2_mechanics_integration_test tests/cpp/mechanics_integration_test.cpp)
+  target_link_libraries(cm2_mechanics_integration_test PRIVATE cm2::core)
+  add_test(NAME mechanics_integration COMMAND cm2_mechanics_integration_test)
 
   add_executable(cm2_growth_conformance_test tests/conformance/growth_conformance_test.cpp)
   target_link_libraries(cm2_growth_conformance_test PRIVATE cm2::core)

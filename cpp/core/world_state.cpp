@@ -153,6 +153,30 @@ void WorldState::advance_growth(float dt) {
   }
 }
 
+void WorldState::set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, float length) {
+  const auto index = static_cast<std::size_t>(slot);
+  if (index >= size()) {
+    throw std::out_of_range("cell geometry slot is out of range");
+  }
+  const CellInit candidate{
+      .position = position,
+      .direction = direction,
+      .length = length,
+      .radius = radius_[index],
+      .growth_rate = growth_rate_[index],
+      .cell_type = cell_type_[index],
+  };
+  validate_cell(candidate);
+  const auto unit_direction = normalized(direction);
+  position_x_[index] = position.x;
+  position_y_[index] = position.y;
+  position_z_[index] = position.z;
+  direction_x_[index] = unit_direction.x;
+  direction_y_[index] = unit_direction.y;
+  direction_z_[index] = unit_direction.z;
+  length_[index] = length;
+}
+
 GrowthStateView WorldState::growth_state() noexcept {
   return {
       .lengths = length_,

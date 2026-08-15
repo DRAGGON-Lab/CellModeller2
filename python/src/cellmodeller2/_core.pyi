@@ -121,6 +121,12 @@ class MechanicsParameters:
 
     def __init__(self) -> None: ...
 
+class MechanicsIntegrationParameters:
+    max_rotation_radians: float
+    require_convergence: bool
+
+    def __init__(self) -> None: ...
+
 class SolverReport:
     @property
     def status(self) -> SolverStatus: ...
@@ -160,6 +166,12 @@ class Simulation:
         self,
         mechanics_parameters: MechanicsParameters = ...,
         contact_parameters: ContactParameters = ...,
+    ) -> MechanicsSolveResult: ...
+    def relax_cell_mechanics(
+        self,
+        mechanics_parameters: MechanicsParameters = ...,
+        contact_parameters: ContactParameters = ...,
+        integration_parameters: MechanicsIntegrationParameters = ...,
     ) -> MechanicsSolveResult: ...
     def cell(self, id: int) -> CellSnapshot: ...
     def cells(self) -> list[CellSnapshot]: ...

@@ -8,7 +8,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Stable IDs and compact slots | `Simulator` | IDs never alias slots; division records lineage | CPU and Metal conformant; CUDA hardware validation pending |
 | P0 | Cell creation and division | `Simulator`, `CLBacterium` | deterministic equal division first; asymmetric and jitter policies follow | equal division conformant on CPU and Metal; CUDA hardware validation pending |
 | P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | CPU and Metal conformant; CUDA hardware validation pending |
-| P0 | 2D/3D rod mechanics | `CLBacterium` | typed contact graph and diagnosed matrix-free solve | CPU and Metal solver conformant; CUDA builds with hardware validation pending; state integration pending |
+| P0 | 2D/3D rod mechanics | `CLBacterium` | typed contact graph, diagnosed solve, and bounded correction integration | CPU and Metal solve/integration conformant; CUDA builds with hardware validation pending |
 | P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic incidence graph; no silent contact cap | CPU and Metal exhaustive geometry conformant; CUDA builds with hardware validation pending; scalable broad phase pending |
 | P0 | Plane and sphere constraints | `CLBacterium.cl` | typed constraint records; no sentinel cell IDs | legacy audited; implementation pending |
 | P0 | Mechanics solver | `CLBacterium` | regularized matrix-free CG/PCG with residual report | CPU and native Metal CG conformant; native CUDA builds with hardware validation pending |

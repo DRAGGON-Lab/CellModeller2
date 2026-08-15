@@ -42,5 +42,7 @@ and positive definiteness, solver convergence, exact residual recomputation,
 iteration-limit reporting, and non-finite-curvature breakdown. The shared
 mechanics scenario then compares native correction vectors and diagnostics with
 the CPU reference for a mixed colony, a one-iteration limit, empty systems, and
-buffer growth. Corrections and initial residuals use absolute and relative
-tolerances of `3e-4`; convergence status and breakdown type are exact.
+buffer growth. It also applies a converged mixed-colony result and compares the
+resulting position, direction, and length state. Corrections, geometry, and
+initial residuals use absolute and relative tolerances of `3e-4`; convergence
+status and breakdown type are exact.
