@@ -7,7 +7,7 @@ import hashlib
 import json
 import math
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NoReturn, cast
 
@@ -26,7 +26,14 @@ from .checkpoint import (
 )
 from .legacy_loader import build_legacy_model, resume_legacy_model
 from .legacy_pickle import LegacyPickleError, import_legacy_pickle
-from .runner import BatchError, ModelContext, RunProgress, build_model, run_simulation
+from .runner import (
+    BatchError,
+    ModelContext,
+    RunnableModel,
+    RunProgress,
+    build_model,
+    run_simulation,
+)
 
 _BACKENDS = {
     "cpu": BackendKind.CPU,
@@ -55,22 +62,7 @@ def _parser() -> argparse.ArgumentParser:
     legacy_pickle.add_argument("--overwrite", action="store_true")
 
     run = commands.add_parser("run", help="run a model or resume a checkpoint")
-    source = run.add_mutually_exclusive_group()
-    source.add_argument("--model", type=Path, help="Python file defining build(context)")
-    source.add_argument(
-        "--legacy-model", type=Path, help="CellModeller 1 growth/mechanics model"
-    )
-    run.add_argument("--resume", type=Path, help="CellModeller2 checkpoint to resume")
-    run.add_argument("--backend", choices=tuple(_BACKENDS), default="cpu")
-    run.add_argument("--device-index", type=int, default=0)
-    run.add_argument("--seed", type=int, default=0, help="model-construction seed")
-    run.add_argument(
-        "--parameter",
-        action="append",
-        default=[],
-        metavar="NAME=JSON",
-        help="model parameter; repeat for multiple values",
-    )
+    _add_source_arguments(run)
     run.add_argument("--steps", type=int, required=True)
     run.add_argument("--dt", type=float, required=True)
     run.add_argument("--output", type=Path, required=True)
@@ -78,7 +70,35 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--progress-every", type=int, default=100)
     run.add_argument("--overwrite", action="store_true")
     run.add_argument("--quiet", action="store_true")
+
+    view = commands.add_parser("view", help="control a model in the local scene viewer")
+    _add_source_arguments(view)
+    view.add_argument("--dt", type=float, required=True)
+    view.add_argument("--host", choices=("127.0.0.1", "::1", "localhost"), default="127.0.0.1")
+    view.add_argument("--port", type=int, default=8765)
+    view.add_argument("--frame-steps", type=int, default=1)
+    view.add_argument("--fps", type=float, default=30.0)
+    view.add_argument("--checkpoint-output", type=Path)
+    view.add_argument("--viewer-dist", type=Path)
+    view.add_argument("--open", action="store_true", help="open the live URL in a browser")
     return parser
+
+
+def _add_source_arguments(parser: argparse.ArgumentParser) -> None:
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--model", type=Path, help="Python file defining build(context)")
+    source.add_argument("--legacy-model", type=Path, help="CellModeller 1 growth/mechanics model")
+    parser.add_argument("--resume", type=Path, help="CellModeller2 checkpoint to resume")
+    parser.add_argument("--backend", choices=tuple(_BACKENDS), default="cpu")
+    parser.add_argument("--device-index", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=0, help="model-construction seed")
+    parser.add_argument(
+        "--parameter",
+        action="append",
+        default=[],
+        metavar="NAME=JSON",
+        help="model parameter; repeat for multiple values",
+    )
 
 
 def _json_value(value: object, path: str) -> JSONValue:
@@ -96,9 +116,7 @@ def _json_value(value: object, path: str) -> JSONValue:
         mapping = cast(dict[object, object], value)
         if not all(isinstance(key, str) for key in mapping):
             raise BatchError(f"{path} must use string object keys")
-        return {
-            cast(str, key): _json_value(item, f"{path}.{key}") for key, item in mapping.items()
-        }
+        return {cast(str, key): _json_value(item, f"{path}.{key}") for key, item in mapping.items()}
     raise BatchError(f"{path} is not JSON data")
 
 
@@ -182,7 +200,9 @@ def _progress_printer(interval: int, quiet: bool):
     return report
 
 
-def _run(arguments: argparse.Namespace) -> int:
+def _model_factory(
+    arguments: argparse.Namespace,
+) -> Callable[[], tuple[RunnableModel, dict[str, JSONValue]]]:
     backend = _BACKENDS[cast(str, arguments.backend)]
     device_index = cast(int, arguments.device_index)
     if not backend_available(backend, device_index):
@@ -198,27 +218,28 @@ def _run(arguments: argparse.Namespace) -> int:
     if model_path is not None:
         if resume_path is not None:
             raise BatchError("--model cannot be combined with --resume")
-        context = ModelContext(
-            backend=backend,
-            device_index=device_index,
-            seed=cast(int, arguments.seed),
-            parameters=parameters,
-        )
-        simulation, provenance = build_model(model_path, context)
+        seed = cast(int, arguments.seed)
+
+        def build_native_model() -> tuple[RunnableModel, dict[str, JSONValue]]:
+            context = ModelContext(backend, device_index, seed, parameters)
+            return build_model(model_path, context)
+
+        return build_native_model
     elif legacy_model_path is not None:
         if resume_path is None:
-            context = ModelContext(
-                backend=backend,
-                device_index=device_index,
-                seed=cast(int, arguments.seed),
-                parameters=parameters,
+            seed = cast(int, arguments.seed)
+
+            def build_legacy() -> tuple[RunnableModel, dict[str, JSONValue]]:
+                context = ModelContext(backend, device_index, seed, parameters)
+                return build_legacy_model(legacy_model_path, context)
+
+            return build_legacy
+        if parameters:
+            raise BatchError(
+                "legacy resume uses the checkpoint parameters; do not pass --parameter"
             )
-            simulation, provenance = build_legacy_model(legacy_model_path, context)
-        else:
-            if parameters:
-                raise BatchError(
-                    "legacy resume uses the checkpoint parameters; do not pass --parameter"
-                )
+
+        def resume_legacy() -> tuple[RunnableModel, dict[str, JSONValue]]:
             bundle = load_checkpoint_bundle(
                 resume_path,
                 backend=backend,
@@ -248,17 +269,28 @@ def _run(arguments: argparse.Namespace) -> int:
             )
             provenance = dict(model_provenance)
             provenance.update(_resume_provenance(resume_path))
+            return simulation, provenance
+
+        return resume_legacy
     else:
         if resume_path is None:
             raise BatchError("a model or checkpoint is required")
         if parameters:
             raise BatchError("--parameter is only valid with --model")
-        simulation = load_checkpoint(
-            resume_path,
-            backend=backend,
-            device_index=device_index,
-        )
-        provenance = _resume_provenance(resume_path)
+
+        def resume_native() -> tuple[RunnableModel, dict[str, JSONValue]]:
+            simulation = load_checkpoint(
+                resume_path,
+                backend=backend,
+                device_index=device_index,
+            )
+            return simulation, _resume_provenance(resume_path)
+
+        return resume_native
+
+
+def _run(arguments: argparse.Namespace) -> int:
+    simulation, provenance = _model_factory(arguments)()
 
     summary = run_simulation(
         simulation,
@@ -275,6 +307,41 @@ def _run(arguments: argparse.Namespace) -> int:
     print(
         f"wrote {summary.output} steps={summary.completed_steps} "
         f"time={summary.time:.9g} cells={summary.cell_count}"
+    )
+    return 0
+
+
+def _viewer_distribution(value: Path | None) -> Path:
+    if value is not None:
+        return value.resolve()
+    source_distribution = Path(__file__).resolve().parents[3] / "viewer" / "dist"
+    if source_distribution.is_dir():
+        return source_distribution
+    raise BatchError("viewer build not found; run `pnpm --dir viewer build` or pass --viewer-dist")
+
+
+def _view(arguments: argparse.Namespace) -> int:
+    try:
+        from .viewer_server import LiveSession, serve_live
+    except ModuleNotFoundError as error:
+        if error.name == "aiohttp":
+            raise BatchError("live viewer requires `cellmodeller2[viewer]`") from error
+        raise
+
+    viewer_dist = _viewer_distribution(cast(Path | None, arguments.viewer_dist))
+    session = LiveSession(
+        _model_factory(arguments),
+        dt=cast(float, arguments.dt),
+        checkpoint_output=cast(Path | None, arguments.checkpoint_output),
+    )
+    serve_live(
+        session,
+        viewer_dist,
+        host=cast(str, arguments.host),
+        port=cast(int, arguments.port),
+        frame_steps=cast(int, arguments.frame_steps),
+        fps=cast(float, arguments.fps),
+        open_browser=cast(bool, arguments.open),
     )
     return 0
 
@@ -308,6 +375,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _devices(cast(bool, arguments.json))
         if arguments.command == "import-legacy-pickle":
             return _import_legacy_pickle(arguments)
+        if arguments.command == "view":
+            return _view(arguments)
         return _run(arguments)
     except (
         BatchError,

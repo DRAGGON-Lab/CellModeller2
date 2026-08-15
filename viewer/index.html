@@ -36,7 +36,10 @@
           >
             Fit colony
           </button>
-          <label class="button button-primary" for="scene-file">
+          <label
+            class="button button-primary scene-open-action"
+            for="scene-file"
+          >
             Open scene
           </label>
           <input
@@ -145,9 +148,51 @@
               Drop a <code>.cm2.scene.json</code> file here, or choose one from
               disk.
             </p>
-            <label class="button button-primary" for="scene-file"
+            <label
+              class="button button-primary scene-open-action"
+              for="scene-file"
               >Open scene</label
             >
+          </div>
+          <div id="live-transport" class="live-transport" hidden>
+            <div class="live-state">
+              <span id="live-dot" class="live-dot" aria-hidden="true"></span>
+              <span id="live-label">Connecting</span>
+            </div>
+            <div class="transport-actions">
+              <button
+                id="live-play"
+                class="button button-primary"
+                type="button"
+                disabled
+              >
+                Play
+              </button>
+              <button
+                id="live-step"
+                class="button button-secondary"
+                type="button"
+                disabled
+              >
+                Step
+              </button>
+              <button
+                id="live-reset"
+                class="button button-secondary"
+                type="button"
+                disabled
+              >
+                Reset
+              </button>
+              <button
+                id="live-checkpoint"
+                class="button button-secondary"
+                type="button"
+                disabled
+              >
+                Checkpoint
+              </button>
+            </div>
           </div>
           <div class="viewport-help" aria-hidden="true">
             Drag to orbit · Right-drag to pan · Scroll to zoom · Click a cell to

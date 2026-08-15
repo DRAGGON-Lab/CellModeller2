@@ -4,6 +4,12 @@ import { mapCellColors, type ColorMode } from "./color";
 import { ColonyViewer } from "./colony-viewer";
 import { signalSlice, sliceDimension, type SliceAxis } from "./grid";
 import {
+  LiveConnection,
+  type LiveConnectionState,
+  type LiveFrameMessage,
+  type LiveMessage,
+} from "./live";
+import {
   MAX_SCENE_BYTES,
   parseScene,
   type SceneCell,
@@ -51,10 +57,20 @@ const clearSelection = required<HTMLButtonElement>("clear-selection");
 const cellDetails = required<HTMLElement>("cell-details");
 const speciesDetails = required<HTMLElement>("species-details");
 const speciesValues = required<HTMLOListElement>("species-values");
+const liveTransport = required<HTMLElement>("live-transport");
+const liveLabel = required<HTMLElement>("live-label");
+const livePlay = required<HTMLButtonElement>("live-play");
+const liveStep = required<HTMLButtonElement>("live-step");
+const liveReset = required<HTMLButtonElement>("live-reset");
+const liveCheckpoint = required<HTMLButtonElement>("live-checkpoint");
 
 let frame: SceneFrame | null = null;
 let statusToken = 0;
 let dragDepth = 0;
+let liveConnected = false;
+let livePlaying = false;
+let liveCheckpointEnabled = false;
+let liveConnection: LiveConnection | null = null;
 
 const viewer = new ColonyViewer(canvasHost, updateSelection);
 
@@ -88,6 +104,7 @@ function options(
   count: number,
   prefix: string,
 ): void {
+  const previous = selectedInteger(select);
   select.replaceChildren();
   for (let index = 0; index < count; index += 1) {
     const option = document.createElement("option");
@@ -95,6 +112,7 @@ function options(
     option.textContent = `${prefix} ${index}`;
     select.append(option);
   }
+  select.value = String(Math.min(previous, Math.max(count - 1, 0)));
 }
 
 function selectedInteger(
@@ -196,9 +214,26 @@ function updateSelection(cell: SceneCell | null): void {
   }
 }
 
-function presentScene(next: SceneFrame, filename: string): void {
+function sameShape(
+  previous: SceneFrame["signalGrid"],
+  next: SceneFrame["signalGrid"],
+): boolean {
+  return (
+    previous !== null &&
+    next !== null &&
+    previous.signalCount === next.signalCount &&
+    previous.shape.every((value, index) => value === next.shape[index])
+  );
+}
+
+function presentScene(
+  next: SceneFrame,
+  label: string,
+  { fit = true, announce = true }: { fit?: boolean; announce?: boolean } = {},
+): void {
+  const previous = frame;
   frame = next;
-  viewer.setFrame(next);
+  viewer.setFrame(next, fit);
   fitButton.disabled = false;
   colorMode.disabled = false;
   emptyState.hidden = true;
@@ -226,14 +261,20 @@ function presentScene(next: SceneFrame, filename: string): void {
   signalSection.hidden = next.signalGrid === null;
   if (next.signalGrid !== null) {
     options(signalChannel, next.signalGrid.signalCount, "Channel");
-    signalVisible.checked = true;
-    signalAxis.value = "z";
-    signalRange.value = String(Math.floor((next.signalGrid.shape[2] - 1) / 2));
+    if (!sameShape(previous?.signalGrid ?? null, next.signalGrid)) {
+      signalVisible.checked = true;
+      signalAxis.value = "z";
+      signalRange.value = String(
+        Math.floor((next.signalGrid.shape[2] - 1) / 2),
+      );
+    }
     updateSignalRange();
   }
   updateColors();
   updateSignal();
-  setStatus(`Opened ${filename}`);
+  if (announce) {
+    setStatus(`Opened ${label}`);
+  }
 }
 
 async function loadFile(file: File): Promise<void> {
@@ -296,6 +337,9 @@ viewport.addEventListener("drop", (event) => {
   event.preventDefault();
   dragDepth = 0;
   delete viewport.dataset.dragging;
+  if (liveConnection !== null) {
+    return;
+  }
   const file = event.dataTransfer?.files[0];
   if (file !== undefined) {
     void loadFile(file);
@@ -307,4 +351,106 @@ window.addEventListener("keydown", (event) => {
     viewer.selectCell(null);
   }
 });
-window.addEventListener("beforeunload", () => viewer.dispose(), { once: true });
+
+function updateLiveControls(): void {
+  livePlay.disabled = !liveConnected;
+  liveStep.disabled = !liveConnected;
+  liveReset.disabled = !liveConnected;
+  liveCheckpoint.disabled = !liveConnected || !liveCheckpointEnabled;
+  livePlay.textContent = livePlaying ? "Pause" : "Play";
+}
+
+function liveState(state: LiveConnectionState): void {
+  liveConnected = state === "connected";
+  if (!liveConnected) {
+    livePlaying = false;
+  }
+  liveLabel.textContent =
+    state === "connecting"
+      ? "Connecting"
+      : state === "connected"
+        ? "Live"
+        : "Disconnected";
+  liveTransport.dataset.state = state;
+  updateLiveControls();
+  if (state === "closed") {
+    setStatus("Live simulation disconnected", "error");
+  }
+}
+
+function liveFrame(message: LiveFrameMessage): void {
+  const first = frame === null;
+  livePlaying = message.playing;
+  liveCheckpointEnabled = message.checkpointEnabled;
+  if (liveConnected) {
+    liveLabel.textContent = message.playing ? "Running" : "Paused";
+  }
+  presentScene(message.frame, "live simulation", {
+    fit: first,
+    announce: first,
+  });
+  updateLiveControls();
+}
+
+function liveMessage(message: LiveMessage): void {
+  if (message.type === "frame") {
+    liveFrame(message);
+  } else if (message.type === "checkpoint") {
+    setStatus(`Checkpoint saved to ${message.path}`);
+  } else {
+    setStatus(message.message, "error");
+  }
+}
+
+function sendLive(
+  command:
+    | { type: "play" | "pause" | "reset" | "checkpoint" }
+    | { type: "step"; steps: number },
+): void {
+  try {
+    liveConnection?.send(command);
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : String(error), "error");
+  }
+}
+
+const liveToken = new URL(window.location.href).searchParams.get("token");
+if (liveToken !== null) {
+  liveTransport.hidden = false;
+  for (const action of document.querySelectorAll<HTMLElement>(
+    ".scene-open-action",
+  )) {
+    action.hidden = true;
+  }
+  const emptyTitle = emptyState.querySelector<HTMLElement>("h1");
+  const emptyDescription = emptyState.querySelector<HTMLElement>("p");
+  if (emptyTitle !== null && emptyDescription !== null) {
+    emptyTitle.textContent = "Connecting to simulation";
+    emptyDescription.textContent =
+      "Waiting for the first verified scene frame from the local engine.";
+  }
+  liveConnection = new LiveConnection(liveToken, {
+    message: liveMessage,
+    state: liveState,
+    protocolError: (message) => setStatus(message, "error"),
+  });
+  liveConnection.connect();
+}
+
+livePlay.addEventListener("click", () =>
+  sendLive({ type: livePlaying ? "pause" : "play" }),
+);
+liveStep.addEventListener("click", () => sendLive({ type: "step", steps: 1 }));
+liveReset.addEventListener("click", () => sendLive({ type: "reset" }));
+liveCheckpoint.addEventListener("click", () =>
+  sendLive({ type: "checkpoint" }),
+);
+
+window.addEventListener(
+  "beforeunload",
+  () => {
+    liveConnection?.close();
+    viewer.dispose();
+  },
+  { once: true },
+);

@@ -64,6 +64,14 @@ Rendered browser QA loads `examples/viewer_scene.py` output and exercises rod
 picking, selection clearing, species coloring, and signal-axis changes while
 checking the console for warnings and errors.
 
+Live-viewer fixtures run a real model through the same resettable factory used
+by `cm2 view`. They test stepping, deterministic rebuild, atomic checkpoint
+output, strict command parsing, same-origin and bearer-token rejection, and a
+real loopback WebSocket exchange. Browser protocol tests independently verify
+the embedded scene digest and reject unknown or tampered messages. Rendered
+live QA additionally exercises play, pause, step, reset, and checkpoint while
+confirming that camera and presentation state remain browser-owned.
+
 Checkpoint fixtures compare every persisted field exactly before taking a
 resumed step. They then continue the same typed species model on each available
 backend and compare with a fresh CPU restore under the species tolerance. File

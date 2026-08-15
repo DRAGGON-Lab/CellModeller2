@@ -32,11 +32,12 @@ strings for 64-bit identifiers. A frame is a projection, not a checkpoint: it
 contains no rate plans, solver configuration, executable source, controller
 state, or authority to resume a simulation.
 
-The first viewer is a separate TypeScript web application using an instanced
-graphics renderer. It loads scene files without server authority. A later live
-controller may publish the same frames and accept a small command protocol for
-play, pause, step, reset, checkpoint, and frame requests. The controller—not
-the browser—constructs simulations and selects an explicit backend and device.
+The viewer is a separate TypeScript web application using an instanced graphics
+renderer. It loads scene files without server authority. Its live controller
+publishes the same frames and accepts only typed play, pause, step, reset,
+checkpoint, and frame-request commands through an authenticated loopback
+protocol. The controller—not the browser—constructs simulations and selects an
+explicit backend and device.
 
 CUDA and Metal remain native scientific-compute APIs. Viewer graphics are not
 a compute backend and do not participate in numerical conformance. The CPU,

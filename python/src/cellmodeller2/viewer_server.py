@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 import secrets
+import webbrowser
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, Literal, cast
+from urllib.parse import urlencode
 
 from aiohttp import WSMsgType, web
 
@@ -107,10 +109,15 @@ class LiveSession:
     def step(self, steps: int = 1) -> None:
         if steps < 1 or steps > MAX_STEP_BATCH:
             raise LiveViewerError(f"step count must be in [1, {MAX_STEP_BATCH}]")
-        for _ in range(steps):
-            self._model.step(self._dt)
-        self._completed_steps += steps
-        self._revision += 1
+        completed = 0
+        try:
+            for _ in range(steps):
+                self._model.step(self._dt)
+                completed += 1
+                self._completed_steps += 1
+        finally:
+            if completed > 0:
+                self._revision += 1
 
     def reset(self) -> None:
         model, provenance = self._build()
@@ -187,13 +194,13 @@ class LiveController:
             return
         encoded = json.dumps(await self._message(), separators=(",", ":"))
         stale: list[web.WebSocketResponse] = []
-        for socket in self._sockets:
+        for socket in tuple(self._sockets):
             if socket.closed:
                 stale.append(socket)
                 continue
             try:
                 await socket.send_str(encoded)
-            except ConnectionError:
+            except (ConnectionError, RuntimeError):
                 stale.append(socket)
         self._sockets.difference_update(stale)
 
@@ -350,3 +357,50 @@ def create_live_app(
     application.router.add_static("/assets", assets, show_index=False)
     application.on_cleanup.append(cleanup)
     return application, authority
+
+
+def serve_live(
+    session: LiveSession,
+    viewer_dist: str | Path,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    frame_steps: int = 1,
+    fps: float = 30.0,
+    open_browser: bool = False,
+) -> None:
+    """Serve one live session on loopback until interrupted."""
+
+    if host not in {"127.0.0.1", "::1", "localhost"}:
+        raise LiveViewerError("live viewer host must be a loopback address")
+    if port < 1 or port > 65_535:
+        raise LiveViewerError("live viewer port must be in [1, 65535]")
+    application, token = create_live_app(
+        session,
+        viewer_dist,
+        frame_steps=frame_steps,
+        fps=fps,
+    )
+    display_host = f"[{host}]" if ":" in host else host
+    url = f"http://{display_host}:{port}/?{urlencode({'token': token})}"
+
+    async def run() -> None:
+        runner = web.AppRunner(application)
+        await runner.setup()
+        try:
+            site = web.TCPSite(runner, host=host, port=port)
+            try:
+                await site.start()
+            except OSError as error:
+                raise LiveViewerError(
+                    f"could not bind live viewer to {host}:{port}: {error}"
+                ) from error
+            print(f"CellModeller2 live viewer: {url}", flush=True)
+            if open_browser:
+                webbrowser.open(url)
+            await asyncio.Event().wait()
+        finally:
+            await runner.cleanup()
+
+    with suppress(KeyboardInterrupt):
+        asyncio.run(run())

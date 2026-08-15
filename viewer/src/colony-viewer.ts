@@ -77,6 +77,7 @@ export class ColonyViewer {
   private cells: readonly SceneCell[] = [];
   private pointerOrigin: Vector2 | null = null;
   private signalTexture: DataTexture | null = null;
+  private selectedCellId: string | null = null;
   private sceneBounds = new Box3(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));
 
   public constructor(host: HTMLElement, onSelection: SelectionCallback) {
@@ -136,19 +137,22 @@ export class ColonyViewer {
     });
   }
 
-  public setFrame(frame: SceneFrame): void {
+  public setFrame(frame: SceneFrame, fit = true): void {
     disposeGroup(this.colony);
     this.cellMeshes = [];
     this.cells = frame.cells;
     this.highlight.visible = false;
-    this.onSelection(null);
 
     if (frame.cells.length === 0) {
+      this.selectedCellId = null;
+      this.onSelection(null);
       this.sceneBounds = new Box3(
         new Vector3(-1, -1, -1),
         new Vector3(1, 1, 1),
       );
-      this.fitColony();
+      if (fit) {
+        this.fitColony();
+      }
       return;
     }
 
@@ -231,7 +235,22 @@ export class ColonyViewer {
     this.colony.add(...this.cellMeshes);
     this.sceneBounds = bounds;
     this.configureReferenceGrid(bounds);
-    this.fitColony();
+    const selectedIndex = frame.cells.findIndex(
+      (cell) => cell.id === this.selectedCellId,
+    );
+    if (selectedIndex >= 0) {
+      const selected = frame.cells[selectedIndex];
+      if (selected !== undefined) {
+        this.buildHighlight(selected);
+        this.onSelection(selected);
+      }
+    } else {
+      this.selectedCellId = null;
+      this.onSelection(null);
+    }
+    if (fit) {
+      this.fitColony();
+    }
   }
 
   public setCellColors(colors: readonly RGB[]): void {
@@ -314,6 +333,7 @@ export class ColonyViewer {
 
   public selectCell(index: number | null): void {
     if (index === null) {
+      this.selectedCellId = null;
       this.highlight.visible = false;
       this.onSelection(null);
       return;
@@ -322,6 +342,7 @@ export class ColonyViewer {
     if (cell === undefined) {
       throw new RangeError(`cell slot ${index} is out of range`);
     }
+    this.selectedCellId = cell.id;
     this.buildHighlight(cell);
     this.onSelection(cell);
   }

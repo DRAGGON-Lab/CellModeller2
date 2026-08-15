@@ -155,6 +155,28 @@ renders anything. It provides instanced rods, orbit/pan/zoom, cell picking and
 inspection, declarative cell coloring, and signal-grid slicing without owning
 or importing the simulation engine. See the [viewer README](viewer/README.md).
 
+Build the viewer once, then launch an authenticated live session from a model:
+
+```console
+uv sync --group dev --extra viewer
+pnpm --dir viewer build
+uv run cm2 view \
+  --model examples/batch_model.py \
+  --backend cpu \
+  --seed 42 \
+  --parameter growth_rate=0.2 \
+  --dt 0.05 \
+  --checkpoint-output results/live.cm2.json \
+  --open
+```
+
+The Python process remains the sole owner of the model, backend, clock, reset,
+and checkpoint destination. It prints a per-process tokenized loopback URL;
+the browser can request only play, pause, bounded steps, reset, the current
+frame, and a checkpoint to that preconfigured path. Every live frame is a full
+verified scene-v1 document. The wire contract is documented in the
+[live viewer protocol](docs/protocols/live-viewer-v1.md).
+
 `backend_device_count(kind)` enumerates native devices and every `Simulation`
 constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
 not inherit mutable process-thread device selection, and Metal does not

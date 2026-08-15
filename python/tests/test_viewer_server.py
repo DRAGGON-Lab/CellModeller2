@@ -8,8 +8,9 @@ from typing import Any, cast
 import pytest
 from aiohttp import WSServerHandshakeError
 from aiohttp.test_utils import TestClient, TestServer
-from cellmodeller2 import BackendKind, CellInit, Simulation, load_checkpoint
+from cellmodeller2 import BackendKind, CellInit, Simulation, load_checkpoint, viewer_server
 from cellmodeller2.checkpoint import JSONValue
+from cellmodeller2.cli import main
 from cellmodeller2.viewer_server import (
     LiveSession,
     LiveViewerError,
@@ -136,3 +137,69 @@ def test_live_websocket_requires_same_origin_token_and_controls_session(tmp_path
             await client.close()
 
     asyncio.run(exercise())
+
+
+def test_cli_constructs_a_resettable_live_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = tmp_path / "model.py"
+    model.write_text(
+        """from cellmodeller2 import CellInit
+
+def build(context):
+    simulation = context.simulation()
+    cell = CellInit()
+    cell.length = float(context.parameters["length"])
+    simulation.add_cell(cell)
+    return simulation
+""",
+        encoding="utf-8",
+    )
+    dist = _dist(tmp_path)
+    captured: dict[str, Any] = {}
+
+    def fake_serve(
+        session: LiveSession,
+        viewer_dist: str | Path,
+        **options: object,
+    ) -> None:
+        session.step()
+        captured["stepped"] = session.frame_message(playing=False)
+        session.reset()
+        captured["reset"] = session.frame_message(playing=False)
+        captured["dist"] = Path(viewer_dist)
+        captured["options"] = options
+
+    monkeypatch.setattr(viewer_server, "serve_live", fake_serve)
+    status = main(
+        [
+            "view",
+            "--model",
+            str(model),
+            "--parameter",
+            "length=4.25",
+            "--seed",
+            "17",
+            "--dt",
+            "0.2",
+            "--viewer-dist",
+            str(dist),
+            "--port",
+            "9001",
+            "--frame-steps",
+            "3",
+            "--fps",
+            "24",
+        ]
+    )
+
+    assert status == 0
+    assert captured["dist"] == dist.resolve()
+    assert cast(dict[str, object], captured["options"])["port"] == 9001
+    stepped = cast(dict[str, Any], captured["stepped"])
+    reset = cast(dict[str, Any], captured["reset"])
+    assert stepped["scene"]["frame"]["cells"][0]["length"] > 4.25
+    assert stepped["scene"]["frame"]["time"] > 0.0
+    assert reset["scene"]["frame"]["time"] == 0.0
+    assert reset["scene"]["frame"]["cells"][0]["length"] == 4.25

@@ -24,7 +24,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P2 | Fixed-position cells | `CLFixedPosition` | persistent fixed rod state with projected mechanics and continuing biology | legacy point-volume model audited; CPU and native Metal mechanics conformant; native CUDA builds with hardware validation pending |
 | Retired | Neighbor diffusion | `NeighbourDiffusion` | do not port dead, dimensionally unspecified graph loop; require a new typed contact-flux proposal | audited and explicitly retired; no backend parity requirement |
 | P2 | SBML import | `SBMLImport` | bounded libSBML Core subset compiled to typed species-rate IR; no generated source | optional libSBML importer is CPU and native Metal conformant; CUDA uses the existing typed-plan hardware gate, with NVIDIA hardware validation pending |
-| P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | scene v1 and independent read-only Three.js viewer implemented with rods, picking, inspection, color maps, and grid slicing; live controller pending |
+| P2 | Interactive viewer | PyQt/OpenGL GUI | separate consumer of snapshots; no engine ownership | scene v1, independent Three.js rendering, and authenticated loopback controller implemented with typed play/pause/step/reset/checkpoint commands |
 | P2 | Analysis scripts | `Scripts` | replace with documented Parquet/Zarr workflows | inventory needed |
 
 Each row advances through: `audit` -> `specified` -> `CPU reference` ->

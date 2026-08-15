@@ -533,6 +533,64 @@ dd {
   pointer-events: none;
 }
 
+.live-transport {
+  position: absolute;
+  left: 50%;
+  bottom: 50px;
+  z-index: 4;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  transform: translateX(-50%);
+  padding: 6px 7px 6px 12px;
+  border: 1px solid rgba(57, 68, 63, 0.88);
+  border-radius: 10px;
+  background: rgba(20, 25, 24, 0.92);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+}
+
+.live-state,
+.transport-actions {
+  display: flex;
+  align-items: center;
+}
+
+.live-state {
+  min-width: 78px;
+  gap: 7px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--quiet);
+  box-shadow: 0 0 0 3px rgba(102, 113, 108, 0.14);
+}
+
+.live-transport[data-state="connected"] .live-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 224, 189, 0.14);
+}
+
+.live-transport[data-state="closed"] .live-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 155, 142, 0.14);
+}
+
+.transport-actions {
+  gap: 6px;
+}
+
+.transport-actions .button {
+  min-width: 54px;
+}
+
 .status {
   position: absolute;
   left: 50%;
