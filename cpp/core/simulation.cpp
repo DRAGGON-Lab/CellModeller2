@@ -68,6 +68,10 @@ void Simulation::step(float dt) {
   time_ += static_cast<double>(dt);
 }
 
+ContactGraph Simulation::find_cell_contacts(const ContactParameters& parameters) {
+  return backend_->find_cell_contacts(state_, parameters);
+}
+
 CellSnapshot Simulation::cell(CellId id) const { return state_.cell(id); }
 
 std::vector<CellSnapshot> Simulation::cells() const { return state_.cells(); }

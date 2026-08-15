@@ -17,6 +17,11 @@ class CpuBackend final : public ComputeBackend {
   }
 
   void advance_growth(WorldState& state, float dt) override { state.advance_growth(dt); }
+
+  [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
+                                                const ContactParameters& parameters) override {
+    return find_cell_contacts_cpu(state, parameters);
+  }
 };
 
 }  // namespace

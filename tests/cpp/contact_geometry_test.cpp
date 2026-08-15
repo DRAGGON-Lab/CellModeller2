@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "cm2/contact_graph.hpp"
+#include "cm2/simulation.hpp"
 
 namespace {
 
@@ -164,6 +165,20 @@ void test_invalid_parameters_are_rejected() {
   assert(rejected);
 }
 
+void test_simulation_exposes_the_backend_contact_contract() {
+  cm2::Simulation simulation;
+  cm2::CellInit first;
+  first.length = 4.0F;
+  cm2::CellInit second = first;
+  second.position.y = 0.8F;
+  simulation.add_cell(first);
+  simulation.add_cell(second);
+
+  const auto graph = simulation.find_cell_contacts();
+  assert(graph.cell_count() == 2);
+  assert(graph.size() == 2);
+}
+
 }  // namespace
 
 int main() {
@@ -175,5 +190,6 @@ int main() {
   test_contacts_are_sorted_by_stable_identity();
   test_pair_order_reverses_the_contact_normal();
   test_invalid_parameters_are_rejected();
+  test_simulation_exposes_the_backend_contact_contract();
   return 0;
 }

@@ -3,7 +3,14 @@ from __future__ import annotations
 import math
 
 import pytest
-from cellmodeller2 import BackendKind, CellInit, Simulation, Vec3, backend_available
+from cellmodeller2 import (
+    BackendKind,
+    CellInit,
+    ContactParameters,
+    Simulation,
+    Vec3,
+    backend_available,
+)
 
 
 @pytest.mark.parametrize("backend", list(BackendKind))
@@ -46,6 +53,31 @@ def test_invalid_time_step_is_rejected() -> None:
     simulation = Simulation()
     with pytest.raises(ValueError, match="time step"):
         simulation.step(-0.1)
+
+
+def test_cpu_contact_graph_is_available_through_the_public_api() -> None:
+    simulation = Simulation()
+    first = CellInit()
+    first.length = 4.0
+    first.radius = 0.5
+    second = CellInit()
+    second.position = Vec3(0.0, 0.8, 0.0)
+    second.length = 4.0
+    second.radius = 0.5
+    simulation.add_cell(first)
+    simulation.add_cell(second)
+
+    parameters = ContactParameters()
+    graph = simulation.find_cell_contacts(parameters)
+    assert graph.cell_count == 2
+    assert not graph.empty
+    assert len(graph) == 2
+    assert graph.incident_contact_indices(0) == [0, 1]
+    assert [contact.ordinal for contact in graph.contacts] == [0, 1]
+    assert all(
+        math.isclose(contact.signed_separation, -0.2, abs_tol=1.0e-6)
+        for contact in graph.contacts
+    )
 
 
 @pytest.mark.parametrize("backend", [BackendKind.METAL, BackendKind.CUDA])

@@ -108,6 +108,11 @@ class MetalBackend final : public ComputeBackend {
     std::memcpy(view.lengths.data(), lengths_.contents, byte_count);
   }
 
+  [[nodiscard]] ContactGraph find_cell_contacts(const WorldState&,
+                                                const ContactParameters&) override {
+    throw std::runtime_error("Metal cell contacts are not implemented in this build");
+  }
+
  private:
   void ensure_capacity(std::size_t count) {
     if (count <= capacity_) {

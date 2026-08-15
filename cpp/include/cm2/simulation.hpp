@@ -21,6 +21,8 @@ class Simulation {
   CellId add_cell(const CellInit& cell);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void step(float dt);
+  [[nodiscard]] ContactGraph find_cell_contacts(
+      const ContactParameters& parameters = ContactParameters{});
 
   [[nodiscard]] CellSnapshot cell(CellId id) const;
   [[nodiscard]] std::vector<CellSnapshot> cells() const;

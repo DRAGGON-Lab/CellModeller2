@@ -3,8 +3,11 @@
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
     BackendInfo,
     BackendKind,
+    CellContact,
     CellInit,
     CellSnapshot,
+    ContactGraph,
+    ContactParameters,
     Simulation,
     Vec3,
     backend_available,
@@ -13,8 +16,11 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 __all__ = [
     "BackendInfo",
     "BackendKind",
+    "CellContact",
     "CellInit",
     "CellSnapshot",
+    "ContactGraph",
+    "ContactParameters",
     "Simulation",
     "Vec3",
     "backend_available",

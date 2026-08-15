@@ -77,6 +77,11 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaStreamSynchronize(stream_), "CUDA growth execution failed");
   }
 
+  [[nodiscard]] ContactGraph find_cell_contacts(const WorldState&,
+                                                const ContactParameters&) override {
+    throw std::runtime_error("CUDA cell contacts are not implemented in this build");
+  }
+
  private:
   void ensure_capacity(std::size_t count) {
     if (count <= capacity_) {

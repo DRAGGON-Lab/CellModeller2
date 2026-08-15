@@ -50,6 +50,40 @@ NB_MODULE(_core, module) {
       .def_ro("growth_rate", &cm2::CellSnapshot::growth_rate)
       .def_ro("cell_type", &cm2::CellSnapshot::cell_type);
 
+  nb::class_<cm2::ContactParameters>(module, "ContactParameters")
+      .def(nb::init<>())
+      .def_rw("activation_margin", &cm2::ContactParameters::activation_margin)
+      .def_rw("parallel_sine_threshold", &cm2::ContactParameters::parallel_sine_threshold)
+      .def_rw("degeneracy_epsilon", &cm2::ContactParameters::degeneracy_epsilon);
+
+  nb::class_<cm2::CellContact>(module, "CellContact")
+      .def_ro("first_id", &cm2::CellContact::first_id)
+      .def_ro("second_id", &cm2::CellContact::second_id)
+      .def_ro("first_slot", &cm2::CellContact::first_slot)
+      .def_ro("second_slot", &cm2::CellContact::second_slot)
+      .def_ro("ordinal", &cm2::CellContact::ordinal)
+      .def_ro("point_on_first", &cm2::CellContact::point_on_first)
+      .def_ro("normal", &cm2::CellContact::normal)
+      .def_ro("signed_separation", &cm2::CellContact::signed_separation)
+      .def_ro("weight", &cm2::CellContact::weight);
+
+  nb::class_<cm2::ContactGraph>(module, "ContactGraph")
+      .def_prop_ro("cell_count", &cm2::ContactGraph::cell_count)
+      .def_prop_ro("empty", &cm2::ContactGraph::empty)
+      .def_prop_ro("contacts",
+                   [](const cm2::ContactGraph& graph) {
+                     return std::vector<cm2::CellContact>(graph.contacts().begin(),
+                                                          graph.contacts().end());
+                   })
+      .def("__len__", &cm2::ContactGraph::size)
+      .def(
+          "incident_contact_indices",
+          [](const cm2::ContactGraph& graph, cm2::Slot slot) {
+            const auto indices = graph.incident_contact_indices(slot);
+            return std::vector<std::size_t>(indices.begin(), indices.end());
+          },
+          "slot"_a);
+
   nb::class_<cm2::Simulation>(module, "Simulation")
       .def(nb::init<cm2::BackendKind, std::size_t>(), "backend"_a = cm2::BackendKind::cpu,
            "reserved_capacity"_a = 0)
@@ -59,6 +93,8 @@ NB_MODULE(_core, module) {
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
       .def("divide_equal", &cm2::Simulation::divide_equal, "parent_id"_a)
       .def("step", &cm2::Simulation::step, "dt"_a)
+      .def("find_cell_contacts", &cm2::Simulation::find_cell_contacts,
+           "parameters"_a = cm2::ContactParameters{})
       .def("cell", &cm2::Simulation::cell, "id"_a)
       .def("cells", &cm2::Simulation::cells)
       .def("lineage_parent", &cm2::Simulation::lineage_parent, "id"_a)
