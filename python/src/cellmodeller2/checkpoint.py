@@ -204,6 +204,7 @@ def save_checkpoint(
             "kind": _BACKEND_NAMES[backend.kind],
             "name": backend.name,
             "device": backend.device,
+            "device_index": backend.device_index,
             "native": backend.native,
         },
         "provenance": dict(provenance) if provenance is not None else {},
@@ -496,7 +497,10 @@ def _native_checkpoint(value: object, schema_version: int) -> _SimulationCheckpo
 
 
 def load_checkpoint(
-    path: str | os.PathLike[str], *, backend: BackendKind = BackendKind.CPU
+    path: str | os.PathLike[str],
+    *,
+    backend: BackendKind = BackendKind.CPU,
+    device_index: int = 0,
 ) -> Simulation:
     """Load and validate a checkpoint without evaluating executable content."""
 
@@ -557,4 +561,4 @@ def load_checkpoint(
         _fail("$.integrity.simulation", "state digest does not match")
 
     checkpoint = _native_checkpoint(root["simulation"], schema_version)
-    return Simulation(backend, checkpoint)
+    return Simulation(backend, checkpoint, device_index)

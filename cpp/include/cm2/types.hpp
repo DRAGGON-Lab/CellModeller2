@@ -72,6 +72,7 @@ struct BackendInfo {
   BackendKind kind{BackendKind::cpu};
   std::string name;
   std::string device;
+  std::uint32_t device_index{0};
   bool native{false};
 };
 

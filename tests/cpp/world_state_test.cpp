@@ -89,10 +89,23 @@ void test_invalid_state_fails_explicitly() {
 }
 
 void test_unavailable_backends_do_not_fall_back() {
+  assert(cm2::backend_device_count(cm2::BackendKind::cpu) == 1);
+  assert(cm2::backend_available(cm2::BackendKind::cpu, 0));
+  assert(!cm2::backend_available(cm2::BackendKind::cpu, 1));
+  bool invalid_cpu_device_rejected = false;
+  try {
+    cm2::Simulation simulation(cm2::BackendKind::cpu, 0, 0, 1);
+  } catch (const std::out_of_range&) {
+    invalid_cpu_device_rejected = true;
+  }
+  assert(invalid_cpu_device_rejected);
+
   for (const auto backend : {cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
     if (cm2::backend_available(backend)) {
       cm2::Simulation simulation(backend);
       assert(simulation.backend_info().kind == backend);
+      assert(simulation.backend_info().device_index == 0);
+      assert(cm2::backend_device_count(backend) >= 1);
       continue;
     }
     bool rejected = false;

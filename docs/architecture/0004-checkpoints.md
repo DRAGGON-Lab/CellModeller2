@@ -41,7 +41,9 @@ accepted.
 Device buffers, command queues, streams, compiled pipelines, contact graphs,
 and mechanics workspaces are deliberately excluded. They are derived caches
 and are reconstructed lazily by the selected backend. A checkpoint written by
-one backend may therefore be restored on another backend.
+one backend may therefore be restored on another backend and device. The
+source backend name and device index remain provenance rather than restore
+instructions; callers choose the target explicitly.
 
 ## Exact-resume meaning
 

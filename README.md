@@ -26,6 +26,7 @@ The initial slice establishes:
 - a small Python API backed by nanobind;
 - C++ and Python conformance tests;
 - native Metal growth and CUDA growth implementations;
+- explicit backend device enumeration and selection;
 - the cross-backend architecture and feature ledger.
 
 Metal growth is validated on Apple GPU hardware. CUDA growth is implemented
@@ -63,6 +64,11 @@ from cellmodeller2 import load_checkpoint, save_checkpoint
 save_checkpoint(simulation, "run.cm2.json", provenance={"model": "colony-a"})
 resumed = load_checkpoint("run.cm2.json")
 ```
+
+`backend_device_count(kind)` enumerates native devices and every `Simulation`
+constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
+not inherit mutable process-thread device selection, and Metal does not
+silently substitute the system default for a requested index.
 
 ## Build the C++ reference tests
 

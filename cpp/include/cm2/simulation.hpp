@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -14,8 +15,9 @@ namespace cm2 {
 class Simulation {
  public:
   explicit Simulation(BackendKind backend = BackendKind::cpu, std::size_t reserved_capacity = 0,
-                      std::size_t species_count = 0);
-  Simulation(BackendKind backend, const SimulationCheckpoint& checkpoint);
+                      std::size_t species_count = 0, std::uint32_t device_index = 0);
+  Simulation(BackendKind backend, const SimulationCheckpoint& checkpoint,
+             std::uint32_t device_index = 0);
 
   [[nodiscard]] BackendInfo backend_info() const;
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept;

@@ -35,6 +35,10 @@ functions so model authors do not have to duplicate algebraic equations.
 
 No backend may silently fall back to another backend. Unsupported backends
 fail during construction with a diagnostic that names the missing capability.
+Backends enumerate their native devices, accept an explicit zero-based device
+index, and report the selected index with the device name. CUDA reactivates its
+owned device before every operation so multiple simulations cannot accidentally
+inherit another instance's process-thread selection.
 
 ## Consequences
 

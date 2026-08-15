@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <span>
 
@@ -31,11 +33,12 @@ class ComputeBackend {
       const ExternalContactGraph& external_contacts, const MechanicsParameters& parameters) = 0;
 };
 
-[[nodiscard]] std::unique_ptr<ComputeBackend> make_cpu_backend();
-[[nodiscard]] std::unique_ptr<ComputeBackend> make_metal_backend();
-[[nodiscard]] std::unique_ptr<ComputeBackend> make_cuda_backend();
-[[nodiscard]] bool metal_backend_available() noexcept;
-[[nodiscard]] bool cuda_backend_available() noexcept;
-[[nodiscard]] bool backend_available(BackendKind kind) noexcept;
+[[nodiscard]] std::unique_ptr<ComputeBackend> make_cpu_backend(std::uint32_t device_index = 0);
+[[nodiscard]] std::unique_ptr<ComputeBackend> make_metal_backend(std::uint32_t device_index = 0);
+[[nodiscard]] std::unique_ptr<ComputeBackend> make_cuda_backend(std::uint32_t device_index = 0);
+[[nodiscard]] std::size_t metal_backend_device_count() noexcept;
+[[nodiscard]] std::size_t cuda_backend_device_count() noexcept;
+[[nodiscard]] std::size_t backend_device_count(BackendKind kind) noexcept;
+[[nodiscard]] bool backend_available(BackendKind kind, std::uint32_t device_index = 0) noexcept;
 
 }  // namespace cm2

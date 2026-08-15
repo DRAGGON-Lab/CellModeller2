@@ -77,8 +77,17 @@ class CudaBuffer {
 
 class CudaBackend final : public ComputeBackend {
  public:
-  CudaBackend() {
-    check_cuda(cudaGetDevice(&device_index_), "failed to select a CUDA device");
+  explicit CudaBackend(std::uint32_t device_index) {
+    if (device_index > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+      throw std::out_of_range("CUDA device index exceeds the runtime index space");
+    }
+    int device_count = 0;
+    check_cuda(cudaGetDeviceCount(&device_count), "failed to enumerate CUDA devices");
+    if (device_index >= static_cast<std::uint32_t>(device_count)) {
+      throw std::out_of_range("CUDA device index is unavailable");
+    }
+    device_index_ = static_cast<int>(device_index);
+    check_cuda(cudaSetDevice(device_index_), "failed to select the CUDA device");
     check_cuda(cudaGetDeviceProperties(&device_properties_, device_index_),
                "failed to inspect the CUDA device");
     check_cuda(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
@@ -86,6 +95,7 @@ class CudaBackend final : public ComputeBackend {
   }
 
   ~CudaBackend() override {
+    static_cast<void>(cudaSetDevice(device_index_));
     if (stream_ != nullptr) {
       cudaStreamDestroy(stream_);
     }
@@ -96,6 +106,7 @@ class CudaBackend final : public ComputeBackend {
         .kind = BackendKind::cuda,
         .name = "cuda",
         .device = device_properties_.name,
+        .device_index = static_cast<std::uint32_t>(device_index_),
         .native = true,
     };
   }
@@ -108,6 +119,7 @@ class CudaBackend final : public ComputeBackend {
   }
 
   void advance_growth(WorldState& state, float dt) override {
+    activate_device();
     auto view = state.growth_state();
     if (view.lengths.empty()) {
       return;
@@ -137,6 +149,7 @@ class CudaBackend final : public ComputeBackend {
 
   void advance_species(WorldState& state, const SpeciesRatePlan& plan,
                        std::span<const float> previous_lengths, float dt) override {
+    activate_device();
     if (!std::isfinite(dt) || dt < 0.0F) {
       throw std::invalid_argument("species time step must be finite and non-negative");
     }
@@ -249,6 +262,7 @@ class CudaBackend final : public ComputeBackend {
 
   [[nodiscard]] ContactGraph find_cell_contacts(const WorldState& state,
                                                 const ContactParameters& parameters) override {
+    activate_device();
     validate_contact_parameters(parameters);
     const auto geometry = state.geometry_state();
     if (geometry.size() == 0) {
@@ -283,6 +297,7 @@ class CudaBackend final : public ComputeBackend {
   [[nodiscard]] ExternalContactGraph find_external_contacts(
       const WorldState& state, const ConstraintSet& constraints,
       const ConstraintContactParameters& parameters) override {
+    activate_device();
     validate_constraint_contact_parameters(parameters);
     state.validate();
     const auto geometry = state.geometry_state();
@@ -323,6 +338,7 @@ class CudaBackend final : public ComputeBackend {
       const WorldState& state, const ContactGraph& contacts,
       const ExternalContactGraph& external_contacts,
       const MechanicsParameters& parameters) override {
+    activate_device();
     validate_mechanics_parameters(parameters);
     state.validate();
     const auto geometry = state.geometry_state();
@@ -429,6 +445,10 @@ class CudaBackend final : public ComputeBackend {
   }
 
  private:
+  void activate_device() {
+    check_cuda(cudaSetDevice(device_index_), "failed to activate the CUDA device");
+  }
+
   void ensure_species_capacity(std::size_t cell_count, std::size_t level_count,
                                std::size_t instruction_count, std::size_t species_count,
                                std::size_t workspace_count) {
@@ -1020,16 +1040,18 @@ class CudaBackend final : public ComputeBackend {
 
 }  // namespace
 
-std::unique_ptr<ComputeBackend> make_cuda_backend() { return std::make_unique<CudaBackend>(); }
+std::unique_ptr<ComputeBackend> make_cuda_backend(std::uint32_t device_index) {
+  return std::make_unique<CudaBackend>(device_index);
+}
 
-bool cuda_backend_available() noexcept {
+std::size_t cuda_backend_device_count() noexcept {
   int device_count = 0;
   const auto result = cudaGetDeviceCount(&device_count);
   if (result != cudaSuccess) {
     static_cast<void>(cudaGetLastError());
-    return false;
+    return 0;
   }
-  return device_count > 0;
+  return device_count > 0 ? static_cast<std::size_t>(device_count) : 0;
 }
 
 }  // namespace cm2

@@ -30,6 +30,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     SphereRegion,
     Vec3,
     backend_available,
+    backend_device_count,
 )
 from .checkpoint import (
     CHECKPOINT_FORMAT,
@@ -72,6 +73,7 @@ __all__ = [
     "SphereRegion",
     "Vec3",
     "backend_available",
+    "backend_device_count",
     "load_checkpoint",
     "save_checkpoint",
 ]

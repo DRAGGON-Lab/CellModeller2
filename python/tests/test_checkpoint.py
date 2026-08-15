@@ -152,6 +152,7 @@ def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
     assert document["version"] == CHECKPOINT_VERSION
     assert document["provenance"]["model"] == "two-species-test"
     assert document["source_backend"]["kind"] == "cpu"
+    assert document["source_backend"]["device_index"] == 0
     assert "module_source" not in path.read_text(encoding="utf-8")
     assert list(tmp_path.glob(".*.tmp")) == []
 

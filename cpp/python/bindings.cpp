@@ -12,7 +12,8 @@ using namespace nb::literals;
 NB_MODULE(_core, module) {
   module.doc() = "CellModeller2 native simulation core";
 
-  module.def("backend_available", &cm2::backend_available, "backend"_a);
+  module.def("backend_device_count", &cm2::backend_device_count, "backend"_a);
+  module.def("backend_available", &cm2::backend_available, "backend"_a, "device_index"_a = 0);
 
   nb::enum_<cm2::BackendKind>(module, "BackendKind")
       .value("CPU", cm2::BackendKind::cpu)
@@ -88,6 +89,7 @@ NB_MODULE(_core, module) {
       .def_ro("kind", &cm2::BackendInfo::kind)
       .def_ro("name", &cm2::BackendInfo::name)
       .def_ro("device", &cm2::BackendInfo::device)
+      .def_ro("device_index", &cm2::BackendInfo::device_index)
       .def_ro("native", &cm2::BackendInfo::native);
 
   nb::class_<cm2::CellInit>(module, "CellInit")
@@ -290,10 +292,11 @@ NB_MODULE(_core, module) {
       .def_ro("report", &cm2::MechanicsSolveResult::report);
 
   nb::class_<cm2::Simulation>(module, "Simulation")
-      .def(nb::init<cm2::BackendKind, std::size_t, std::size_t>(),
-           "backend"_a = cm2::BackendKind::cpu, "reserved_capacity"_a = 0, "species_count"_a = 0)
-      .def(nb::init<cm2::BackendKind, const cm2::SimulationCheckpoint&>(), "backend"_a,
-           "checkpoint"_a)
+      .def(nb::init<cm2::BackendKind, std::size_t, std::size_t, std::uint32_t>(),
+           "backend"_a = cm2::BackendKind::cpu, "reserved_capacity"_a = 0, "species_count"_a = 0,
+           "device_index"_a = 0)
+      .def(nb::init<cm2::BackendKind, const cm2::SimulationCheckpoint&, std::uint32_t>(),
+           "backend"_a, "checkpoint"_a, "device_index"_a = 0)
       .def_prop_ro("backend_info", &cm2::Simulation::backend_info)
       .def("supports", &cm2::Simulation::supports, "feature"_a)
       .def_prop_ro("time", &cm2::Simulation::time)

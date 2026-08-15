@@ -6,19 +6,19 @@
 namespace cm2 {
 namespace {
 
-std::unique_ptr<ComputeBackend> make_backend(BackendKind kind) {
+std::unique_ptr<ComputeBackend> make_backend(BackendKind kind, std::uint32_t device_index) {
   switch (kind) {
     case BackendKind::cpu:
-      return make_cpu_backend();
+      return make_cpu_backend(device_index);
     case BackendKind::metal:
 #if CM2_HAS_METAL
-      return make_metal_backend();
+      return make_metal_backend(device_index);
 #else
       throw std::runtime_error("Metal backend is not implemented in this build");
 #endif
     case BackendKind::cuda:
 #if CM2_HAS_CUDA
-      return make_cuda_backend();
+      return make_cuda_backend(device_index);
 #else
       throw std::runtime_error("CUDA backend is not implemented in this build");
 #endif
@@ -33,33 +33,38 @@ const SimulationCheckpoint& validated_checkpoint(const SimulationCheckpoint& che
 
 }  // namespace
 
-bool backend_available(BackendKind kind) noexcept {
+std::size_t backend_device_count(BackendKind kind) noexcept {
   if (kind == BackendKind::cpu) {
-    return true;
+    return 1;
   }
 #if CM2_HAS_METAL
   if (kind == BackendKind::metal) {
-    return metal_backend_available();
+    return metal_backend_device_count();
   }
 #endif
 #if CM2_HAS_CUDA
   if (kind == BackendKind::cuda) {
-    return cuda_backend_available();
+    return cuda_backend_device_count();
   }
 #endif
-  return false;
+  return 0;
+}
+
+bool backend_available(BackendKind kind, std::uint32_t device_index) noexcept {
+  return static_cast<std::size_t>(device_index) < backend_device_count(kind);
 }
 
 Simulation::Simulation(BackendKind backend, std::size_t reserved_capacity,
-                       std::size_t species_count)
+                       std::size_t species_count, std::uint32_t device_index)
     : state_(reserved_capacity, species_count),
-      backend_(make_backend(backend)),
+      backend_(make_backend(backend, device_index)),
       species_rate_plan_(SpeciesRatePlan::zero(species_count)) {}
 
-Simulation::Simulation(BackendKind backend, const SimulationCheckpoint& checkpoint)
+Simulation::Simulation(BackendKind backend, const SimulationCheckpoint& checkpoint,
+                       std::uint32_t device_index)
     : state_(validated_checkpoint(checkpoint).world),
       constraints_(checkpoint.constraints),
-      backend_(make_backend(backend)),
+      backend_(make_backend(backend, device_index)),
       species_rate_plan_(checkpoint.species_rate_plan),
       time_(checkpoint.time) {
   validate();

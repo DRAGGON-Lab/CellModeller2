@@ -125,14 +125,28 @@ void dispatch_1d(id<MTLComputeCommandEncoder> encoder, id<MTLComputePipelineStat
   [encoder dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(width, 1, 1)];
 }
 
+id<MTLDevice> select_metal_device(std::uint32_t device_index) {
+  NSArray<id<MTLDevice>>* devices = MTLCopyAllDevices();
+  if (devices.count == 0) {
+    id<MTLDevice> default_device = MTLCreateSystemDefaultDevice();
+    if (device_index == 0 && default_device != nil) {
+      return default_device;
+    }
+    if (default_device == nil) {
+      throw std::runtime_error("Metal is unavailable on this system");
+    }
+  }
+  if (static_cast<NSUInteger>(device_index) >= devices.count) {
+    throw std::out_of_range("Metal device index is unavailable");
+  }
+  return devices[device_index];
+}
+
 class MetalBackend final : public ComputeBackend {
  public:
-  MetalBackend() {
+  explicit MetalBackend(std::uint32_t device_index) : device_index_(device_index) {
     @autoreleasepool {
-      device_ = MTLCreateSystemDefaultDevice();
-      if (device_ == nil) {
-        throw std::runtime_error("Metal is unavailable on this system");
-      }
+      device_ = select_metal_device(device_index_);
       queue_ = [device_ newCommandQueue];
       if (queue_ == nil) {
         throw std::runtime_error("failed to create a Metal command queue");
@@ -205,6 +219,7 @@ class MetalBackend final : public ComputeBackend {
           .kind = BackendKind::metal,
           .name = "metal",
           .device = device_name == nullptr ? "unknown Apple GPU" : device_name,
+          .device_index = device_index_,
           .native = true,
       };
     }
@@ -1299,6 +1314,7 @@ class MetalBackend final : public ComputeBackend {
     return result;
   }
 
+  std::uint32_t device_index_{0};
   id<MTLDevice> device_{nil};
   id<MTLCommandQueue> queue_{nil};
   id<MTLComputePipelineState> growth_pipeline_{nil};
@@ -1385,11 +1401,14 @@ class MetalBackend final : public ComputeBackend {
 
 }  // namespace
 
-std::unique_ptr<ComputeBackend> make_metal_backend() { return std::make_unique<MetalBackend>(); }
+std::unique_ptr<ComputeBackend> make_metal_backend(std::uint32_t device_index) {
+  return std::make_unique<MetalBackend>(device_index);
+}
 
-bool metal_backend_available() noexcept {
+std::size_t metal_backend_device_count() noexcept {
   @autoreleasepool {
-    return MTLCreateSystemDefaultDevice() != nil;
+    const auto count = MTLCopyAllDevices().count;
+    return count == 0 && MTLCreateSystemDefaultDevice() != nil ? 1 : count;
   }
 }
 

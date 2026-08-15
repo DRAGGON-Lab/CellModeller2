@@ -1,4 +1,5 @@
 #include <memory>
+#include <stdexcept>
 
 #include "cm2/backend.hpp"
 
@@ -12,6 +13,7 @@ class CpuBackend final : public ComputeBackend {
         .kind = BackendKind::cpu,
         .name = "cpu-reference",
         .device = "host",
+        .device_index = 0,
         .native = true,
     };
   }
@@ -50,6 +52,11 @@ class CpuBackend final : public ComputeBackend {
 
 }  // namespace
 
-std::unique_ptr<ComputeBackend> make_cpu_backend() { return std::make_unique<CpuBackend>(); }
+std::unique_ptr<ComputeBackend> make_cpu_backend(std::uint32_t device_index) {
+  if (device_index != 0) {
+    throw std::out_of_range("CPU backend exposes only device index 0");
+  }
+  return std::make_unique<CpuBackend>();
+}
 
 }  // namespace cm2

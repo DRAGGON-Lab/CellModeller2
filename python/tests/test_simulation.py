@@ -22,6 +22,7 @@ from cellmodeller2 import (
     SpeciesRatePlan,
     Vec3,
     backend_available,
+    backend_device_count,
 )
 
 
@@ -76,6 +77,22 @@ def test_unavailable_backend_fails_instead_of_falling_back(backend: BackendKind)
         return
     with pytest.raises(RuntimeError, match=r"not implemented|unavailable"):
         Simulation(backend)
+
+
+def test_backend_device_selection_is_explicit() -> None:
+    assert backend_device_count(BackendKind.CPU) == 1
+    assert backend_available(BackendKind.CPU, 0)
+    assert not backend_available(BackendKind.CPU, 1)
+    assert Simulation(device_index=0).backend_info.device_index == 0
+    with pytest.raises(IndexError, match="device index 0"):
+        Simulation(device_index=1)
+
+    for backend in BackendKind:
+        count = backend_device_count(backend)
+        assert backend_available(backend) == (count > 0)
+        assert not backend_available(backend, count)
+        if count > 0:
+            assert Simulation(backend, device_index=0).backend_info.device_index == 0
 
 
 def test_invalid_time_step_is_rejected() -> None:
