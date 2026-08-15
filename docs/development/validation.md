@@ -49,6 +49,12 @@ native state validation. Passing on CPU establishes exact host restoration;
 passing with Metal or CUDA enabled additionally establishes backend-independent
 reconstruction and continued execution on that hardware.
 
+Batch fixtures execute a real model file through both the Python API and the
+`cm2` entry point. They verify seeded construction, JSON parameters, periodic
+checkpoint names, collision preflight, model and resume hashes, exact resumed
+time, and machine-readable device discovery. The same model and seed must
+produce the same serialized simulation state.
+
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while

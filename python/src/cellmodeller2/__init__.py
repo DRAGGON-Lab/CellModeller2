@@ -39,6 +39,7 @@ from .checkpoint import (
     load_checkpoint,
     save_checkpoint,
 )
+from .runner import BatchError, ModelContext, RunProgress, RunSummary, build_model, run_simulation
 
 __all__ = [
     "CHECKPOINT_FORMAT",
@@ -46,6 +47,7 @@ __all__ = [
     "BackendFeature",
     "BackendInfo",
     "BackendKind",
+    "BatchError",
     "CellContact",
     "CellCorrection",
     "CellInit",
@@ -60,10 +62,13 @@ __all__ = [
     "MechanicsIntegrationParameters",
     "MechanicsParameters",
     "MechanicsSolveResult",
+    "ModelContext",
     "PlaneConstraintInit",
     "RateInstruction",
     "RateOp",
     "RodEndpoint",
+    "RunProgress",
+    "RunSummary",
     "Simulation",
     "SolverBreakdown",
     "SolverReport",
@@ -74,7 +79,9 @@ __all__ = [
     "Vec3",
     "backend_available",
     "backend_device_count",
+    "build_model",
     "load_checkpoint",
+    "run_simulation",
     "save_checkpoint",
 ]
 

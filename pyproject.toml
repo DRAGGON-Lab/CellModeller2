@@ -19,6 +19,9 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 
+[project.scripts]
+cm2 = "cellmodeller2.cli:main"
+
 [dependency-groups]
 dev = [
   "pytest>=8.3,<9",

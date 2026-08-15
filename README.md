@@ -19,6 +19,7 @@ The initial slice establishes:
 - deterministic growth and division semantics;
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
+- deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
 - typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
 - matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
@@ -70,6 +71,43 @@ constructor accepts `device_index`. Invalid indices fail explicitly; CUDA does
 not inherit mutable process-thread device selection, and Metal does not
 silently substitute the system default for a requested index.
 
+## Run a batch model
+
+List the devices visible to the native runtimes, then run a model on an
+explicit backend and device:
+
+```console
+uv run cm2 devices
+uv run cm2 run \
+  --model examples/batch_model.py \
+  --backend metal \
+  --device-index 0 \
+  --seed 42 \
+  --parameter growth_rate=0.25 \
+  --steps 100 \
+  --dt 0.05 \
+  --checkpoint-every 25 \
+  --output results/colony.cm2.json
+```
+
+A model is trusted Python code and must define `build(context)`. Construct the
+simulation with `context.simulation()`, use `context.rng` for seeded model
+randomness, and read JSON parameters from `context.parameters`. The runner
+rejects a model that substitutes another backend or device. Existing final or
+periodic outputs are never replaced without `--overwrite`.
+
+Resume a data-only checkpoint on any available backend:
+
+```console
+uv run cm2 run \
+  --resume results/colony.cm2.json \
+  --backend cpu \
+  --device-index 0 \
+  --steps 100 \
+  --dt 0.05 \
+  --output results/colony-resumed.cm2.json
+```
+
 ## Build the C++ reference tests
 
 ```console
@@ -104,3 +142,5 @@ The species state and rate representation is specified in
 [ADR 0003](docs/architecture/0003-species-rates.md).
 The checkpoint schema and exact-resume boundary are specified in
 [ADR 0004](docs/architecture/0004-checkpoints.md).
+The command-line model and batch-run contract is specified in
+[ADR 0005](docs/architecture/0005-batch-execution.md).
