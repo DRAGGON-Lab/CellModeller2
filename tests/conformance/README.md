@@ -68,12 +68,15 @@ integrity digest, and malformed-input rejection.
 
 ## Contact conformance scenario
 
-The contact scenario compares each contact-capable backend with the exhaustive
-CPU oracle for mixed end-on, parallel, anti-parallel, skew, point-like, empty,
-and single-cell geometry. It also checks stable-ID ordering after slot reuse and
-a 31-cell coincident case with 60 incident contacts per cell. Contact fields use
-absolute and relative tolerances of `2e-5`; IDs, slots, ordinals, graph sizes,
-and incidence indices are exact.
+The contact scenario compares each contact-capable backend with the CPU
+geometry oracle for mixed end-on, parallel, anti-parallel, skew, point-like,
+empty, and single-cell geometry. Both paths consume the deterministic
+sweep-and-prune candidate list; focused CPU tests additionally prove that 2,048
+widely separated capsules stage no candidate pairs and that dense bounds retain
+every pair. The shared scenario also checks stable-ID ordering after slot reuse
+and a 31-cell coincident case with 60 incident contacts per cell. Contact fields
+use absolute and relative tolerances of `2e-5`; IDs, slots, ordinals, graph
+sizes, and incidence indices are exact.
 
 ## External-constraint conformance scenario
 

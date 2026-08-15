@@ -155,43 +155,37 @@ Vec3 deterministic_normal(const Capsule& first, const Capsule& second, const Poi
   return normalized(cross(first.axis, *least_aligned));
 }
 
-}  // namespace
-
-ContactGraph find_cell_contacts_cpu(const WorldState& state, const ContactParameters& parameters) {
-  validate_contact_parameters(parameters);
+ContactGraph contacts_for_candidates(const WorldState& state,
+                                     const ContactParameters& parameters,
+                                     std::span<const ContactCandidate> candidates) {
   const auto geometry = state.geometry_state();
   std::vector<CellContact> contacts;
 
-  for (std::size_t left = 0; left < geometry.size(); ++left) {
-    for (std::size_t right = left + 1; right < geometry.size(); ++right) {
-      auto first = capsule_at(geometry, left);
-      auto second = capsule_at(geometry, right);
-      if (second.id < first.id) {
-        std::swap(first, second);
-      }
+  for (const auto& candidate : candidates) {
+    auto first = capsule_at(geometry, candidate.first_slot);
+    auto second = capsule_at(geometry, candidate.second_slot);
 
-      const auto points = contact_points(first, second, parameters);
-      const auto weight = points.size() == 2 ? inverse_sqrt_two : 1.0F;
-      for (std::size_t ordinal = 0; ordinal < points.size(); ++ordinal) {
-        const auto point_delta = points[ordinal].second - points[ordinal].first;
-        const auto separation = norm(point_delta) - (first.radius + second.radius);
-        if (separation >= parameters.activation_margin) {
-          continue;
-        }
-        const auto normal =
-            deterministic_normal(first, second, points[ordinal], parameters.degeneracy_epsilon);
-        contacts.push_back({
-            .first_id = first.id,
-            .second_id = second.id,
-            .first_slot = first.slot,
-            .second_slot = second.slot,
-            .ordinal = static_cast<std::uint8_t>(ordinal),
-            .point_on_first = points[ordinal].first + (normal * first.radius),
-            .normal = normal,
-            .signed_separation = separation,
-            .weight = weight,
-        });
+    const auto points = contact_points(first, second, parameters);
+    const auto weight = points.size() == 2 ? inverse_sqrt_two : 1.0F;
+    for (std::size_t ordinal = 0; ordinal < points.size(); ++ordinal) {
+      const auto point_delta = points[ordinal].second - points[ordinal].first;
+      const auto separation = norm(point_delta) - (first.radius + second.radius);
+      if (separation >= parameters.activation_margin) {
+        continue;
       }
+      const auto normal =
+          deterministic_normal(first, second, points[ordinal], parameters.degeneracy_epsilon);
+      contacts.push_back({
+          .first_id = first.id,
+          .second_id = second.id,
+          .first_slot = first.slot,
+          .second_slot = second.slot,
+          .ordinal = static_cast<std::uint8_t>(ordinal),
+          .point_on_first = points[ordinal].first + (normal * first.radius),
+          .normal = normal,
+          .signed_separation = separation,
+          .weight = weight,
+      });
     }
   }
 
@@ -199,6 +193,37 @@ ContactGraph find_cell_contacts_cpu(const WorldState& state, const ContactParame
     return std::tuple{contact.first_id, contact.second_id, contact.ordinal};
   });
   return ContactGraph(geometry.size(), std::move(contacts));
+}
+
+}  // namespace
+
+ContactGraph find_cell_contacts_cpu(const WorldState& state, const ContactParameters& parameters) {
+  const auto candidates = find_cell_contact_candidates(state, parameters);
+  return contacts_for_candidates(state, parameters, candidates);
+}
+
+ContactGraph find_cell_contacts_cpu_exhaustive(const WorldState& state,
+                                               const ContactParameters& parameters) {
+  validate_contact_parameters(parameters);
+  const auto geometry = state.geometry_state();
+  std::vector<ContactCandidate> candidates;
+  if (geometry.size() > 1 &&
+      geometry.size() - 1 > std::numeric_limits<std::size_t>::max() / geometry.size()) {
+    throw std::overflow_error("exhaustive contact candidate count overflow");
+  }
+  const auto pair_count =
+      geometry.size() < 2 ? std::size_t{0} : geometry.size() * (geometry.size() - 1) / 2;
+  candidates.reserve(pair_count);
+  for (std::size_t first = 0; first < geometry.size(); ++first) {
+    for (std::size_t second = first + 1; second < geometry.size(); ++second) {
+      candidates.push_back(geometry.ids[first] < geometry.ids[second]
+                               ? ContactCandidate{static_cast<Slot>(first),
+                                                  static_cast<Slot>(second)}
+                               : ContactCandidate{static_cast<Slot>(second),
+                                                  static_cast<Slot>(first)});
+    }
+  }
+  return contacts_for_candidates(state, parameters, candidates);
 }
 
 }  // namespace cm2

@@ -222,18 +222,14 @@ kernel void count_cell_contacts(device const ulong* ids [[buffer(0)]],
                                 device const float4* geometry [[buffer(3)]],
                                 device uint* counts [[buffer(4)]],
                                 constant float4& parameters [[buffer(5)]],
-                                constant uint& cell_count [[buffer(6)]],
-                                uint2 position [[thread_position_in_grid]]) {
-  if (position.x >= cell_count || position.y >= cell_count) {
+                                constant uint& candidate_count [[buffer(6)]],
+                                device const uint2* candidates [[buffer(7)]],
+                                uint pair_index [[thread_position_in_grid]]) {
+  if (pair_index >= candidate_count) {
     return;
   }
-  uint first_slot = position.y;
-  uint second_slot = position.x;
-  uint pair_index = first_slot * cell_count + second_slot;
-  if (second_slot <= first_slot) {
-    counts[pair_index] = 0;
-    return;
-  }
+  uint first_slot = candidates[pair_index].x;
+  uint second_slot = candidates[pair_index].y;
 
   Capsule first = load_capsule(ids, centers, axes, geometry, first_slot);
   Capsule second = load_capsule(ids, centers, axes, geometry, second_slot);
@@ -272,16 +268,14 @@ kernel void fill_cell_contacts(
     device uint* ordinals [[buffer(10)]], device float4* points_on_first [[buffer(11)]],
     device float4* normals [[buffer(12)]], device float* separations [[buffer(13)]],
     device float* weights [[buffer(14)]], constant float4& parameters [[buffer(15)]],
-    constant uint& cell_count [[buffer(16)]], uint2 position [[thread_position_in_grid]]) {
-  if (position.x >= cell_count || position.y >= cell_count) {
+    constant uint& candidate_count [[buffer(16)]],
+    device const uint2* candidates [[buffer(17)]],
+    uint pair_index [[thread_position_in_grid]]) {
+  if (pair_index >= candidate_count) {
     return;
   }
-  uint first_slot = position.y;
-  uint second_slot = position.x;
-  if (second_slot <= first_slot) {
-    return;
-  }
-  uint pair_index = first_slot * cell_count + second_slot;
+  uint first_slot = candidates[pair_index].x;
+  uint second_slot = candidates[pair_index].y;
   uint pair_contact_count = counts[pair_index];
   if (pair_contact_count == 0) {
     return;

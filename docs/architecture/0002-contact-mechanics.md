@@ -22,13 +22,22 @@ references rather than sentinel cell IDs.
 The CPU reference performs an exhaustive pair search. It is intentionally
 simple and is the geometry oracle for small conformance scenarios.
 
-Native GPU broad and narrow phases use a two-pass dynamic pipeline:
+Contact discovery uses a deterministic sweep-and-prune broad phase over
+capsule axis-aligned bounds. Each bound expands the centerline by its radius
+and half the activation margin, so overlap is a conservative prerequisite for
+the narrow-phase separation test. Bounds are sorted by minimum x coordinate
+and stable cell ID; candidates are emitted in stable-ID order. Sparse staging
+therefore scales with the number of overlapping bounds rather than allocating
+an `N x N` pair matrix.
 
-1. conservatively generate candidate pairs from capsule bounds;
-2. count zero, one, or two narrow-phase contacts per pair;
-3. exclusive-scan the counts into offsets;
+Metal and CUDA consume that candidate list through a native two-pass dynamic
+pipeline:
+
+1. upload compact candidate slot pairs with the current cell arrays;
+2. count zero, one, or two narrow-phase contacts per candidate;
+3. scan the counts into offsets with native kernels;
 4. allocate or grow the contact arrays;
-5. fill the typed contact records.
+5. fill the typed contact records with native kernels.
 
 There is no scientific contact cap. Allocation failure is explicit. In
 deterministic mode, contacts are ordered by stable endpoint IDs and contact
@@ -117,15 +126,16 @@ rather than treating neighbors as persistent cell state.
 
 ## Initial delivery order
 
-1. Robust capsule geometry and exhaustive CPU contact generation.
+1. Robust capsule geometry and an exhaustive CPU geometry oracle.
 2. Shared contact fixtures and a dynamic contact-graph API.
-3. Native Metal and CUDA count/scan/fill pipelines.
-4. CPU matrix-free operator and diagnosed conjugate-gradient solver.
-5. Native Metal and CUDA operator, reductions, and solver loops.
-6. Typed plane and sphere constraint geometry.
-7. CPU external-constraint mechanics rows.
-8. Native Metal external-constraint conformance.
-9. Native CUDA external-constraint conformance.
+3. Deterministic sweep-and-prune candidate staging.
+4. Native Metal and CUDA count/scan/fill pipelines.
+5. CPU matrix-free operator and diagnosed conjugate-gradient solver.
+6. Native Metal and CUDA operator, reductions, and solver loops.
+7. Typed plane and sphere constraint geometry.
+8. CPU external-constraint mechanics rows.
+9. Native Metal external-constraint conformance.
+10. Native CUDA external-constraint conformance.
 
 This order isolates geometry disagreements before solver behavior can hide
 them. A feature ledger entry advances only when the corresponding shared
@@ -133,7 +143,8 @@ fixture passes on real backend hardware.
 
 ## Consequences
 
-- Contact storage scales with actual topology rather than a per-cell maximum.
+- Pair staging scales with conservative spatial candidates and contact storage
+  scales with actual topology rather than a per-cell maximum.
 - Stable cell identity survives compaction while kernels continue to use dense
   slots.
 - GPU implementations duplicate orchestration where native primitives differ.

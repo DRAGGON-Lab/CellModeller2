@@ -256,18 +256,15 @@ evaluate_external_constraint(const Capsule& cell, const ExternalConstraintGpu& c
 
 __global__ void count_cell_contacts(const std::uint64_t* ids, const float4* centers,
                                     const float4* axes, const float4* geometry,
-                                    std::uint32_t* counts, ContactParametersGpu parameters,
-                                    std::uint32_t cell_count) {
-  const auto second_slot = blockIdx.x * blockDim.x + threadIdx.x;
-  const auto first_slot = blockIdx.y * blockDim.y + threadIdx.y;
-  if (first_slot >= cell_count || second_slot >= cell_count) {
+                                    const uint2* candidates, std::uint32_t* counts,
+                                    ContactParametersGpu parameters,
+                                    std::uint32_t candidate_count) {
+  const auto pair_index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (pair_index >= candidate_count) {
     return;
   }
-  const auto pair_index = first_slot * cell_count + second_slot;
-  if (second_slot <= first_slot) {
-    counts[pair_index] = 0;
-    return;
-  }
+  const auto first_slot = candidates[pair_index].x;
+  const auto second_slot = candidates[pair_index].y;
 
   auto first = load_capsule(ids, centers, axes, geometry, first_slot);
   auto second = load_capsule(ids, centers, axes, geometry, second_slot);
@@ -298,16 +295,17 @@ __global__ void inclusive_scan_step(const std::uint32_t* input, std::uint32_t* o
 
 __global__ void fill_cell_contacts(
     const std::uint64_t* ids, const float4* centers, const float4* axes, const float4* geometry,
-    const std::uint32_t* counts, const std::uint32_t* inclusive_counts, std::uint64_t* first_ids,
+    const uint2* candidates, const std::uint32_t* counts,
+    const std::uint32_t* inclusive_counts, std::uint64_t* first_ids,
     std::uint64_t* second_ids, std::uint32_t* first_slots, std::uint32_t* second_slots,
     std::uint32_t* ordinals, float4* points_on_first, float4* normals, float* separations,
-    float* weights, ContactParametersGpu parameters, std::uint32_t cell_count) {
-  const auto second_slot = blockIdx.x * blockDim.x + threadIdx.x;
-  const auto first_slot = blockIdx.y * blockDim.y + threadIdx.y;
-  if (first_slot >= cell_count || second_slot >= cell_count || second_slot <= first_slot) {
+    float* weights, ContactParametersGpu parameters, std::uint32_t candidate_count) {
+  const auto pair_index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (pair_index >= candidate_count) {
     return;
   }
-  const auto pair_index = first_slot * cell_count + second_slot;
+  const auto first_slot = candidates[pair_index].x;
+  const auto second_slot = candidates[pair_index].y;
   const auto pair_contact_count = counts[pair_index];
   if (pair_contact_count == 0) {
     return;
@@ -407,14 +405,13 @@ __global__ void fill_external_contacts(
 }  // namespace
 
 void launch_contact_count(const std::uint64_t* ids, const float4* centers, const float4* axes,
-                          const float4* geometry, std::uint32_t* counts,
-                          ContactParametersGpu parameters, std::uint32_t cell_count,
+                          const float4* geometry, const uint2* candidates, std::uint32_t* counts,
+                          ContactParametersGpu parameters, std::uint32_t candidate_count,
                           cudaStream_t stream) {
-  constexpr dim3 threads(16, 16);
-  const dim3 blocks((cell_count + threads.x - 1) / threads.x,
-                    (cell_count + threads.y - 1) / threads.y);
-  count_cell_contacts<<<blocks, threads, 0, stream>>>(ids, centers, axes, geometry, counts,
-                                                      parameters, cell_count);
+  constexpr std::uint32_t threads = 256;
+  const auto blocks = ((candidate_count - 1) / threads) + 1;
+  count_cell_contacts<<<blocks, threads, 0, stream>>>(ids, centers, axes, geometry, candidates,
+                                                      counts, parameters, candidate_count);
 }
 
 void launch_inclusive_scan_step(const std::uint32_t* input, std::uint32_t* output,
@@ -426,20 +423,20 @@ void launch_inclusive_scan_step(const std::uint32_t* input, std::uint32_t* outpu
 }
 
 void launch_contact_fill(const std::uint64_t* ids, const float4* centers, const float4* axes,
-                         const float4* geometry, const std::uint32_t* counts,
+                         const float4* geometry, const uint2* candidates,
+                         const std::uint32_t* counts,
                          const std::uint32_t* inclusive_counts, std::uint64_t* first_ids,
                          std::uint64_t* second_ids, std::uint32_t* first_slots,
                          std::uint32_t* second_slots, std::uint32_t* ordinals,
                          float4* points_on_first, float4* normals, float* separations,
-                         float* weights, ContactParametersGpu parameters, std::uint32_t cell_count,
-                         cudaStream_t stream) {
-  constexpr dim3 threads(16, 16);
-  const dim3 blocks((cell_count + threads.x - 1) / threads.x,
-                    (cell_count + threads.y - 1) / threads.y);
+                         float* weights, ContactParametersGpu parameters,
+                         std::uint32_t candidate_count, cudaStream_t stream) {
+  constexpr std::uint32_t threads = 256;
+  const auto blocks = ((candidate_count - 1) / threads) + 1;
   fill_cell_contacts<<<blocks, threads, 0, stream>>>(
-      ids, centers, axes, geometry, counts, inclusive_counts, first_ids, second_ids, first_slots,
-      second_slots, ordinals, points_on_first, normals, separations, weights, parameters,
-      cell_count);
+      ids, centers, axes, geometry, candidates, counts, inclusive_counts, first_ids, second_ids,
+      first_slots, second_slots, ordinals, points_on_first, normals, separations, weights,
+      parameters, candidate_count);
 }
 
 void launch_external_contact_count(const std::uint64_t* ids, const float4* centers,

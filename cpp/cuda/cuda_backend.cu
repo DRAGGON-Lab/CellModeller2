@@ -537,26 +537,27 @@ class CudaBackend final : public ComputeBackend {
     if (geometry.size() > std::numeric_limits<std::uint32_t>::max()) {
       throw std::overflow_error("CUDA contact launch exceeds the uint32 cell index space");
     }
-    if (geometry.size() > std::numeric_limits<std::size_t>::max() / geometry.size()) {
-      throw std::overflow_error("CUDA exhaustive contact pair count overflow");
+    const auto candidates = find_cell_contact_candidates(state, parameters);
+    if (candidates.empty()) {
+      return ContactGraph(geometry.size(), {});
     }
-    const auto pair_slot_count = geometry.size() * geometry.size();
-    if (pair_slot_count > std::numeric_limits<std::uint32_t>::max() / 2) {
-      throw std::overflow_error("CUDA exhaustive contact staging exceeds the uint32 scan space");
+    if (candidates.size() > std::numeric_limits<std::uint32_t>::max() / 2) {
+      throw std::overflow_error("CUDA contact candidates exceed the uint32 scan space");
     }
 
     ensure_contact_cell_capacity(geometry.size());
-    ensure_contact_pair_capacity(pair_slot_count);
+    ensure_contact_candidate_capacity(candidates.size());
+    ensure_contact_pair_capacity(candidates.size());
     upload_contact_cells(geometry);
-    const auto contact_count =
-        count_contacts(static_cast<std::uint32_t>(geometry.size()),
-                       static_cast<std::uint32_t>(pair_slot_count), parameters);
+    upload_contact_candidates(candidates);
+    const auto candidate_count = static_cast<std::uint32_t>(candidates.size());
+    const auto contact_count = count_contacts(candidate_count, parameters);
     if (contact_count == 0) {
       return ContactGraph(geometry.size(), {});
     }
 
     ensure_contact_output_capacity(contact_count);
-    fill_contacts(static_cast<std::uint32_t>(geometry.size()), parameters);
+    fill_contacts(candidate_count, parameters);
     return download_contacts(geometry.size(), contact_count);
   }
 
@@ -743,6 +744,10 @@ class CudaBackend final : public ComputeBackend {
     contact_scan_b_.reserve(count, "contact scan B");
   }
 
+  void ensure_contact_candidate_capacity(std::size_t count) {
+    contact_candidates_.reserve(count, "contact candidates");
+  }
+
   void ensure_external_constraint_capacity(std::size_t count) {
     external_constraints_.reserve(count, "external constraints");
   }
@@ -783,6 +788,17 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaMemcpy(contact_geometry_.data(), shapes.data(), shapes.size() * sizeof(float4),
                           cudaMemcpyHostToDevice),
                "failed to upload CUDA contact cell geometry");
+  }
+
+  void upload_contact_candidates(std::span<const ContactCandidate> candidates) {
+    std::vector<uint2> values;
+    values.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+      values.push_back(make_uint2(candidate.first_slot, candidate.second_slot));
+    }
+    check_cuda(cudaMemcpy(contact_candidates_.data(), values.data(), values.size() * sizeof(uint2),
+                          cudaMemcpyHostToDevice),
+               "failed to upload CUDA contact candidates");
   }
 
   void upload_external_constraints(const ConstraintSet& constraints) {
@@ -839,8 +855,7 @@ class CudaBackend final : public ComputeBackend {
     return contact_count;
   }
 
-  [[nodiscard]] std::uint32_t count_contacts(std::uint32_t cell_count,
-                                             std::uint32_t pair_slot_count,
+  [[nodiscard]] std::uint32_t count_contacts(std::uint32_t candidate_count,
                                              const ContactParameters& parameters) {
     const cuda::ContactParametersGpu gpu_parameters{
         .activation_margin = parameters.activation_margin,
@@ -848,14 +863,14 @@ class CudaBackend final : public ComputeBackend {
         .degeneracy_epsilon = parameters.degeneracy_epsilon,
     };
     cuda::launch_contact_count(contact_ids_.data(), contact_centers_.data(), contact_axes_.data(),
-                               contact_geometry_.data(), contact_counts_.data(), gpu_parameters,
-                               cell_count, stream_);
+                               contact_geometry_.data(), contact_candidates_.data(),
+                               contact_counts_.data(), gpu_parameters, candidate_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA contact-count kernel");
-    scan_contact_counts(pair_slot_count);
-    return download_contact_count(pair_slot_count, "CUDA contact count or scan failed");
+    scan_contact_counts(candidate_count);
+    return download_contact_count(candidate_count, "CUDA contact count or scan failed");
   }
 
-  void fill_contacts(std::uint32_t cell_count, const ContactParameters& parameters) {
+  void fill_contacts(std::uint32_t candidate_count, const ContactParameters& parameters) {
     const cuda::ContactParametersGpu gpu_parameters{
         .activation_margin = parameters.activation_margin,
         .parallel_sine_threshold = parameters.parallel_sine_threshold,
@@ -863,11 +878,11 @@ class CudaBackend final : public ComputeBackend {
     };
     cuda::launch_contact_fill(
         contact_ids_.data(), contact_centers_.data(), contact_axes_.data(),
-        contact_geometry_.data(), contact_counts_.data(), contact_inclusive_counts_,
-        contact_first_ids_.data(), contact_second_ids_.data(), contact_first_slots_.data(),
-        contact_second_slots_.data(), contact_ordinals_.data(), contact_points_.data(),
-        contact_normals_.data(), contact_separations_.data(), contact_weights_.data(),
-        gpu_parameters, cell_count, stream_);
+        contact_geometry_.data(), contact_candidates_.data(), contact_counts_.data(),
+        contact_inclusive_counts_, contact_first_ids_.data(), contact_second_ids_.data(),
+        contact_first_slots_.data(), contact_second_slots_.data(), contact_ordinals_.data(),
+        contact_points_.data(), contact_normals_.data(), contact_separations_.data(),
+        contact_weights_.data(), gpu_parameters, candidate_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA contact-fill kernel");
   }
 
@@ -1296,6 +1311,7 @@ class CudaBackend final : public ComputeBackend {
   CudaBuffer<float4> contact_centers_;
   CudaBuffer<float4> contact_axes_;
   CudaBuffer<float4> contact_geometry_;
+  CudaBuffer<uint2> contact_candidates_;
   CudaBuffer<cuda::ExternalConstraintGpu> external_constraints_;
 
   CudaBuffer<std::uint32_t> contact_counts_;

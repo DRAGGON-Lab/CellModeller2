@@ -148,6 +148,59 @@ void test_contact_graph_has_no_per_cell_limit() {
   assert(graph.incident_contact_indices(0).size() > 24);
 }
 
+void test_sweep_and_prune_stages_only_overlapping_bounds() {
+  cm2::WorldState sparse;
+  constexpr std::size_t capsule_count = 2048;
+  for (std::size_t index = 0; index < capsule_count; ++index) {
+    add_capsule(sparse, {static_cast<float>(index) * 10.0F, 0.0F, 0.0F},
+                {1.0F, 0.0F, 0.0F});
+  }
+  assert(cm2::find_cell_contact_candidates(sparse).empty());
+  assert(cm2::find_cell_contacts_cpu(sparse).empty());
+
+  cm2::WorldState dense;
+  for (std::size_t index = 0; index < 31; ++index) {
+    add_capsule(dense, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
+  }
+  const auto candidates = cm2::find_cell_contact_candidates(dense);
+  const auto geometry = dense.geometry_state();
+  assert(candidates.size() == 31 * 30 / 2);
+  for (const auto& candidate : candidates) {
+    assert(geometry.ids[candidate.first_slot] < geometry.ids[candidate.second_slot]);
+  }
+}
+
+void test_sweep_and_prune_matches_exhaustive_oracle() {
+  cm2::WorldState state;
+  constexpr std::size_t capsule_count = 257;
+  for (std::size_t index = 0; index < capsule_count; ++index) {
+    const auto x = static_cast<float>((index * 37) % 101) * 0.21F;
+    const auto y = static_cast<float>((index * 53) % 89) * 0.19F;
+    const auto z = static_cast<float>((index * 29) % 47) * 0.17F;
+    const auto axis_x = static_cast<float>((index * 7) % 13) + 1.0F;
+    const auto axis_y = static_cast<float>((index * 11) % 17) + 1.0F;
+    const auto axis_z = static_cast<float>((index * 5) % 19) + 1.0F;
+    const auto length = 0.25F + static_cast<float>(index % 11) * 0.3F;
+    const auto radius = 0.15F + static_cast<float>(index % 5) * 0.07F;
+    add_capsule(state, {x, y, z}, {axis_x, axis_y, axis_z}, length, radius);
+  }
+
+  for (const auto margin : {0.0F, 0.01F, 0.5F}) {
+    cm2::ContactParameters parameters;
+    parameters.activation_margin = margin;
+    const auto actual = cm2::find_cell_contacts_cpu(state, parameters);
+    const auto expected = cm2::find_cell_contacts_cpu_exhaustive(state, parameters);
+    assert(actual.size() == expected.size());
+    for (std::size_t index = 0; index < expected.size(); ++index) {
+      assert(actual.contacts()[index].first_id == expected.contacts()[index].first_id);
+      assert(actual.contacts()[index].second_id == expected.contacts()[index].second_id);
+      assert(actual.contacts()[index].ordinal == expected.contacts()[index].ordinal);
+      assert(close(actual.contacts()[index].signed_separation,
+                   expected.contacts()[index].signed_separation));
+    }
+  }
+}
+
 void test_contacts_are_sorted_by_stable_identity() {
   cm2::WorldState state;
   const auto old = add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
@@ -225,6 +278,8 @@ int main() {
   test_neighbor_lookup_checks_slot_bounds();
   test_skew_and_coincident_contacts_have_finite_normals();
   test_contact_graph_has_no_per_cell_limit();
+  test_sweep_and_prune_stages_only_overlapping_bounds();
+  test_sweep_and_prune_matches_exhaustive_oracle();
   test_contacts_are_sorted_by_stable_identity();
   test_pair_order_reverses_the_contact_normal();
   test_invalid_parameters_are_rejected();

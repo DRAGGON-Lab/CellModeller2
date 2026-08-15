@@ -28,7 +28,15 @@ struct CellContact {
   float weight{1.0F};
 };
 
+struct ContactCandidate {
+  Slot first_slot{invalid_slot};
+  Slot second_slot{invalid_slot};
+};
+
 void validate_contact_parameters(const ContactParameters& parameters);
+
+[[nodiscard]] std::vector<ContactCandidate> find_cell_contact_candidates(
+    const WorldState& state, const ContactParameters& parameters = ContactParameters{});
 
 class ContactGraph {
  public:
@@ -55,6 +63,8 @@ class ContactGraph {
 };
 
 [[nodiscard]] ContactGraph find_cell_contacts_cpu(
+    const WorldState& state, const ContactParameters& parameters = ContactParameters{});
+[[nodiscard]] ContactGraph find_cell_contacts_cpu_exhaustive(
     const WorldState& state, const ContactParameters& parameters = ContactParameters{});
 
 }  // namespace cm2

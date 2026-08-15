@@ -34,6 +34,13 @@ struct MetalFloat2 {
 
 static_assert(sizeof(MetalFloat2) == 8);
 
+struct MetalUInt2 {
+  std::uint32_t x;
+  std::uint32_t y;
+};
+
+static_assert(sizeof(MetalUInt2) == 8);
+
 struct alignas(16) MetalFloat4 {
   float x;
   float y;
@@ -667,26 +674,28 @@ class MetalBackend final : public ComputeBackend {
     if (geometry.size() > std::numeric_limits<std::uint32_t>::max()) {
       throw std::overflow_error("Metal contact launch exceeds the uint32 cell index space");
     }
-    if (geometry.size() > std::numeric_limits<std::size_t>::max() / geometry.size()) {
-      throw std::overflow_error("Metal exhaustive contact pair count overflow");
+    const auto candidates = find_cell_contact_candidates(state, parameters);
+    if (candidates.empty()) {
+      return ContactGraph(geometry.size(), {});
     }
-    const auto pair_slot_count = geometry.size() * geometry.size();
-    if (pair_slot_count > std::numeric_limits<std::uint32_t>::max() / 2) {
-      throw std::overflow_error("Metal exhaustive contact staging exceeds the uint32 scan space");
+    if (candidates.size() > std::numeric_limits<std::uint32_t>::max() / 2) {
+      throw std::overflow_error("Metal contact candidates exceed the uint32 scan space");
     }
 
     ensure_contact_cell_capacity(geometry.size());
-    ensure_contact_pair_capacity(pair_slot_count);
+    ensure_contact_candidate_capacity(candidates.size());
+    ensure_contact_pair_capacity(candidates.size());
     upload_contact_cells(geometry);
+    upload_contact_candidates(candidates);
+    const auto candidate_count = static_cast<std::uint32_t>(candidates.size());
     const auto contact_count =
-        count_contacts(static_cast<std::uint32_t>(geometry.size()),
-                       static_cast<std::uint32_t>(pair_slot_count), parameters);
+        count_contacts(candidate_count, parameters);
     if (contact_count == 0) {
       return ContactGraph(geometry.size(), {});
     }
 
     ensure_contact_output_capacity(contact_count);
-    fill_contacts(static_cast<std::uint32_t>(geometry.size()), parameters);
+    fill_contacts(candidate_count, parameters);
     return download_contacts(geometry.size(), contact_count);
   }
 
@@ -1014,6 +1023,15 @@ class MetalBackend final : public ComputeBackend {
     contact_scan_b_ = allocate_shared_buffer(device_, byte_count, "contact scan B");
   }
 
+  void ensure_contact_candidate_capacity(std::size_t count) {
+    if (count <= contact_candidate_capacity_) {
+      return;
+    }
+    contact_candidate_capacity_ = std::bit_ceil(count);
+    contact_candidates_ = allocate_shared_buffer(
+        device_, contact_candidate_capacity_ * sizeof(MetalUInt2), "contact candidates");
+  }
+
   void ensure_external_constraint_capacity(std::size_t count) {
     if (count <= external_constraint_capacity_) {
       return;
@@ -1066,6 +1084,13 @@ class MetalBackend final : public ComputeBackend {
     }
   }
 
+  void upload_contact_candidates(std::span<const ContactCandidate> candidates) {
+    auto* output = static_cast<MetalUInt2*>(contact_candidates_.contents);
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+      output[index] = {candidates[index].first_slot, candidates[index].second_slot};
+    }
+  }
+
   void upload_external_constraints(const ConstraintSet& constraints) {
     std::vector<MetalExternalConstraint> values;
     values.reserve(constraints.size());
@@ -1115,8 +1140,7 @@ class MetalBackend final : public ComputeBackend {
     contact_inclusive_counts_ = scan_input;
   }
 
-  [[nodiscard]] std::uint32_t count_contacts(std::uint32_t cell_count,
-                                             std::uint32_t pair_slot_count,
+  [[nodiscard]] std::uint32_t count_contacts(std::uint32_t candidate_count,
                                              const ContactParameters& parameters) {
     const MetalFloat4 gpu_parameters{
         parameters.activation_margin,
@@ -1139,22 +1163,22 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBuffer:contact_geometry_ offset:0 atIndex:3];
       [encoder setBuffer:contact_counts_ offset:0 atIndex:4];
       [encoder setBytes:&gpu_parameters length:sizeof(gpu_parameters) atIndex:5];
-      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:6];
-      [encoder dispatchThreads:MTLSizeMake(cell_count, cell_count, 1)
-          threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+      [encoder setBytes:&candidate_count length:sizeof(candidate_count) atIndex:6];
+      [encoder setBuffer:contact_candidates_ offset:0 atIndex:7];
+      dispatch_1d(encoder, contact_count_pipeline_, candidate_count);
       [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      encode_contact_scan(encoder, pair_slot_count);
+      encode_contact_scan(encoder, candidate_count);
 
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal contact count or scan failed");
     }
 
     const auto* inclusive = static_cast<const std::uint32_t*>(contact_inclusive_counts_.contents);
-    return inclusive[pair_slot_count - 1];
+    return inclusive[candidate_count - 1];
   }
 
-  void fill_contacts(std::uint32_t cell_count, const ContactParameters& parameters) {
+  void fill_contacts(std::uint32_t candidate_count, const ContactParameters& parameters) {
     const MetalFloat4 gpu_parameters{
         parameters.activation_margin,
         parameters.parallel_sine_threshold,
@@ -1186,9 +1210,9 @@ class MetalBackend final : public ComputeBackend {
       [encoder setBuffer:contact_separations_ offset:0 atIndex:13];
       [encoder setBuffer:contact_weights_ offset:0 atIndex:14];
       [encoder setBytes:&gpu_parameters length:sizeof(gpu_parameters) atIndex:15];
-      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:16];
-      [encoder dispatchThreads:MTLSizeMake(cell_count, cell_count, 1)
-          threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+      [encoder setBytes:&candidate_count length:sizeof(candidate_count) atIndex:16];
+      [encoder setBuffer:contact_candidates_ offset:0 atIndex:17];
+      dispatch_1d(encoder, contact_fill_pipeline_, candidate_count);
       [encoder endEncoding];
       wait_for_command(command_buffer, "Metal contact fill failed");
     }
@@ -1771,6 +1795,9 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> contact_axes_{nil};
   id<MTLBuffer> contact_geometry_{nil};
   std::size_t contact_cell_capacity_{0};
+
+  id<MTLBuffer> contact_candidates_{nil};
+  std::size_t contact_candidate_capacity_{0};
 
   id<MTLBuffer> external_constraints_{nil};
   std::size_t external_constraint_capacity_{0};
