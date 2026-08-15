@@ -37,7 +37,7 @@ viewer = [
 ]
 
 [project.scripts]
-cm2 = "cellmodeller2.cli:main"
+cm = "cellmodeller2.cli:main"
 
 [dependency-groups]
 dev = [

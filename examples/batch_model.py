@@ -2,7 +2,7 @@ from cellmodeller2 import CellInit, Vec3
 
 
 def build(context):
-    """Construct a reproducible colony for ``cm2 run``."""
+    """Construct a reproducible colony for ``cm run``."""
 
     simulation = context.simulation()
     cell = CellInit()

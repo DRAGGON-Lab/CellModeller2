@@ -172,7 +172,7 @@ class LiveController:
         self._sockets: set[web.WebSocketResponse] = set()
         self._play_task: asyncio.Task[None] | None = None
         self._play_wakeup = asyncio.Event()
-        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cm2-live")
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cm-live")
         self._operation_lock = asyncio.Lock()
 
     async def _run(self, operation: Callable[..., Any], *arguments: object) -> Any:

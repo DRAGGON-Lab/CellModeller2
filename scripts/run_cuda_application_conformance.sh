@@ -94,7 +94,7 @@ nvidia-smi -q >"${report_dir}/nvidia-smi.txt"
 export CMAKE_ARGS="-DCM_ENABLE_CUDA=ON -DCM_ENABLE_METAL=OFF -DCM_BUILD_TESTS=OFF -DCMAKE_CUDA_ARCHITECTURES=native"
 uv sync --locked --all-extras --reinstall-package cellmodeller2 \
   2>&1 | tee "${report_dir}/python-build.log"
-uv run cm2 devices --json >"${report_dir}/devices.json"
+uv run cm devices --json >"${report_dir}/devices.json"
 uv run python -c \
   'from cellmodeller2 import BackendKind, backend_device_count; assert backend_device_count(BackendKind.CUDA) > 0' \
   2>&1 | tee "${report_dir}/cuda-runtime.log"

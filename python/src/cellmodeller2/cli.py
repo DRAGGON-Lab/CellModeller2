@@ -43,7 +43,7 @@ _BACKENDS = {
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="cm2", description="CellModeller2 batch runner")
+    parser = argparse.ArgumentParser(prog="cm", description="CellModeller2 batch runner")
     commands = parser.add_subparsers(dest="command", required=True)
 
     devices = commands.add_parser("devices", help="list available native compute devices")
@@ -497,7 +497,7 @@ def _run_manifest(arguments: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the ``cm2`` command and return its process status."""
+    """Run the ``cm`` command and return its process status."""
 
     arguments = _parser().parse_args(argv)
     try:
@@ -520,5 +520,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         ValueError,
         RuntimeError,
     ) as error:
-        print(f"cm2: {error}", file=sys.stderr)
+        print(f"cm: {error}", file=sys.stderr)
         return 2
