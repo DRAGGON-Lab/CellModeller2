@@ -227,6 +227,7 @@ if(CM2_BUILD_TESTS)
 
   add_executable(cm2_checkpoint_test tests/cpp/checkpoint_test.cpp)
   target_link_libraries(cm2_checkpoint_test PRIVATE cm2::core)
+  target_include_directories(cm2_checkpoint_test PRIVATE tests/conformance)
   add_test(NAME checkpoint COMMAND cm2_checkpoint_test)
   set_tests_properties(checkpoint PROPERTIES LABELS conformance)
 

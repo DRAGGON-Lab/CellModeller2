@@ -1,7 +1,9 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -64,30 +66,30 @@ void populate_mixed_geometry(cm2::Simulation& simulation) {
   add_capsule(simulation, {15.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
 }
 
-void run_mixed_geometry(cm2::BackendKind backend) {
+void run_mixed_geometry(cm2::BackendKind backend, std::uint32_t device_index) {
   cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend);
+  cm2::Simulation candidate(backend, 0, 0, device_index);
   populate_mixed_geometry(reference);
   populate_mixed_geometry(candidate);
   compare_graphs(candidate.find_cell_contacts(), reference.find_cell_contacts());
 }
 
-void run_empty_and_single_cell(cm2::BackendKind backend) {
-  cm2::Simulation empty(backend);
+void run_empty_and_single_cell(cm2::BackendKind backend, std::uint32_t device_index) {
+  cm2::Simulation empty(backend, 0, 0, device_index);
   const auto empty_graph = empty.find_cell_contacts();
   assert(empty_graph.cell_count() == 0);
   assert(empty_graph.empty());
 
-  cm2::Simulation single(backend);
+  cm2::Simulation single(backend, 0, 0, device_index);
   add_capsule(single, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   const auto single_graph = single.find_cell_contacts();
   assert(single_graph.cell_count() == 1);
   assert(single_graph.empty());
 }
 
-void run_dense_geometry(cm2::BackendKind backend) {
+void run_dense_geometry(cm2::BackendKind backend, std::uint32_t device_index) {
   cm2::Simulation reference(cm2::BackendKind::cpu, 31);
-  cm2::Simulation candidate(backend, 31);
+  cm2::Simulation candidate(backend, 31, 0, device_index);
   for (std::size_t index = 0; index < 31; ++index) {
     add_capsule(reference, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
     add_capsule(candidate, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
@@ -99,9 +101,9 @@ void run_dense_geometry(cm2::BackendKind backend) {
   compare_graphs(actual, expected);
 }
 
-void run_parameters_and_buffer_reuse(cm2::BackendKind backend) {
+void run_parameters_and_buffer_reuse(cm2::BackendKind backend, std::uint32_t device_index) {
   cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend);
+  cm2::Simulation candidate(backend, 0, 0, device_index);
   for (auto* simulation : {&reference, &candidate}) {
     add_capsule(*simulation, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
     add_capsule(*simulation, {1.005F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F);
@@ -118,9 +120,9 @@ void run_parameters_and_buffer_reuse(cm2::BackendKind backend) {
   compare_graphs(candidate.find_cell_contacts(), reference.find_cell_contacts());
 }
 
-void run_compacted_identity_geometry(cm2::BackendKind backend) {
+void run_compacted_identity_geometry(cm2::BackendKind backend, std::uint32_t device_index) {
   cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend);
+  cm2::Simulation candidate(backend, 0, 0, device_index);
   for (auto* simulation : {&reference, &candidate}) {
     cm2::CellInit first;
     first.length = 4.0F;
@@ -136,20 +138,16 @@ void run_compacted_identity_geometry(cm2::BackendKind backend) {
 }  // namespace
 
 int main() {
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation capability_probe(backend);
+  cm2::test::for_each_backend_device([](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation capability_probe(backend, 0, 0, device_index);
     if (!capability_probe.supports(cm2::BackendFeature::cell_contacts)) {
-      continue;
+      return;
     }
-    run_empty_and_single_cell(backend);
-    run_mixed_geometry(backend);
-    run_dense_geometry(backend);
-    run_parameters_and_buffer_reuse(backend);
-    run_compacted_identity_geometry(backend);
-  }
+    run_empty_and_single_cell(backend, device_index);
+    run_mixed_geometry(backend, device_index);
+    run_dense_geometry(backend, device_index);
+    run_parameters_and_buffer_reuse(backend, device_index);
+    run_compacted_identity_geometry(backend, device_index);
+  });
   return 0;
 }

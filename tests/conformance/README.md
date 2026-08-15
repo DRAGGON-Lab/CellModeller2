@@ -1,8 +1,10 @@
 # Growth conformance scenario
 
 The growth scenario is compiled into every test-enabled build and runs once
-for each backend present in that build. It deliberately uses 513 heterogeneous
-cells so native launches cross common threadgroup and block boundaries.
+for every enumerated device of each backend present in that build. All other
+shared backend scenarios use the same device iteration contract. The growth
+fixture deliberately uses 513 heterogeneous cells so native launches cross
+common threadgroup and block boundaries.
 
 The scenario checks the declared explicit Euler recurrence independently:
 

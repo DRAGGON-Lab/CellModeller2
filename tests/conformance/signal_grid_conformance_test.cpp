@@ -2,8 +2,10 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -62,21 +64,17 @@ void run_case(cm2::SignalIntegrationKind integration, float dt) {
   reference.configure_signal_grid(spec, levels);
   reference.step(dt);
 
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation candidate(backend);
+  cm2::test::for_each_backend_device([&](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation candidate(backend, 0, 0, device_index);
     candidate.configure_signal_grid(spec, levels);
     if (!candidate.supports(cm2::BackendFeature::signals)) {
-      continue;
+      return;
     }
     candidate.step(dt);
     assert_matches(candidate, reference);
     assert(candidate.last_signal_solve_report().has_value());
     assert(candidate.last_signal_solve_report()->converged);
-  }
+  });
 }
 
 }  // namespace

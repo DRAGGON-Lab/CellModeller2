@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -19,8 +20,8 @@ bool close(float actual, float expected) {
   return std::abs(actual - expected) <= tolerance;
 }
 
-void run_growth_scenario(cm2::BackendKind backend) {
-  cm2::Simulation simulation(backend, cell_count);
+void run_growth_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
+  cm2::Simulation simulation(backend, cell_count, 0, device_index);
   std::vector<cm2::CellId> ids;
   std::vector<float> expected_lengths;
   std::vector<float> growth_rates;
@@ -70,6 +71,7 @@ void run_growth_scenario(cm2::BackendKind backend) {
 
   const auto info = simulation.backend_info();
   assert(info.kind == backend);
+  assert(info.device_index == device_index);
   assert(info.native);
   assert(!info.name.empty());
   assert(!info.device.empty());
@@ -79,11 +81,6 @@ void run_growth_scenario(cm2::BackendKind backend) {
 }  // namespace
 
 int main() {
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (cm2::backend_available(backend)) {
-      run_growth_scenario(backend);
-    }
-  }
+  cm2::test::for_each_backend_device(run_growth_scenario);
   return 0;
 }

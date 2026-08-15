@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -105,22 +106,18 @@ void run_case(cm2::SignalIntegrationKind integration, float dt) {
   cm2::Simulation expected(cm2::BackendKind::cpu, checkpoint);
   expected.step(dt);
 
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation candidate(backend, checkpoint);
+  cm2::test::for_each_backend_device([&](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation candidate(backend, checkpoint, device_index);
     if (!candidate.supports(cm2::BackendFeature::coupled_rates)) {
       std::cout << "backend " << static_cast<int>(backend)
                 << " does not advertise coupled rates; skipping\n";
-      continue;
+      return;
     }
     candidate.step(dt);
     assert_close(candidate, expected);
     assert(candidate.last_signal_solve_report().has_value());
     assert(candidate.last_signal_solve_report()->converged);
-  }
+  });
 }
 
 }  // namespace

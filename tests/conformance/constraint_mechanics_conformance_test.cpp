@@ -1,8 +1,10 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -109,9 +111,9 @@ void compare_cells(const cm2::Simulation& actual, const cm2::Simulation& expecte
   }
 }
 
-void run_fixture(cm2::BackendKind backend, Fixture fixture) {
+void run_fixture(cm2::BackendKind backend, std::uint32_t device_index, Fixture fixture) {
   cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend);
+  cm2::Simulation candidate(backend, 0, 0, device_index);
   fixture(reference);
   fixture(candidate);
 
@@ -123,8 +125,8 @@ void run_fixture(cm2::BackendKind backend, Fixture fixture) {
   compare_cells(candidate, reference);
 }
 
-void reject_unsupported_backend(cm2::BackendKind backend) {
-  cm2::Simulation simulation(backend);
+void reject_unsupported_backend(cm2::BackendKind backend, std::uint32_t device_index) {
+  cm2::Simulation simulation(backend, 0, 0, device_index);
   populate_plane(simulation);
   bool rejected = false;
   try {
@@ -138,20 +140,16 @@ void reject_unsupported_backend(cm2::BackendKind backend) {
 }  // namespace
 
 int main() {
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation capability_probe(backend);
+  cm2::test::for_each_backend_device([](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation capability_probe(backend, 0, 0, device_index);
     if (!capability_probe.supports(cm2::BackendFeature::external_constraints)) {
-      reject_unsupported_backend(backend);
-      continue;
+      reject_unsupported_backend(backend, device_index);
+      return;
     }
-    run_fixture(backend, populate_plane);
-    run_fixture(backend, populate_fixed_plane);
-    run_fixture(backend, populate_outside_sphere);
-    run_fixture(backend, populate_inside_sphere);
-  }
+    run_fixture(backend, device_index, populate_plane);
+    run_fixture(backend, device_index, populate_fixed_plane);
+    run_fixture(backend, device_index, populate_outside_sphere);
+    run_fixture(backend, device_index, populate_inside_sphere);
+  });
   return 0;
 }

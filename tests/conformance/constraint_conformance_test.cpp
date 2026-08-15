@@ -1,7 +1,9 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -91,21 +93,22 @@ void compare_graphs(const cm2::ExternalContactGraph& actual,
   }
 }
 
-void run_fixture(cm2::BackendKind backend, void (*populate)(cm2::Simulation&)) {
+void run_fixture(cm2::BackendKind backend, std::uint32_t device_index,
+                 void (*populate)(cm2::Simulation&)) {
   cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend);
+  cm2::Simulation candidate(backend, 0, 0, device_index);
   populate(reference);
   populate(candidate);
   compare_graphs(candidate.find_external_contacts(), reference.find_external_contacts());
 }
 
-void run_empty_inputs(cm2::BackendKind backend) {
-  cm2::Simulation empty(backend);
+void run_empty_inputs(cm2::BackendKind backend, std::uint32_t device_index) {
+  cm2::Simulation empty(backend, 0, 0, device_index);
   const auto no_cells = empty.find_external_contacts();
   assert(no_cells.empty());
   assert(no_cells.cell_count() == 0);
 
-  cm2::Simulation no_constraints(backend);
+  cm2::Simulation no_constraints(backend, 0, 0, device_index);
   add_cell(no_constraints, {}, {1.0F, 0.0F, 0.0F}, 1.0F);
   const auto graph = no_constraints.find_external_contacts();
   assert(graph.empty());
@@ -115,18 +118,14 @@ void run_empty_inputs(cm2::BackendKind backend) {
 }  // namespace
 
 int main() {
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation capability_probe(backend);
+  cm2::test::for_each_backend_device([](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation capability_probe(backend, 0, 0, device_index);
     if (!capability_probe.supports(cm2::BackendFeature::external_constraints)) {
-      continue;
+      return;
     }
-    run_empty_inputs(backend);
-    run_fixture(backend, populate_mixed_constraints);
-    run_fixture(backend, populate_degenerate_sphere);
-  }
+    run_empty_inputs(backend, device_index);
+    run_fixture(backend, device_index, populate_mixed_constraints);
+    run_fixture(backend, device_index, populate_degenerate_sphere);
+  });
   return 0;
 }

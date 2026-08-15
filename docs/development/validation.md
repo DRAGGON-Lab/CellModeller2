@@ -12,8 +12,9 @@ The project uses vertical conformance slices. For every feature:
 7. Add scaling and long-run statistical tests only after stage-level parity.
 
 The first shared scenario is `growth_conformance`. Every test-enabled build
-runs the same fixture against each backend compiled into that build. Its exact
-state checks and numerical tolerances are recorded beside the test in
+runs the same fixture against every enumerated device of each backend compiled
+into that build; the remaining shared scenarios use the same iteration helper.
+Its exact state checks and numerical tolerances are recorded beside the test in
 `tests/conformance/README.md`.
 
 Every Metal-enabled test build includes `metal_runtime_gate`, which constructs

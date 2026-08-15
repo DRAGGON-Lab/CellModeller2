@@ -1,7 +1,9 @@
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -24,8 +26,8 @@ void assert_missing(const cm2::Simulation& simulation, cm2::CellId id) {
   assert(rejected);
 }
 
-void run_lifecycle_scenario(cm2::BackendKind backend) {
-  cm2::Simulation simulation(backend);
+void run_lifecycle_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
+  cm2::Simulation simulation(backend, 0, 0, device_index);
   cm2::CellInit initial;
   initial.position = {2.0F, 3.0F, 1.0F};
   initial.direction = {2.0F, 0.0F, 0.0F};
@@ -90,7 +92,7 @@ void run_lifecycle_scenario(cm2::BackendKind backend) {
   assert(simulation.backend_info().kind == backend);
   simulation.validate();
 
-  cm2::Simulation asymmetric(backend);
+  cm2::Simulation asymmetric(backend, 0, 0, device_index);
   initial.length = 6.0F;
   initial.radius = 0.5F;
   const auto asymmetric_parent = asymmetric.add_cell(initial);
@@ -107,11 +109,6 @@ void run_lifecycle_scenario(cm2::BackendKind backend) {
 }  // namespace
 
 int main() {
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (cm2::backend_available(backend)) {
-      run_lifecycle_scenario(backend);
-    }
-  }
+  cm2::test::for_each_backend_device(run_lifecycle_scenario);
   return 0;
 }

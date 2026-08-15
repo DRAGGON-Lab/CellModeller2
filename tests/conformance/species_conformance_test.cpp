@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -105,9 +106,9 @@ void compare(const cm2::Simulation& actual, const cm2::Simulation& expected) {
   }
 }
 
-void run_scenario(cm2::BackendKind backend) {
+void run_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
   cm2::Simulation reference(cm2::BackendKind::cpu, cell_count, species_count);
-  cm2::Simulation candidate(backend, cell_count, species_count);
+  cm2::Simulation candidate(backend, cell_count, species_count, device_index);
   populate(reference);
   populate(candidate);
   for (const auto dt : time_steps) {
@@ -118,8 +119,8 @@ void run_scenario(cm2::BackendKind backend) {
   candidate.validate();
 }
 
-void run_non_finite_rejection(cm2::BackendKind backend) {
-  cm2::Simulation simulation(backend, 1, 1);
+void run_non_finite_rejection(cm2::BackendKind backend, std::uint32_t device_index) {
+  cm2::Simulation simulation(backend, 1, 1, device_index);
   cm2::CellInit cell;
   cell.growth_rate = 0.0F;
   cell.species = {1.0F};
@@ -146,16 +147,12 @@ void run_non_finite_rejection(cm2::BackendKind backend) {
 }  // namespace
 
 int main() {
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation probe(backend);
+  cm2::test::for_each_backend_device([](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation probe(backend, 0, 0, device_index);
     if (probe.supports(cm2::BackendFeature::species)) {
-      run_scenario(backend);
-      run_non_finite_rejection(backend);
+      run_scenario(backend, device_index);
+      run_non_finite_rejection(backend, device_index);
     }
-  }
+  });
   return 0;
 }

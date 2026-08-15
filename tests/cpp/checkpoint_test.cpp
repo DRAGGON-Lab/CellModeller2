@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "backend_devices.hpp"
 #include "cm2/simulation.hpp"
 
 namespace {
@@ -183,18 +184,14 @@ int main() {
   assert(restored.lineage_parent(daughter_a) == first_id);
   assert(restored.lineage_parent(daughter_b) == first_id);
 
-  for (const auto backend :
-       {cm2::BackendKind::cpu, cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation candidate(backend, saved);
+  cm2::test::for_each_backend_device([&](cm2::BackendKind backend, std::uint32_t device_index) {
+    cm2::Simulation candidate(backend, saved, device_index);
     assert_checkpoints_equal(candidate.checkpoint(), saved);
     cm2::Simulation reference(cm2::BackendKind::cpu, saved);
     candidate.step(0.02F);
     reference.step(0.02F);
     assert_resumed_step_close(candidate, reference);
-  }
+  });
 
   cm2::CellInit added;
   added.species = {0.5F, 0.75F};
