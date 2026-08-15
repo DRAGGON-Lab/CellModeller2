@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include "cm2/backend.hpp"
 #include "cm2/metal/contacts_source.hpp"
 #include "cm2/metal/growth_source.hpp"
+#include "cm2/metal/mechanics_source.hpp"
 
 namespace cm2 {
 namespace {
@@ -29,6 +31,13 @@ struct alignas(16) MetalFloat4 {
 };
 
 static_assert(sizeof(MetalFloat4) == 16);
+
+struct alignas(16) MetalDofs {
+  MetalFloat4 linear_length;
+  MetalFloat4 rotation;
+};
+
+static_assert(sizeof(MetalDofs) == 32);
 
 [[noreturn]] void throw_metal_error(const char* operation, NSError* error) {
   const char* detail = error == nil ? "unknown Metal error" : error.localizedDescription.UTF8String;
@@ -82,6 +91,12 @@ void wait_for_command(id<MTLCommandBuffer> command_buffer, const char* operation
   }
 }
 
+void dispatch_1d(id<MTLComputeCommandEncoder> encoder, id<MTLComputePipelineState> pipeline,
+                 std::uint32_t count) {
+  const auto width = std::min<NSUInteger>(pipeline.maxTotalThreadsPerThreadgroup, 256);
+  [encoder dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(width, 1, 1)];
+}
+
 class MetalBackend final : public ComputeBackend {
  public:
   MetalBackend() {
@@ -109,6 +124,38 @@ class MetalBackend final : public ComputeBackend {
                                                 "failed to create the Metal contact-scan pipeline");
       contact_fill_pipeline_ = compile_pipeline(device_, contacts_library, @"fill_cell_contacts",
                                                 "failed to create the Metal contact-fill pipeline");
+
+      const auto mechanics_library =
+          compile_library(device_, metal::mechanics_source, "failed to compile Metal mechanics");
+      mechanics_rows_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"build_mechanics_rows",
+                           "failed to create the Metal mechanics-row pipeline");
+      mechanics_b_pipeline_ = compile_pipeline(device_, mechanics_library, @"apply_mechanics_b",
+                                               "failed to create the Metal mechanics-B pipeline");
+      mechanics_transpose_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"apply_mechanics_transpose",
+                           "failed to create the Metal mechanics-transpose pipeline");
+      mechanics_regularizer_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"add_mechanics_regularizer",
+                           "failed to create the Metal mechanics-regularizer pipeline");
+      mechanics_initialize_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"initialize_mechanics_vectors",
+                           "failed to create the Metal mechanics-initialize pipeline");
+      mechanics_update_solution_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"update_mechanics_solution_residual",
+                           "failed to create the Metal mechanics-update pipeline");
+      mechanics_update_search_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"update_mechanics_search_direction",
+                           "failed to create the Metal mechanics-search pipeline");
+      mechanics_subtract_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"subtract_mechanics_vectors",
+                           "failed to create the Metal mechanics-subtract pipeline");
+      mechanics_dot_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"mechanics_dot_terms",
+                           "failed to create the Metal mechanics-dot pipeline");
+      mechanics_reduce_pipeline_ =
+          compile_pipeline(device_, mechanics_library, @"reduce_sum_pairs",
+                           "failed to create the Metal mechanics-reduction pipeline");
     }
   }
 
@@ -125,7 +172,8 @@ class MetalBackend final : public ComputeBackend {
   }
 
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
-    return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts;
+    return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts ||
+           feature == BackendFeature::cell_mechanics;
   }
 
   void advance_growth(WorldState& state, float dt) override {
@@ -199,9 +247,104 @@ class MetalBackend final : public ComputeBackend {
     return download_contacts(geometry.size(), contact_count);
   }
 
-  [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(const WorldState&, const ContactGraph&,
-                                                          const MechanicsParameters&) override {
-    throw std::runtime_error("Metal cell mechanics are not implemented in this build");
+  [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
+      const WorldState& state, const ContactGraph& contacts,
+      const MechanicsParameters& parameters) override {
+    validate_mechanics_parameters(parameters);
+    state.validate();
+    const auto geometry = state.geometry_state();
+    if (contacts.cell_count() != geometry.size()) {
+      throw std::invalid_argument("contact graph and world state cell counts disagree");
+    }
+    if (geometry.size() > std::numeric_limits<std::uint32_t>::max() ||
+        contacts.size() > std::numeric_limits<std::uint32_t>::max() / 2) {
+      throw std::overflow_error("Metal mechanics exceeds the uint32 index space");
+    }
+
+    MechanicsSolveResult result;
+    result.corrections.resize(geometry.size());
+    if (geometry.size() == 0 || contacts.empty()) {
+      return result;
+    }
+
+    validate_mechanics_contacts(geometry, contacts);
+    ensure_contact_cell_capacity(geometry.size());
+    ensure_contact_output_capacity(contacts.size());
+    ensure_mechanics_capacity(geometry.size(), contacts.size());
+    upload_contact_cells(geometry);
+    upload_mechanics_contacts(contacts);
+    upload_mechanics_incidence(contacts);
+
+    const auto cell_count = static_cast<std::uint32_t>(geometry.size());
+    const auto contact_count = static_cast<std::uint32_t>(contacts.size());
+    auto residual_squared = initialize_mechanics(cell_count, contact_count);
+    result.report.initial_residual_rms =
+        std::sqrt(residual_squared / static_cast<float>(cell_count));
+    result.report.final_residual_rms = result.report.initial_residual_rms;
+    if (!std::isfinite(result.report.initial_residual_rms)) {
+      result.report.status = SolverStatus::breakdown;
+      result.report.breakdown = SolverBreakdown::non_finite_residual;
+      return result;
+    }
+    if (result.report.initial_residual_rms <= parameters.residual_rms_tolerance) {
+      return result;
+    }
+
+    result.report.status = SolverStatus::iteration_limit;
+    const auto maximum_iterations = mechanics_iteration_limit(parameters, geometry.size());
+    for (std::uint32_t iteration = 0; iteration < maximum_iterations; ++iteration) {
+      const auto curvature = apply_search_direction(cell_count, contact_count, parameters);
+      if (!std::isfinite(curvature)) {
+        result.report.status = SolverStatus::breakdown;
+        result.report.breakdown = SolverBreakdown::non_finite_curvature;
+        break;
+      }
+      if (curvature <= 0.0F) {
+        result.report.status = SolverStatus::breakdown;
+        result.report.breakdown = SolverBreakdown::non_positive_curvature;
+        break;
+      }
+
+      const auto alpha = residual_squared / curvature;
+      const auto next_residual_squared = update_solution_residual(cell_count, alpha);
+      result.report.iterations = iteration + 1;
+      const auto recurrence_rms = std::sqrt(next_residual_squared / static_cast<float>(cell_count));
+      if (!std::isfinite(recurrence_rms)) {
+        result.report.status = SolverStatus::breakdown;
+        result.report.breakdown = SolverBreakdown::non_finite_residual;
+        break;
+      }
+
+      if (recurrence_rms <= parameters.residual_rms_tolerance) {
+        residual_squared = recompute_residual(cell_count, contact_count, parameters);
+        const auto recomputed_rms = std::sqrt(residual_squared / static_cast<float>(cell_count));
+        if (!std::isfinite(recomputed_rms)) {
+          result.report.status = SolverStatus::breakdown;
+          result.report.breakdown = SolverBreakdown::non_finite_residual;
+          break;
+        }
+        if (recomputed_rms <= parameters.residual_rms_tolerance) {
+          result.report.status = SolverStatus::converged;
+          break;
+        }
+        update_search_direction(cell_count, 0.0F);
+        continue;
+      }
+
+      const auto beta = next_residual_squared / residual_squared;
+      update_search_direction(cell_count, beta);
+      residual_squared = next_residual_squared;
+    }
+
+    residual_squared = recompute_residual(cell_count, contact_count, parameters);
+    result.report.final_residual_rms = std::sqrt(residual_squared / static_cast<float>(cell_count));
+    if (!std::isfinite(result.report.final_residual_rms) &&
+        result.report.status != SolverStatus::breakdown) {
+      result.report.status = SolverStatus::breakdown;
+      result.report.breakdown = SolverBreakdown::non_finite_residual;
+    }
+    result.corrections = download_mechanics_solution(geometry.size());
+    return result;
   }
 
  private:
@@ -419,12 +562,342 @@ class MetalBackend final : public ComputeBackend {
     return ContactGraph(cell_count, std::move(contacts));
   }
 
+  static void validate_mechanics_contacts(const CellGeometryView& geometry,
+                                          const ContactGraph& contacts) {
+    for (const auto& contact : contacts.contacts()) {
+      const auto first = static_cast<std::size_t>(contact.first_slot);
+      const auto second = static_cast<std::size_t>(contact.second_slot);
+      if (geometry.ids[first] != contact.first_id || geometry.ids[second] != contact.second_id) {
+        throw std::invalid_argument("contact graph identifiers do not match current state slots");
+      }
+    }
+  }
+
+  static std::uint32_t mechanics_iteration_limit(const MechanicsParameters& parameters,
+                                                 std::size_t cell_count) {
+    if (parameters.max_iterations != 0) {
+      return parameters.max_iterations;
+    }
+    constexpr std::size_t degrees_of_freedom = 7;
+    if (cell_count > std::numeric_limits<std::uint32_t>::max() / degrees_of_freedom) {
+      throw std::overflow_error("default mechanics iteration limit exceeds uint32");
+    }
+    return static_cast<std::uint32_t>(cell_count * degrees_of_freedom);
+  }
+
+  void ensure_mechanics_capacity(std::size_t cell_count, std::size_t contact_count) {
+    if (cell_count > mechanics_cell_capacity_) {
+      mechanics_cell_capacity_ = std::bit_ceil(cell_count);
+      const auto dof_bytes = mechanics_cell_capacity_ * sizeof(MetalDofs);
+      const auto scalar_bytes = mechanics_cell_capacity_ * sizeof(float);
+      mechanics_incidence_offsets_ =
+          allocate_shared_buffer(device_, (mechanics_cell_capacity_ + 1) * sizeof(std::uint32_t),
+                                 "mechanics incidence offsets");
+      mechanics_solution_ = allocate_shared_buffer(device_, dof_bytes, "mechanics solution");
+      mechanics_rhs_ = allocate_shared_buffer(device_, dof_bytes, "mechanics right-hand side");
+      mechanics_residual_ = allocate_shared_buffer(device_, dof_bytes, "mechanics residual");
+      mechanics_search_ = allocate_shared_buffer(device_, dof_bytes, "mechanics search direction");
+      mechanics_applied_ = allocate_shared_buffer(device_, dof_bytes, "mechanics applied vector");
+      mechanics_dot_terms_ = allocate_shared_buffer(device_, scalar_bytes, "mechanics dot terms");
+      mechanics_reduce_a_ = allocate_shared_buffer(device_, scalar_bytes, "mechanics reduction A");
+      mechanics_reduce_b_ = allocate_shared_buffer(device_, scalar_bytes, "mechanics reduction B");
+    }
+    if (contact_count > mechanics_contact_capacity_) {
+      mechanics_contact_capacity_ = std::bit_ceil(contact_count);
+      const auto dof_bytes = mechanics_contact_capacity_ * sizeof(MetalDofs);
+      mechanics_first_rows_ =
+          allocate_shared_buffer(device_, dof_bytes, "mechanics first Jacobian rows");
+      mechanics_second_rows_ =
+          allocate_shared_buffer(device_, dof_bytes, "mechanics second Jacobian rows");
+      mechanics_row_values_ = allocate_shared_buffer(
+          device_, mechanics_contact_capacity_ * sizeof(float), "mechanics row values");
+      mechanics_row_rhs_ = allocate_shared_buffer(
+          device_, mechanics_contact_capacity_ * sizeof(float), "mechanics row right-hand side");
+      mechanics_incidence_indices_ =
+          allocate_shared_buffer(device_, mechanics_contact_capacity_ * 2 * sizeof(std::uint32_t),
+                                 "mechanics incidence indices");
+    }
+  }
+
+  void upload_mechanics_contacts(const ContactGraph& contacts) {
+    auto* first_slots = static_cast<std::uint32_t*>(contact_first_slots_.contents);
+    auto* second_slots = static_cast<std::uint32_t*>(contact_second_slots_.contents);
+    auto* points = static_cast<MetalFloat4*>(contact_points_.contents);
+    auto* normals = static_cast<MetalFloat4*>(contact_normals_.contents);
+    auto* separations = static_cast<float*>(contact_separations_.contents);
+    auto* weights = static_cast<float*>(contact_weights_.contents);
+    for (std::size_t index = 0; index < contacts.size(); ++index) {
+      const auto& contact = contacts.contacts()[index];
+      first_slots[index] = contact.first_slot;
+      second_slots[index] = contact.second_slot;
+      points[index] = {contact.point_on_first.x, contact.point_on_first.y, contact.point_on_first.z,
+                       0.0F};
+      normals[index] = {contact.normal.x, contact.normal.y, contact.normal.z, 0.0F};
+      separations[index] = contact.signed_separation;
+      weights[index] = contact.weight;
+    }
+  }
+
+  void upload_mechanics_incidence(const ContactGraph& contacts) {
+    auto* offsets = static_cast<std::uint32_t*>(mechanics_incidence_offsets_.contents);
+    auto* indices = static_cast<std::uint32_t*>(mechanics_incidence_indices_.contents);
+    std::uint32_t cursor = 0;
+    for (std::size_t slot = 0; slot < contacts.cell_count(); ++slot) {
+      offsets[slot] = cursor;
+      for (const auto contact_index : contacts.incident_contact_indices(static_cast<Slot>(slot))) {
+        indices[cursor++] = static_cast<std::uint32_t>(contact_index);
+      }
+    }
+    offsets[contacts.cell_count()] = cursor;
+    if (cursor != contacts.size() * 2) {
+      throw std::logic_error("contact incidence size is inconsistent");
+    }
+  }
+
+  void encode_build_mechanics_rows(id<MTLComputeCommandEncoder> encoder,
+                                   std::uint32_t contact_count) {
+    [encoder setComputePipelineState:mechanics_rows_pipeline_];
+    [encoder setBuffer:contact_centers_ offset:0 atIndex:0];
+    [encoder setBuffer:contact_axes_ offset:0 atIndex:1];
+    [encoder setBuffer:contact_geometry_ offset:0 atIndex:2];
+    [encoder setBuffer:contact_first_slots_ offset:0 atIndex:3];
+    [encoder setBuffer:contact_second_slots_ offset:0 atIndex:4];
+    [encoder setBuffer:contact_points_ offset:0 atIndex:5];
+    [encoder setBuffer:contact_normals_ offset:0 atIndex:6];
+    [encoder setBuffer:contact_separations_ offset:0 atIndex:7];
+    [encoder setBuffer:contact_weights_ offset:0 atIndex:8];
+    [encoder setBuffer:mechanics_first_rows_ offset:0 atIndex:9];
+    [encoder setBuffer:mechanics_second_rows_ offset:0 atIndex:10];
+    [encoder setBuffer:mechanics_row_rhs_ offset:0 atIndex:11];
+    [encoder setBytes:&contact_count length:sizeof(contact_count) atIndex:12];
+    dispatch_1d(encoder, mechanics_rows_pipeline_, contact_count);
+  }
+
+  void encode_mechanics_transpose(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> row_values,
+                                  id<MTLBuffer> output, std::uint32_t cell_count) {
+    [encoder setComputePipelineState:mechanics_transpose_pipeline_];
+    [encoder setBuffer:mechanics_first_rows_ offset:0 atIndex:0];
+    [encoder setBuffer:mechanics_second_rows_ offset:0 atIndex:1];
+    [encoder setBuffer:row_values offset:0 atIndex:2];
+    [encoder setBuffer:mechanics_incidence_offsets_ offset:0 atIndex:3];
+    [encoder setBuffer:mechanics_incidence_indices_ offset:0 atIndex:4];
+    [encoder setBuffer:contact_first_slots_ offset:0 atIndex:5];
+    [encoder setBuffer:output offset:0 atIndex:6];
+    [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:7];
+    dispatch_1d(encoder, mechanics_transpose_pipeline_, cell_count);
+  }
+
+  void encode_mechanics_operator(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> input,
+                                 id<MTLBuffer> output, std::uint32_t cell_count,
+                                 std::uint32_t contact_count,
+                                 const MechanicsParameters& parameters) {
+    [encoder setComputePipelineState:mechanics_b_pipeline_];
+    [encoder setBuffer:mechanics_first_rows_ offset:0 atIndex:0];
+    [encoder setBuffer:mechanics_second_rows_ offset:0 atIndex:1];
+    [encoder setBuffer:contact_first_slots_ offset:0 atIndex:2];
+    [encoder setBuffer:contact_second_slots_ offset:0 atIndex:3];
+    [encoder setBuffer:input offset:0 atIndex:4];
+    [encoder setBuffer:mechanics_row_values_ offset:0 atIndex:5];
+    [encoder setBytes:&contact_count length:sizeof(contact_count) atIndex:6];
+    dispatch_1d(encoder, mechanics_b_pipeline_, contact_count);
+    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    encode_mechanics_transpose(encoder, mechanics_row_values_, output, cell_count);
+    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    const MetalFloat4 gpu_parameters{parameters.mu_a, parameters.gamma, 0.0F, 0.0F};
+    [encoder setComputePipelineState:mechanics_regularizer_pipeline_];
+    [encoder setBuffer:contact_axes_ offset:0 atIndex:0];
+    [encoder setBuffer:contact_geometry_ offset:0 atIndex:1];
+    [encoder setBuffer:input offset:0 atIndex:2];
+    [encoder setBuffer:output offset:0 atIndex:3];
+    [encoder setBytes:&gpu_parameters length:sizeof(gpu_parameters) atIndex:4];
+    [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:5];
+    dispatch_1d(encoder, mechanics_regularizer_pipeline_, cell_count);
+  }
+
+  id<MTLBuffer> encode_mechanics_dot(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> left,
+                                     id<MTLBuffer> right, std::uint32_t cell_count) {
+    [encoder setComputePipelineState:mechanics_dot_pipeline_];
+    [encoder setBuffer:left offset:0 atIndex:0];
+    [encoder setBuffer:right offset:0 atIndex:1];
+    [encoder setBuffer:mechanics_dot_terms_ offset:0 atIndex:2];
+    [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:3];
+    dispatch_1d(encoder, mechanics_dot_pipeline_, cell_count);
+    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    id<MTLBuffer> input = mechanics_dot_terms_;
+    id<MTLBuffer> output = mechanics_reduce_a_;
+    auto element_count = cell_count;
+    while (element_count > 1) {
+      const auto output_count = (element_count + 1) / 2;
+      [encoder setComputePipelineState:mechanics_reduce_pipeline_];
+      [encoder setBuffer:input offset:0 atIndex:0];
+      [encoder setBuffer:output offset:0 atIndex:1];
+      [encoder setBytes:&element_count length:sizeof(element_count) atIndex:2];
+      dispatch_1d(encoder, mechanics_reduce_pipeline_, output_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      input = output;
+      output = output == mechanics_reduce_a_ ? mechanics_reduce_b_ : mechanics_reduce_a_;
+      element_count = output_count;
+    }
+    return input;
+  }
+
+  static float read_reduction(id<MTLBuffer> reduction) {
+    return *static_cast<const float*>(reduction.contents);
+  }
+
+  [[nodiscard]] float initialize_mechanics(std::uint32_t cell_count, std::uint32_t contact_count) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal mechanics initialization command");
+      }
+      encode_build_mechanics_rows(encoder, contact_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      encode_mechanics_transpose(encoder, mechanics_row_rhs_, mechanics_rhs_, cell_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      [encoder setComputePipelineState:mechanics_initialize_pipeline_];
+      [encoder setBuffer:mechanics_rhs_ offset:0 atIndex:0];
+      [encoder setBuffer:mechanics_solution_ offset:0 atIndex:1];
+      [encoder setBuffer:mechanics_residual_ offset:0 atIndex:2];
+      [encoder setBuffer:mechanics_search_ offset:0 atIndex:3];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:4];
+      dispatch_1d(encoder, mechanics_initialize_pipeline_, cell_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      const auto reduction =
+          encode_mechanics_dot(encoder, mechanics_residual_, mechanics_residual_, cell_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal mechanics initialization failed");
+      return read_reduction(reduction);
+    }
+  }
+
+  [[nodiscard]] float apply_search_direction(std::uint32_t cell_count, std::uint32_t contact_count,
+                                             const MechanicsParameters& parameters) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal mechanics operator command");
+      }
+      encode_mechanics_operator(encoder, mechanics_search_, mechanics_applied_, cell_count,
+                                contact_count, parameters);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      const auto reduction =
+          encode_mechanics_dot(encoder, mechanics_search_, mechanics_applied_, cell_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal mechanics operator application failed");
+      return read_reduction(reduction);
+    }
+  }
+
+  [[nodiscard]] float update_solution_residual(std::uint32_t cell_count, float alpha) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal mechanics update command");
+      }
+      [encoder setComputePipelineState:mechanics_update_solution_pipeline_];
+      [encoder setBuffer:mechanics_solution_ offset:0 atIndex:0];
+      [encoder setBuffer:mechanics_residual_ offset:0 atIndex:1];
+      [encoder setBuffer:mechanics_search_ offset:0 atIndex:2];
+      [encoder setBuffer:mechanics_applied_ offset:0 atIndex:3];
+      [encoder setBytes:&alpha length:sizeof(alpha) atIndex:4];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:5];
+      dispatch_1d(encoder, mechanics_update_solution_pipeline_, cell_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      const auto reduction =
+          encode_mechanics_dot(encoder, mechanics_residual_, mechanics_residual_, cell_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal mechanics update failed");
+      return read_reduction(reduction);
+    }
+  }
+
+  void update_search_direction(std::uint32_t cell_count, float beta) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal mechanics search command");
+      }
+      [encoder setComputePipelineState:mechanics_update_search_pipeline_];
+      [encoder setBuffer:mechanics_residual_ offset:0 atIndex:0];
+      [encoder setBuffer:mechanics_search_ offset:0 atIndex:1];
+      [encoder setBytes:&beta length:sizeof(beta) atIndex:2];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:3];
+      dispatch_1d(encoder, mechanics_update_search_pipeline_, cell_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal mechanics search update failed");
+    }
+  }
+
+  [[nodiscard]] float recompute_residual(std::uint32_t cell_count, std::uint32_t contact_count,
+                                         const MechanicsParameters& parameters) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal mechanics residual command");
+      }
+      encode_mechanics_operator(encoder, mechanics_solution_, mechanics_applied_, cell_count,
+                                contact_count, parameters);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      [encoder setComputePipelineState:mechanics_subtract_pipeline_];
+      [encoder setBuffer:mechanics_rhs_ offset:0 atIndex:0];
+      [encoder setBuffer:mechanics_applied_ offset:0 atIndex:1];
+      [encoder setBuffer:mechanics_residual_ offset:0 atIndex:2];
+      [encoder setBytes:&cell_count length:sizeof(cell_count) atIndex:3];
+      dispatch_1d(encoder, mechanics_subtract_pipeline_, cell_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      const auto reduction =
+          encode_mechanics_dot(encoder, mechanics_residual_, mechanics_residual_, cell_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal mechanics residual recomputation failed");
+      return read_reduction(reduction);
+    }
+  }
+
+  [[nodiscard]] std::vector<CellCorrection> download_mechanics_solution(
+      std::size_t cell_count) const {
+    const auto* values = static_cast<const MetalDofs*>(mechanics_solution_.contents);
+    std::vector<CellCorrection> result;
+    result.reserve(cell_count);
+    for (std::size_t index = 0; index < cell_count; ++index) {
+      result.push_back({
+          .translation = {values[index].linear_length.x, values[index].linear_length.y,
+                          values[index].linear_length.z},
+          .rotation = {values[index].rotation.x, values[index].rotation.y,
+                       values[index].rotation.z},
+          .length = values[index].linear_length.w,
+      });
+    }
+    return result;
+  }
+
   id<MTLDevice> device_{nil};
   id<MTLCommandQueue> queue_{nil};
   id<MTLComputePipelineState> growth_pipeline_{nil};
   id<MTLComputePipelineState> contact_count_pipeline_{nil};
   id<MTLComputePipelineState> contact_scan_pipeline_{nil};
   id<MTLComputePipelineState> contact_fill_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_rows_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_b_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_transpose_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_regularizer_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_initialize_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_update_solution_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_update_search_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_subtract_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_dot_pipeline_{nil};
+  id<MTLComputePipelineState> mechanics_reduce_pipeline_{nil};
 
   id<MTLBuffer> lengths_{nil};
   id<MTLBuffer> growth_rates_{nil};
@@ -452,6 +925,23 @@ class MetalBackend final : public ComputeBackend {
   id<MTLBuffer> contact_separations_{nil};
   id<MTLBuffer> contact_weights_{nil};
   std::size_t contact_output_capacity_{0};
+
+  id<MTLBuffer> mechanics_first_rows_{nil};
+  id<MTLBuffer> mechanics_second_rows_{nil};
+  id<MTLBuffer> mechanics_row_values_{nil};
+  id<MTLBuffer> mechanics_row_rhs_{nil};
+  id<MTLBuffer> mechanics_incidence_offsets_{nil};
+  id<MTLBuffer> mechanics_incidence_indices_{nil};
+  id<MTLBuffer> mechanics_solution_{nil};
+  id<MTLBuffer> mechanics_rhs_{nil};
+  id<MTLBuffer> mechanics_residual_{nil};
+  id<MTLBuffer> mechanics_search_{nil};
+  id<MTLBuffer> mechanics_applied_{nil};
+  id<MTLBuffer> mechanics_dot_terms_{nil};
+  id<MTLBuffer> mechanics_reduce_a_{nil};
+  id<MTLBuffer> mechanics_reduce_b_{nil};
+  std::size_t mechanics_cell_capacity_{0};
+  std::size_t mechanics_contact_capacity_{0};
 };
 
 }  // namespace

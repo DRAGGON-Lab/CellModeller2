@@ -18,7 +18,7 @@ The initial slice establishes:
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
-- a matrix-free CPU rod-mechanics operator with a diagnosed CG solver;
+- matrix-free CPU and native Metal rod-mechanics solvers with diagnostics;
 - a C++ CPU reference backend;
 - a small Python API backed by nanobind;
 - C++ and Python conformance tests;
@@ -28,13 +28,13 @@ The initial slice establishes:
 Metal growth is validated on Apple GPU hardware. CUDA growth is implemented
 with the native CUDA Runtime API and CUDA C++, but remains unadvertised until
 the conformance suite passes on NVIDIA hardware. Deterministic equal division
-is backend-neutral and conformed on CPU and Metal. The CPU mechanics reference
-now exposes per-cell corrections and solver diagnostics; applying those
-corrections to simulation state and native GPU mechanics remain pending. Metal
-contact geometry passes the exhaustive reference suite; CUDA contact geometry
-compiles and links but still needs NVIDIA hardware validation. Both GPU paths
-use an exhaustive correctness stage while the scalable broad phase is under
-construction.
+is backend-neutral and conformed on CPU and Metal. Metal mechanics runs native
+MSL row assembly, operator, vector, and reduction kernels and matches the CPU
+solver on Apple GPU hardware. Applying corrections to simulation state and the
+native CUDA mechanics solver remain pending. Metal contact geometry passes the
+exhaustive reference suite; CUDA contact geometry compiles and links but still
+needs NVIDIA hardware validation. Both GPU paths use an exhaustive correctness
+stage while the scalable broad phase is under construction.
 
 ## Build the C++ reference tests
 

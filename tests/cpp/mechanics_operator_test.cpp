@@ -192,12 +192,9 @@ void test_simulation_exposes_cpu_mechanics_capability() {
   assert(result.corrections.size() == 2);
 }
 
-void test_native_backends_do_not_advertise_cpu_mechanics() {
-  for (const auto backend : {cm2::BackendKind::metal, cm2::BackendKind::cuda}) {
-    if (!cm2::backend_available(backend)) {
-      continue;
-    }
-    cm2::Simulation simulation(backend);
+void test_cuda_does_not_advertise_cpu_mechanics() {
+  if (cm2::backend_available(cm2::BackendKind::cuda)) {
+    cm2::Simulation simulation(cm2::BackendKind::cuda);
     assert(!simulation.supports(cm2::BackendFeature::cell_mechanics));
   }
 }
@@ -211,6 +208,6 @@ int main() {
   test_iteration_limit_and_breakdown_are_diagnosed();
   test_invalid_inputs_are_rejected();
   test_simulation_exposes_cpu_mechanics_capability();
-  test_native_backends_do_not_advertise_cpu_mechanics();
+  test_cuda_does_not_advertise_cpu_mechanics();
   return 0;
 }

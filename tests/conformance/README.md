@@ -35,10 +35,12 @@ a 31-cell coincident case with 60 incident contacts per cell. Contact fields use
 absolute and relative tolerances of `2e-5`; IDs, slots, ordinals, graph sizes,
 and incidence indices are exact.
 
-## Mechanics operator fixtures
+## Mechanics conformance scenario
 
 The CPU mechanics fixtures probe the declared regularizer, operator symmetry
 and positive definiteness, solver convergence, exact residual recomputation,
-iteration-limit reporting, and non-finite-curvature breakdown. They are unit
-fixtures rather than cross-backend conformance: a native mechanics row will be
-added only when Metal or CUDA implements the complete operator and solver loop.
+iteration-limit reporting, and non-finite-curvature breakdown. The shared
+mechanics scenario then compares native correction vectors and diagnostics with
+the CPU reference for a mixed colony, a one-iteration limit, empty systems, and
+buffer growth. Corrections and initial residuals use absolute and relative
+tolerances of `3e-4`; convergence status and breakdown type are exact.
