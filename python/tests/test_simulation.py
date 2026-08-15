@@ -6,8 +6,12 @@ import pytest
 from cellmodeller2 import BackendKind, CellInit, Simulation, Vec3, backend_available
 
 
-def test_growth_and_division_preserve_declared_semantics() -> None:
-    simulation = Simulation(BackendKind.CPU)
+@pytest.mark.parametrize("backend", list(BackendKind))
+def test_growth_and_division_preserve_declared_semantics(backend: BackendKind) -> None:
+    if not backend_available(backend):
+        pytest.skip("native backend is not built")
+
+    simulation = Simulation(backend)
     initial = CellInit()
     initial.position = Vec3(2.0, 3.0, 0.0)
     initial.direction = Vec3(2.0, 0.0, 0.0)

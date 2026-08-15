@@ -25,8 +25,9 @@ The initial slice establishes:
 
 Metal growth is validated on Apple GPU hardware. CUDA growth is implemented
 with the native CUDA Runtime API and CUDA C++, but remains unadvertised until
-the conformance suite passes on NVIDIA hardware. Division and contact remain
-CPU-only.
+the conformance suite passes on NVIDIA hardware. Deterministic equal division
+is backend-neutral and conformed on CPU and Metal; contact mechanics remain
+unimplemented.
 
 ## Build the C++ reference tests
 

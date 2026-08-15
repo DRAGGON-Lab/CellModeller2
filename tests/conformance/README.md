@@ -17,3 +17,11 @@ and structural validation are exact checks.
 A backend only earns conformance when this executable passes with that native
 backend enabled on its real hardware. A CPU-only run validates the scenario and
 reference implementation, but says nothing about GPU conformance.
+
+## Lifecycle conformance scenario
+
+The lifecycle scenario interleaves growth with two generations of deterministic
+equal division. Stable identifiers, slot reuse, active ordering, lineage,
+daughter geometry, inherited cell attributes, and simulation time are checked.
+Floating-point length and position checks use the same `1e-6` absolute and
+relative tolerances as the growth scenario; lifecycle identities are exact.

@@ -113,4 +113,11 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_growth_conformance_test PRIVATE cm2::core)
   add_test(NAME growth_conformance COMMAND cm2_growth_conformance_test)
   set_tests_properties(growth_conformance PROPERTIES LABELS conformance)
+
+  add_executable(cm2_lifecycle_conformance_test
+    tests/conformance/lifecycle_conformance_test.cpp
+  )
+  target_link_libraries(cm2_lifecycle_conformance_test PRIVATE cm2::core)
+  add_test(NAME lifecycle_conformance COMMAND cm2_lifecycle_conformance_test)
+  set_tests_properties(lifecycle_conformance PROPERTIES LABELS conformance)
 endif()
