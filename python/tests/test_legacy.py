@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 
 import pytest
 from cellmodeller2 import (
@@ -115,3 +116,31 @@ def test_legacy_adapter_rejects_geometry_mutation_and_asymmetric_division() -> N
     second_adapter.add_cell(CellInit())
     with pytest.raises(LegacyCompatibilityError, match="asymmetric"):
         second_adapter.step(0.1)
+
+
+def test_legacy_division_jitter_is_explicit_and_seeded() -> None:
+    def initialize(cell: LegacyCell) -> None:
+        cell.divideFlag = False
+
+    def divide_immediately(cells: dict[int, LegacyCell]) -> None:
+        next(iter(cells.values())).divideFlag = True
+
+    simulation = Simulation()
+    adapter = LegacyModelAdapter(
+        simulation,
+        init=initialize,
+        update=divide_immediately,
+        mechanics=False,
+        division_jitter_z=False,
+        rng=random.Random(17),
+    )
+    initial = CellInit()
+    initial.length = 5.0
+    adapter.add_cell(initial)
+    adapter.step(0.0)
+
+    directions = [cell.dir for cell in adapter.cells.values()]
+    assert directions[0] != [1.0, 0.0, 0.0]
+    assert directions[1] != [1.0, 0.0, 0.0]
+    assert directions[0][2] == 0.0
+    assert directions[1][2] == 0.0

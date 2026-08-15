@@ -104,6 +104,10 @@ ConstraintId Simulation::add_sphere_constraint(const SphereConstraintInit& spher
   return constraints_.add_sphere(sphere);
 }
 
+void Simulation::set_cell_geometry(CellId id, Vec3 position, Vec3 direction, float length) {
+  state_.set_cell_geometry(id, position, direction, length);
+}
+
 void Simulation::set_cell_attributes(CellId id, float growth_rate, std::int32_t cell_type) {
   state_.set_cell_attributes(id, growth_rate, cell_type);
 }

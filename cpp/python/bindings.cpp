@@ -386,6 +386,8 @@ NB_MODULE(_core, module) {
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
       .def("add_plane_constraint", &cm2::Simulation::add_plane_constraint, "plane"_a)
       .def("add_sphere_constraint", &cm2::Simulation::add_sphere_constraint, "sphere"_a)
+      .def("set_cell_geometry", &cm2::Simulation::set_cell_geometry, "id"_a, "position"_a,
+           "direction"_a, "length"_a)
       .def("set_cell_attributes", &cm2::Simulation::set_cell_attributes, "id"_a,
            "growth_rate"_a, "cell_type"_a)
       .def(

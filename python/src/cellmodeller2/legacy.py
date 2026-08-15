@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import Any, cast
@@ -13,6 +14,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     CellInit,
     CellSnapshot,
     Simulation,
+    Vec3,
 )
 
 
@@ -98,6 +100,8 @@ class LegacyModelAdapter:
         divide: DivideCallback | None = None,
         mechanics: bool = True,
         compute_neighbors: bool = False,
+        division_jitter_z: bool | None = None,
+        rng: random.Random | None = None,
     ) -> None:
         if simulation.cell_count != 0:
             raise LegacyCompatibilityError("legacy adapter requires an empty simulation")
@@ -105,12 +109,18 @@ class LegacyModelAdapter:
             raise LegacyCompatibilityError("backend does not implement cell mechanics")
         if compute_neighbors and not simulation.supports(BackendFeature.CELL_CONTACTS):
             raise LegacyCompatibilityError("backend does not implement cell contacts")
+        if division_jitter_z is not None and rng is None:
+            raise LegacyCompatibilityError(
+                "legacy division jitter requires an explicit random stream"
+            )
         self.simulation = simulation
         self._init = init
         self._update = update
         self._divide = divide
         self._mechanics = mechanics
         self._compute_neighbors = compute_neighbors
+        self._division_jitter_z = division_jitter_z
+        self._rng = rng
         self._cells: dict[int, LegacyCell] = {}
 
     @property
@@ -158,6 +168,8 @@ class LegacyModelAdapter:
             raise LegacyCompatibilityError("asymmetric legacy division is not implemented")
         parent.divideFlag = False
         first_id, second_id = self.simulation.divide_equal(parent_id)
+        self._apply_division_jitter(first_id)
+        self._apply_division_jitter(second_id)
         first = copy.deepcopy(parent)
         second = copy.deepcopy(parent)
         first.cellAge = 0
@@ -175,6 +187,22 @@ class LegacyModelAdapter:
         del self._cells[parent_id]
         self._cells[first_id] = first
         self._cells[second_id] = second
+
+    def _apply_division_jitter(self, cell_id: int) -> None:
+        if self._division_jitter_z is None:
+            return
+        if self._rng is None:
+            raise AssertionError("division jitter random stream is missing")
+        snapshot = self.simulation.cell(cell_id)
+        jitter = [self._rng.uniform(-0.001, 0.001) for _ in range(3)]
+        if not self._division_jitter_z:
+            jitter[2] = 0.0
+        direction = Vec3(
+            snapshot.direction.x + jitter[0],
+            snapshot.direction.y + jitter[1],
+            snapshot.direction.z + jitter[2],
+        )
+        self.simulation.set_cell_geometry(cell_id, snapshot.position, direction, snapshot.length)
 
     @staticmethod
     def _set_identity(cell: LegacyCell, snapshot: CellSnapshot) -> None:

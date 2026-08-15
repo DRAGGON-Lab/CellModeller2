@@ -287,6 +287,10 @@ void WorldState::set_cell_geometry(Slot slot, Vec3 position, Vec3 direction, flo
   length_[index] = length;
 }
 
+void WorldState::set_cell_geometry(CellId id, Vec3 position, Vec3 direction, float length) {
+  set_cell_geometry(slot_for(id), position, direction, length);
+}
+
 void WorldState::set_cell_attributes(CellId id, float growth_rate, std::int32_t cell_type) {
   if (!std::isfinite(growth_rate)) {
     throw std::invalid_argument("cell growth rate must be finite");

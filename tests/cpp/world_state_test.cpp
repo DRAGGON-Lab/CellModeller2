@@ -110,6 +110,23 @@ void test_mutable_cell_attributes_keep_stable_identity() {
   assert(simulation.cell(id).cell_type == 7);
 }
 
+void test_geometry_can_be_updated_by_stable_id() {
+  cm2::Simulation simulation;
+  const auto first = simulation.add_cell(cm2::CellInit{});
+  const auto second = simulation.add_cell(cm2::CellInit{});
+  simulation.set_cell_geometry(second, {1.0F, 2.0F, 3.0F}, {0.0F, 2.0F, 0.0F}, 4.0F);
+
+  assert(simulation.cell(first).slot == 0);
+  const auto updated = simulation.cell(second);
+  assert(updated.id == second);
+  assert(updated.slot == 1);
+  assert(close(updated.position.x, 1.0F));
+  assert(close(updated.position.y, 2.0F));
+  assert(close(updated.position.z, 3.0F));
+  assert(close(updated.direction.y, 1.0F));
+  assert(close(updated.length, 4.0F));
+}
+
 void test_unavailable_backends_do_not_fall_back() {
   assert(cm2::backend_device_count(cm2::BackendKind::cpu) == 1);
   assert(cm2::backend_available(cm2::BackendKind::cpu, 0));
@@ -147,6 +164,7 @@ int main() {
   test_division_reuses_slot_but_not_identity();
   test_invalid_state_fails_explicitly();
   test_mutable_cell_attributes_keep_stable_identity();
+  test_geometry_can_be_updated_by_stable_id();
   test_unavailable_backends_do_not_fall_back();
   return 0;
 }

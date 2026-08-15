@@ -28,8 +28,10 @@ objects still exist. It currently requires construction around an empty native
 `Simulation`; a direct `setup(sim)` import facade and batch checkpointing of
 arbitrary Python attributes remain separate work. Geometry remains
 engine-owned, and callback attempts to mutate position, direction, length, or
-radius fail explicitly. Equal division is supported; asymmetric division fails
-explicitly until its native lifecycle contract is implemented.
+radius fail explicitly. Equal division is supported, including an explicitly
+seeded compatibility policy for the legacy per-daughter direction jitter;
+asymmetric division fails explicitly until its native lifecycle contract is
+implemented.
 
 OpenCL strings returned by `specRateCL()` and `sigRateCL()` are not accepted or
 translated. Those models must express equations as `SpeciesRatePlan` or
