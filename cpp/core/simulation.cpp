@@ -93,18 +93,30 @@ ExternalContactGraph Simulation::find_external_contacts(
 }
 
 MechanicsSolveResult Simulation::solve_cell_mechanics(
-    const MechanicsParameters& mechanics_parameters, const ContactParameters& contact_parameters) {
+    const MechanicsParameters& mechanics_parameters, const ContactParameters& contact_parameters,
+    const ConstraintContactParameters& constraint_parameters) {
   if (!backend_->supports(BackendFeature::cell_mechanics)) {
     throw std::runtime_error("selected backend does not implement cell mechanics");
   }
+  validate_constraint_contact_parameters(constraint_parameters);
+  if (!constraints_.empty() && !backend_->supports(BackendFeature::external_constraints)) {
+    throw std::runtime_error("selected backend does not implement external constraints");
+  }
   const auto contacts = backend_->find_cell_contacts(state_, contact_parameters);
-  return backend_->solve_cell_mechanics(state_, contacts, mechanics_parameters);
+  ExternalContactGraph external_contacts(state_.size(), {});
+  if (!constraints_.empty()) {
+    external_contacts =
+        backend_->find_external_contacts(state_, constraints_, constraint_parameters);
+  }
+  return backend_->solve_cell_mechanics(state_, contacts, external_contacts, mechanics_parameters);
 }
 
 MechanicsSolveResult Simulation::relax_cell_mechanics(
     const MechanicsParameters& mechanics_parameters, const ContactParameters& contact_parameters,
-    const MechanicsIntegrationParameters& integration_parameters) {
-  auto result = solve_cell_mechanics(mechanics_parameters, contact_parameters);
+    const MechanicsIntegrationParameters& integration_parameters,
+    const ConstraintContactParameters& constraint_parameters) {
+  auto result =
+      solve_cell_mechanics(mechanics_parameters, contact_parameters, constraint_parameters);
   integrate_mechanics_result(state_, result, integration_parameters);
   return result;
 }

@@ -235,12 +235,14 @@ class Simulation:
         self,
         mechanics_parameters: MechanicsParameters = ...,
         contact_parameters: ContactParameters = ...,
+        constraint_parameters: ConstraintContactParameters = ...,
     ) -> MechanicsSolveResult: ...
     def relax_cell_mechanics(
         self,
         mechanics_parameters: MechanicsParameters = ...,
         contact_parameters: ContactParameters = ...,
         integration_parameters: MechanicsIntegrationParameters = ...,
+        constraint_parameters: ConstraintContactParameters = ...,
     ) -> MechanicsSolveResult: ...
     def cell(self, id: int) -> CellSnapshot: ...
     def cells(self) -> list[CellSnapshot]: ...

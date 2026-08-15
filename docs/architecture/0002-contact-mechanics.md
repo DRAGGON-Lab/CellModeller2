@@ -88,6 +88,12 @@ normal, not the endpoint itself. When both rod endpoints are active, each row
 has weight `coefficient / sqrt(2)`; otherwise the single row has the full
 coefficient. A sphere-center degeneracy uses the positive x-axis as its
 deterministic radial direction before applying the inside/outside orientation.
+External rows use the same seven-DOF cell Jacobian as pair contacts, but have no
+second cell term. They therefore enter the declared system as
+`B_external^T B_external` and `B_external^T b_external` alongside the pair
+rows. A simulation with constraints must execute both geometry and mechanics
+on a backend that advertises external-constraint support; unsupported native
+backends fail explicitly instead of dropping the boundary rows.
 
 CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal
@@ -101,7 +107,8 @@ compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
 4. CPU matrix-free operator and diagnosed conjugate-gradient solver.
 5. Native Metal and CUDA operator, reductions, and solver loops.
 6. Typed plane and sphere constraint geometry.
-7. External-constraint mechanics rows and native Metal/CUDA conformance.
+7. CPU external-constraint mechanics rows.
+8. Native Metal/CUDA external-constraint conformance.
 
 This order isolates geometry disagreements before solver behavior can hide
 them. A feature ledger entry advances only when the corresponding shared

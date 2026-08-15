@@ -254,12 +254,19 @@ class MetalBackend final : public ComputeBackend {
 
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
       const WorldState& state, const ContactGraph& contacts,
+      const ExternalContactGraph& external_contacts,
       const MechanicsParameters& parameters) override {
     validate_mechanics_parameters(parameters);
     state.validate();
     const auto geometry = state.geometry_state();
     if (contacts.cell_count() != geometry.size()) {
       throw std::invalid_argument("contact graph and world state cell counts disagree");
+    }
+    if (external_contacts.cell_count() != geometry.size()) {
+      throw std::invalid_argument("external contact graph and world state cell counts disagree");
+    }
+    if (!external_contacts.empty()) {
+      throw std::runtime_error("Metal external mechanics are not implemented in this build");
     }
     if (geometry.size() > std::numeric_limits<std::uint32_t>::max() ||
         contacts.size() > std::numeric_limits<std::uint32_t>::max() / 2) {

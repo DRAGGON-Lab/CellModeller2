@@ -24,7 +24,7 @@ class ComputeBackend {
       const ConstraintContactParameters& parameters) = 0;
   [[nodiscard]] virtual MechanicsSolveResult solve_cell_mechanics(
       const WorldState& state, const ContactGraph& contacts,
-      const MechanicsParameters& parameters) = 0;
+      const ExternalContactGraph& external_contacts, const MechanicsParameters& parameters) = 0;
 };
 
 [[nodiscard]] std::unique_ptr<ComputeBackend> make_cpu_backend();

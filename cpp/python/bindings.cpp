@@ -205,11 +205,13 @@ NB_MODULE(_core, module) {
            "parameters"_a = cm2::ConstraintContactParameters{})
       .def("solve_cell_mechanics", &cm2::Simulation::solve_cell_mechanics,
            "mechanics_parameters"_a = cm2::MechanicsParameters{},
-           "contact_parameters"_a = cm2::ContactParameters{})
+           "contact_parameters"_a = cm2::ContactParameters{},
+           "constraint_parameters"_a = cm2::ConstraintContactParameters{})
       .def("relax_cell_mechanics", &cm2::Simulation::relax_cell_mechanics,
            "mechanics_parameters"_a = cm2::MechanicsParameters{},
            "contact_parameters"_a = cm2::ContactParameters{},
-           "integration_parameters"_a = cm2::MechanicsIntegrationParameters{})
+           "integration_parameters"_a = cm2::MechanicsIntegrationParameters{},
+           "constraint_parameters"_a = cm2::ConstraintContactParameters{})
       .def("cell", &cm2::Simulation::cell, "id"_a)
       .def("cells", &cm2::Simulation::cells)
       .def("lineage_parent", &cm2::Simulation::lineage_parent, "id"_a)

@@ -4,6 +4,7 @@
 #include <span>
 #include <vector>
 
+#include "cm2/constraints.hpp"
 #include "cm2/contact_graph.hpp"
 #include "cm2/types.hpp"
 #include "cm2/world_state.hpp"
@@ -63,11 +64,26 @@ void integrate_mechanics_result(
     std::span<const float> desired_length_increments = {});
 
 [[nodiscard]] std::vector<CellCorrection> apply_mechanics_operator_cpu(
+    const WorldState& state, const ContactGraph& contacts,
+    const ExternalContactGraph& external_contacts, std::span<const CellCorrection> input,
+    const MechanicsParameters& parameters = MechanicsParameters{});
+
+[[nodiscard]] std::vector<CellCorrection> apply_mechanics_operator_cpu(
     const WorldState& state, const ContactGraph& contacts, std::span<const CellCorrection> input,
     const MechanicsParameters& parameters = MechanicsParameters{});
 
 [[nodiscard]] std::vector<CellCorrection> build_mechanics_rhs_cpu(
     const WorldState& state, const ContactGraph& contacts,
+    const ExternalContactGraph& external_contacts,
+    const MechanicsParameters& parameters = MechanicsParameters{});
+
+[[nodiscard]] std::vector<CellCorrection> build_mechanics_rhs_cpu(
+    const WorldState& state, const ContactGraph& contacts,
+    const MechanicsParameters& parameters = MechanicsParameters{});
+
+[[nodiscard]] MechanicsSolveResult solve_cell_mechanics_cpu(
+    const WorldState& state, const ContactGraph& contacts,
+    const ExternalContactGraph& external_contacts,
     const MechanicsParameters& parameters = MechanicsParameters{});
 
 [[nodiscard]] MechanicsSolveResult solve_cell_mechanics_cpu(

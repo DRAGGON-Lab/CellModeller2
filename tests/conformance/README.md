@@ -46,3 +46,12 @@ buffer growth. It also applies a converged mixed-colony result and compares the
 resulting position, direction, and length state. Corrections, geometry, and
 initial residuals use absolute and relative tolerances of `3e-4`; convergence
 status and breakdown type are exact.
+
+## External-constraint mechanics conformance scenario
+
+The external-constraint scenario compares correction vectors and integrated
+cell geometry with the CPU reference for plane, outside-sphere, and
+inside-sphere boundaries. It uses the mechanics tolerances above and requires
+an available backend without external-constraint support to reject a nonempty
+constraint set explicitly. This lets the same executable become the native
+Metal and CUDA acceptance gate as those implementations are added.

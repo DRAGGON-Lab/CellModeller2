@@ -129,6 +129,67 @@ void test_solver_converges_and_reports_recomputed_residual() {
   assert(recomputed <= parameters.residual_rms_tolerance);
 }
 
+void test_external_rows_contribute_to_operator_rhs_and_solve() {
+  cm2::WorldState state;
+  add_capsule(state, {0.0F, 0.4F, 0.0F}, {1.0F, 0.0F, 0.0F}, 2.0F);
+  const cm2::ContactGraph contacts(1, {});
+  cm2::ConstraintSet constraints;
+  cm2::PlaneConstraintInit plane;
+  plane.inward_normal = {0.0F, 1.0F, 0.0F};
+  constraints.add_plane(plane);
+  const auto external_contacts = cm2::find_external_contacts_cpu(state, constraints);
+  assert(external_contacts.size() == 2);
+
+  const std::vector input{cm2::CellCorrection{
+      .translation = {0.0F, 1.0F, 0.0F},
+  }};
+  const auto applied = cm2::apply_mechanics_operator_cpu(state, contacts, external_contacts, input);
+  assert(close(applied[0].translation.y, 1.3F));
+  assert(close(applied[0].rotation.z, 0.0F));
+  assert(close(applied[0].length, 0.0F));
+
+  const auto rhs = cm2::build_mechanics_rhs_cpu(state, contacts, external_contacts);
+  assert(close(rhs[0].translation.y, 0.1F));
+  assert(close(rhs[0].rotation.z, 0.0F));
+  assert(close(rhs[0].length, 0.0F));
+
+  cm2::MechanicsParameters parameters;
+  parameters.residual_rms_tolerance = 1.0e-6F;
+  const auto solution =
+      cm2::solve_cell_mechanics_cpu(state, contacts, external_contacts, parameters);
+  assert(solution.report.status == cm2::SolverStatus::converged);
+  assert(solution.corrections[0].translation.y > 0.0F);
+}
+
+void test_sphere_rows_drive_cells_toward_the_allowed_region() {
+  cm2::Simulation outside;
+  cm2::CellInit outside_cell;
+  outside_cell.position = {1.2F, 0.0F, 0.0F};
+  outside_cell.length = 0.0F;
+  outside_cell.radius = 0.5F;
+  outside.add_cell(outside_cell);
+  cm2::SphereConstraintInit outside_sphere;
+  outside_sphere.radius = 1.0F;
+  outside.add_sphere_constraint(outside_sphere);
+  const auto outside_result = outside.solve_cell_mechanics();
+  assert(outside_result.report.status == cm2::SolverStatus::converged);
+  assert(outside_result.corrections[0].translation.x > 0.0F);
+
+  cm2::Simulation inside;
+  cm2::CellInit inside_cell;
+  inside_cell.position = {4.8F, 0.0F, 0.0F};
+  inside_cell.length = 0.0F;
+  inside_cell.radius = 0.5F;
+  inside.add_cell(inside_cell);
+  cm2::SphereConstraintInit inside_sphere;
+  inside_sphere.radius = 5.0F;
+  inside_sphere.allowed_region = cm2::SphereRegion::inside;
+  inside.add_sphere_constraint(inside_sphere);
+  const auto inside_result = inside.solve_cell_mechanics();
+  assert(inside_result.report.status == cm2::SolverStatus::converged);
+  assert(inside_result.corrections[0].translation.x < 0.0F);
+}
+
 void test_iteration_limit_and_breakdown_are_diagnosed() {
   cm2::WorldState limited_state;
   add_capsule(limited_state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
@@ -198,6 +259,8 @@ int main() {
   test_contact_free_operator_is_declared_regularizer();
   test_operator_is_symmetric_and_positive_definite();
   test_solver_converges_and_reports_recomputed_residual();
+  test_external_rows_contribute_to_operator_rhs_and_solve();
+  test_sphere_rows_drive_cells_toward_the_allowed_region();
   test_iteration_limit_and_breakdown_are_diagnosed();
   test_invalid_inputs_are_rejected();
   test_simulation_exposes_cpu_mechanics_capability();

@@ -187,4 +187,11 @@ if(CM2_BUILD_TESTS)
   target_link_libraries(cm2_mechanics_conformance_test PRIVATE cm2::core)
   add_test(NAME mechanics_conformance COMMAND cm2_mechanics_conformance_test)
   set_tests_properties(mechanics_conformance PROPERTIES LABELS conformance)
+
+  add_executable(cm2_constraint_mechanics_conformance_test
+    tests/conformance/constraint_mechanics_conformance_test.cpp
+  )
+  target_link_libraries(cm2_constraint_mechanics_conformance_test PRIVATE cm2::core)
+  add_test(NAME constraint_mechanics_conformance COMMAND cm2_constraint_mechanics_conformance_test)
+  set_tests_properties(constraint_mechanics_conformance PROPERTIES LABELS conformance)
 endif()

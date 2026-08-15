@@ -37,8 +37,9 @@ execution on NVIDIA hardware. `relax_cell_mechanics` applies a converged result
 through the shared bounded-rotation and non-shortening integration contract.
 Both GPU contact paths use an exhaustive correctness stage while the scalable
 broad phase is under construction. Plane and sphere constraints currently
-advertise support only on the CPU; their mechanics coupling and native GPU
-implementations are the next compatibility slices.
+advertise support only on the CPU, where their rows participate in the same
+matrix-free mechanics solve and relaxation path as cell-cell contacts. Native
+GPU constraint implementations are the next compatibility slices.
 
 ## Build the C++ reference tests
 

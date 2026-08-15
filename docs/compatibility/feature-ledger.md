@@ -10,7 +10,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | CPU and Metal conformant; CUDA hardware validation pending |
 | P0 | 2D/3D rod mechanics | `CLBacterium` | typed contact graph, diagnosed solve, and bounded correction integration | CPU and Metal solve/integration conformant; CUDA builds with hardware validation pending |
 | P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic incidence graph; no silent contact cap | CPU and Metal exhaustive geometry conformant; CUDA builds with hardware validation pending; scalable broad phase pending |
-| P0 | Plane and sphere constraints | `CLBacterium.cl` | typed constraint records; no sentinel cell IDs | CPU typed geometry implemented; mechanics coupling and native GPU ports pending |
+| P0 | Plane and sphere constraints | `CLBacterium.cl` | typed constraint records; no sentinel cell IDs | CPU geometry and mechanics coupling implemented; native GPU ports pending |
 | P0 | Mechanics solver | `CLBacterium` | regularized matrix-free CG/PCG with residual report | CPU and native Metal CG conformant; native CUDA builds with hardware validation pending |
 | P0 | Species Euler integration | `CLEulerIntegrator` | typed rate plan and growth dilution | specified |
 | P0 | Grid signaling | `GridDiffusion` | diffusion, optional advection, declared boundaries | specified |

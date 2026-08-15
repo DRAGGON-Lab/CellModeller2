@@ -22,6 +22,11 @@ orientation, stable typed IDs, and deterministic sphere-center degeneracy.
 These fixtures become shared backend conformance tests when the native Metal
 and CUDA geometry pipelines are added.
 
+CPU mechanics fixtures additionally verify the external-row operator and
+right-hand side directly, solver convergence for a plane, and correction
+orientation for inside and outside spheres. Until the GPU ports land, adding a
+constraint to a Metal or CUDA simulation makes mechanics fail explicitly.
+
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while

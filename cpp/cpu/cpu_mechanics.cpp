@@ -18,9 +18,9 @@ using DofVector = std::vector<Dofs>;
 
 struct ContactRow {
   Slot first_slot;
-  Slot second_slot;
+  Slot second_slot{invalid_slot};
   Dofs first;
-  Dofs second;
+  Dofs second{};
   float right_hand_side;
 };
 
@@ -119,6 +119,7 @@ void add_scaled(DofVector& destination, const DofVector& source, float scale) {
 class CpuMechanicsSystem {
  public:
   CpuMechanicsSystem(const WorldState& state, const ContactGraph& contacts,
+                     const ExternalContactGraph& external_contacts,
                      const MechanicsParameters& parameters)
       : geometry_(state.geometry_state()), parameters_(parameters) {
     state.validate();
@@ -126,8 +127,14 @@ class CpuMechanicsSystem {
     if (contacts.cell_count() != geometry_.size()) {
       throw std::invalid_argument("contact graph and world state cell counts disagree");
     }
+    if (external_contacts.cell_count() != geometry_.size()) {
+      throw std::invalid_argument("external contact graph and world state cell counts disagree");
+    }
+    if (external_contacts.size() > std::numeric_limits<std::size_t>::max() - contacts.size()) {
+      throw std::overflow_error("mechanics contact row count overflow");
+    }
 
-    rows_.reserve(contacts.size());
+    rows_.reserve(contacts.size() + external_contacts.size());
     for (const auto& contact : contacts.contacts()) {
       const auto first = static_cast<std::size_t>(contact.first_slot);
       const auto second = static_cast<std::size_t>(contact.second_slot);
@@ -156,6 +163,26 @@ class CpuMechanicsSystem {
           .right_hand_side = contact.weight * contact.signed_separation,
       });
     }
+
+    for (const auto& contact : external_contacts.contacts()) {
+      const auto cell = static_cast<std::size_t>(contact.cell_slot);
+      if (geometry_.ids[cell] != contact.cell_id) {
+        throw std::invalid_argument(
+            "external contact graph identifiers do not match current state slots");
+      }
+
+      const Vec3 center{geometry_.position_x[cell], geometry_.position_y[cell],
+                        geometry_.position_z[cell]};
+      const Vec3 axis{geometry_.direction_x[cell], geometry_.direction_y[cell],
+                      geometry_.direction_z[cell]};
+      const auto total_length = geometry_.lengths[cell] + 2.0F * geometry_.radii[cell];
+      rows_.push_back({
+          .first_slot = contact.cell_slot,
+          .first = make_jacobian(contact.normal, contact.point_on_cell - center, axis, total_length,
+                                 contact.weight),
+          .right_hand_side = contact.weight * contact.signed_separation,
+      });
+    }
   }
 
   [[nodiscard]] std::size_t cell_count() const noexcept { return geometry_.size(); }
@@ -164,10 +191,14 @@ class CpuMechanicsSystem {
     output.assign(cell_count(), Dofs{});
     for (const auto& row : rows_) {
       const auto first = static_cast<std::size_t>(row.first_slot);
-      const auto second = static_cast<std::size_t>(row.second_slot);
-      const auto row_value = dof_dot(row.first, input[first]) - dof_dot(row.second, input[second]);
+      auto row_value = dof_dot(row.first, input[first]);
+      if (row.second_slot != invalid_slot) {
+        row_value -= dof_dot(row.second, input[static_cast<std::size_t>(row.second_slot)]);
+      }
       add_scaled(output[first], row.first, row_value);
-      add_scaled(output[second], row.second, -row_value);
+      if (row.second_slot != invalid_slot) {
+        add_scaled(output[static_cast<std::size_t>(row.second_slot)], row.second, -row_value);
+      }
     }
 
     const auto regularization = 1.0F / parameters_.gamma;
@@ -199,9 +230,11 @@ class CpuMechanicsSystem {
     DofVector result(cell_count());
     for (const auto& row : rows_) {
       const auto first = static_cast<std::size_t>(row.first_slot);
-      const auto second = static_cast<std::size_t>(row.second_slot);
       add_scaled(result[first], row.first, row.right_hand_side);
-      add_scaled(result[second], row.second, -row.right_hand_side);
+      if (row.second_slot != invalid_slot) {
+        add_scaled(result[static_cast<std::size_t>(row.second_slot)], row.second,
+                   -row.right_hand_side);
+      }
     }
     return result;
   }
@@ -248,11 +281,11 @@ void validate_mechanics_parameters(const MechanicsParameters& parameters) {
   }
 }
 
-std::vector<CellCorrection> apply_mechanics_operator_cpu(const WorldState& state,
-                                                         const ContactGraph& contacts,
-                                                         std::span<const CellCorrection> input,
-                                                         const MechanicsParameters& parameters) {
-  const CpuMechanicsSystem system(state, contacts, parameters);
+std::vector<CellCorrection> apply_mechanics_operator_cpu(
+    const WorldState& state, const ContactGraph& contacts,
+    const ExternalContactGraph& external_contacts, std::span<const CellCorrection> input,
+    const MechanicsParameters& parameters) {
+  const CpuMechanicsSystem system(state, contacts, external_contacts, parameters);
   if (input.size() != system.cell_count()) {
     throw std::invalid_argument("mechanics input size does not match the world state");
   }
@@ -262,16 +295,33 @@ std::vector<CellCorrection> apply_mechanics_operator_cpu(const WorldState& state
   return unflatten(output);
 }
 
+std::vector<CellCorrection> apply_mechanics_operator_cpu(const WorldState& state,
+                                                         const ContactGraph& contacts,
+                                                         std::span<const CellCorrection> input,
+                                                         const MechanicsParameters& parameters) {
+  return apply_mechanics_operator_cpu(state, contacts, ExternalContactGraph(state.size(), {}),
+                                      input, parameters);
+}
+
 std::vector<CellCorrection> build_mechanics_rhs_cpu(const WorldState& state,
                                                     const ContactGraph& contacts,
+                                                    const ExternalContactGraph& external_contacts,
                                                     const MechanicsParameters& parameters) {
-  const CpuMechanicsSystem system(state, contacts, parameters);
+  const CpuMechanicsSystem system(state, contacts, external_contacts, parameters);
   return unflatten(system.right_hand_side());
 }
 
+std::vector<CellCorrection> build_mechanics_rhs_cpu(const WorldState& state,
+                                                    const ContactGraph& contacts,
+                                                    const MechanicsParameters& parameters) {
+  return build_mechanics_rhs_cpu(state, contacts, ExternalContactGraph(state.size(), {}),
+                                 parameters);
+}
+
 MechanicsSolveResult solve_cell_mechanics_cpu(const WorldState& state, const ContactGraph& contacts,
+                                              const ExternalContactGraph& external_contacts,
                                               const MechanicsParameters& parameters) {
-  const CpuMechanicsSystem system(state, contacts, parameters);
+  const CpuMechanicsSystem system(state, contacts, external_contacts, parameters);
   auto right_hand_side = system.right_hand_side();
   DofVector solution(system.cell_count());
   auto residual = right_hand_side;
@@ -358,6 +408,12 @@ MechanicsSolveResult solve_cell_mechanics_cpu(const WorldState& state, const Con
   }
   result.corrections = unflatten(solution);
   return result;
+}
+
+MechanicsSolveResult solve_cell_mechanics_cpu(const WorldState& state, const ContactGraph& contacts,
+                                              const MechanicsParameters& parameters) {
+  return solve_cell_mechanics_cpu(state, contacts, ExternalContactGraph(state.size(), {}),
+                                  parameters);
 }
 
 }  // namespace cm2

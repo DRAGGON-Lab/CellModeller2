@@ -155,6 +155,25 @@ def test_cpu_plane_constraint_graph_is_typed_and_incident() -> None:
     )
 
 
+def test_cpu_constraints_participate_in_mechanical_relaxation() -> None:
+    simulation = Simulation()
+    cell = CellInit()
+    cell.position = Vec3(0.0, 0.4, 0.0)
+    cell.length = 2.0
+    cell.radius = 0.5
+    cell_id = simulation.add_cell(cell)
+
+    plane = PlaneConstraintInit()
+    plane.inward_normal = Vec3(0.0, 1.0, 0.0)
+    simulation.add_plane_constraint(plane)
+
+    result = simulation.relax_cell_mechanics()
+
+    assert result.report.status == SolverStatus.CONVERGED
+    assert result.corrections[0].translation.y > 0.0
+    assert simulation.cell(cell_id).position.y > 0.4
+
+
 def test_cpu_mechanics_relaxation_updates_geometry() -> None:
     simulation = Simulation()
     first = CellInit()

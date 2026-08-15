@@ -37,8 +37,9 @@ class CpuBackend final : public ComputeBackend {
 
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
       const WorldState& state, const ContactGraph& contacts,
+      const ExternalContactGraph& external_contacts,
       const MechanicsParameters& parameters) override {
-    return solve_cell_mechanics_cpu(state, contacts, parameters);
+    return solve_cell_mechanics_cpu(state, contacts, external_contacts, parameters);
   }
 };
 
