@@ -236,6 +236,13 @@ if(CM2_BUILD_TESTS)
   add_test(NAME growth_conformance COMMAND cm2_growth_conformance_test)
   set_tests_properties(growth_conformance PROPERTIES LABELS conformance)
 
+  add_executable(cm2_backend_contract_conformance_test
+    tests/conformance/backend_contract_conformance_test.cpp
+  )
+  target_link_libraries(cm2_backend_contract_conformance_test PRIVATE cm2::core)
+  add_test(NAME backend_contract_conformance COMMAND cm2_backend_contract_conformance_test)
+  set_tests_properties(backend_contract_conformance PROPERTIES LABELS conformance)
+
   add_executable(cm2_species_conformance_test
     tests/conformance/species_conformance_test.cpp
   )

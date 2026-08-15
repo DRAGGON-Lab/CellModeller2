@@ -17,6 +17,11 @@ into that build; the remaining shared scenarios use the same iteration helper.
 Its exact state checks and numerical tolerances are recorded beside the test in
 `tests/conformance/README.md`.
 
+`backend_contract_conformance` separately requires every constructed device to
+advertise the complete growth, species, contact, mechanics, constraint, signal,
+and coupled-rate contract. Capability guards in individual fixtures therefore
+cannot turn an omitted feature into a green feature-complete build.
+
 Every Metal-enabled test build includes `metal_runtime_gate`, which constructs
 each enumerated device and compiles every embedded MSL library. Run
 `scripts/run_metal_conformance.sh` on Apple hardware to preserve the exact

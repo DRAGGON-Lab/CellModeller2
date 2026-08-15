@@ -20,6 +20,15 @@ A backend only earns conformance when this executable passes with that native
 backend enabled on its real hardware. A CPU-only run validates the scenario and
 reference implementation, but says nothing about GPU conformance.
 
+## Backend contract scenario
+
+The backend contract scenario constructs every enumerated device and requires
+it to advertise growth, species, cell contacts, cell mechanics, external
+constraints, signals, and coupled rates. Individual scientific fixtures may
+retain capability guards to diagnose partially implemented development builds,
+but a feature-complete Metal or CUDA build cannot pass the conformance suite by
+opting out of one of those fixtures.
+
 ## Species conformance scenario
 
 The species scenario uses 513 cells, three concentrations, heterogeneous
