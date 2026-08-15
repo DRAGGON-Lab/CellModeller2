@@ -17,7 +17,7 @@ The initial slice establishes:
 - stable cell identifiers separated from compact storage slots;
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
-- persistent fixed rod cells with continuing biological state and projected CPU/Metal mechanics;
+- persistent fixed rod cells with continuing biological state and native projected mechanics;
 - fixed-schema species state and typed CPU/Metal/CUDA Euler rate plans with growth dilution;
 - versioned JSON checkpoints with exact state restore, provenance, and integrity checks;
 - deterministic `cm2` batch execution with explicit backend, device, seed, and parameters;
@@ -49,7 +49,8 @@ Metal and CUDA geometry and mechanics paths, where their rows participate in
 the same matrix-free solve and relaxation path as cell-cell contacts. Metal is
 conformant on Apple GPU hardware; the CUDA implementation compiles against the
 12.8 toolkit but still requires execution of the shared fixtures on NVIDIA
-hardware.
+hardware. Fixed cells use the same native projection in each mechanics system;
+the CUDA fixed-cell cases share that pending hardware gate.
 
 The typed species plan is conformant on CPU and native Metal, including every
 declared instruction, legacy-compatible effective-volume dilution, and

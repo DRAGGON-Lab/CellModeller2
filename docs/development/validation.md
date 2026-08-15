@@ -103,4 +103,6 @@ the projected mechanics operator and right-hand side, and integration that
 rejects contact correction while retaining declared growth. The shared
 relaxation scenario passes on CPU and native Metal, including exact zero
 correction and unchanged geometry for the fixed cell. CUDA hardware execution
-remains required before CUDA fixed-cell support is claimed.
+remains required before CUDA fixed-cell support is claimed; the independent
+CUDA mask upload and projected mechanics kernels compile and link with the
+CUDA 12.8.1 toolkit.

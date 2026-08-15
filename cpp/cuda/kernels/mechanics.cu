@@ -106,15 +106,19 @@ __global__ void apply_mechanics_b(const MechanicsDofsGpu* first_rows,
                                   const MechanicsDofsGpu* second_rows,
                                   const std::uint32_t* first_slots,
                                   const std::uint32_t* second_slots, const MechanicsDofsGpu* input,
-                                  float* row_values, std::uint32_t contact_count) {
+                                  const std::uint8_t* fixed, float* row_values,
+                                  std::uint32_t contact_count) {
   const auto index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index >= contact_count) {
     return;
   }
+  const auto first = first_slots[index];
   const auto second = second_slots[index];
-  row_values[index] = dof_dot(first_rows[index], input[first_slots[index]]);
+  const auto first_input = fixed[first] == 0 ? input[first] : zero_dofs();
+  row_values[index] = dof_dot(first_rows[index], first_input);
   if (second != 0xffffffffU) {
-    row_values[index] -= dof_dot(second_rows[index], input[second]);
+    const auto second_input = fixed[second] == 0 ? input[second] : zero_dofs();
+    row_values[index] -= dof_dot(second_rows[index], second_input);
   }
 }
 
@@ -141,9 +145,14 @@ __global__ void apply_mechanics_transpose(const MechanicsDofsGpu* first_rows,
 
 __global__ void add_mechanics_regularizer(const float4* axes, const float4* geometry,
                                           const MechanicsDofsGpu* input, MechanicsDofsGpu* output,
-                                          float mu_a, float gamma, std::uint32_t cell_count) {
+                                          const std::uint8_t* fixed, float mu_a, float gamma,
+                                          std::uint32_t cell_count) {
   const auto cell = blockIdx.x * blockDim.x + threadIdx.x;
   if (cell >= cell_count) {
+    return;
+  }
+  if (fixed[cell] != 0) {
+    output[cell] = input[cell];
     return;
   }
   const auto total_length = geometry[cell].x + 2.0F * geometry[cell].y;
@@ -172,14 +181,16 @@ __global__ void add_mechanics_regularizer(const float4* axes, const float4* geom
 __global__ void initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_side,
                                              MechanicsDofsGpu* solution, MechanicsDofsGpu* residual,
                                              MechanicsDofsGpu* search_direction,
+                                             const std::uint8_t* fixed,
                                              std::uint32_t cell_count) {
   const auto cell = blockIdx.x * blockDim.x + threadIdx.x;
   if (cell >= cell_count) {
     return;
   }
   solution[cell] = zero_dofs();
-  residual[cell] = right_hand_side[cell];
-  search_direction[cell] = right_hand_side[cell];
+  const auto projected_rhs = fixed[cell] == 0 ? right_hand_side[cell] : zero_dofs();
+  residual[cell] = projected_rhs;
+  search_direction[cell] = projected_rhs;
 }
 
 __global__ void update_mechanics_solution_residual(MechanicsDofsGpu* solution,
@@ -256,9 +267,10 @@ void launch_build_mechanics_rows(const float4* centers, const float4* axes, cons
 void launch_apply_mechanics_b(const MechanicsDofsGpu* first_rows,
                               const MechanicsDofsGpu* second_rows, const std::uint32_t* first_slots,
                               const std::uint32_t* second_slots, const MechanicsDofsGpu* input,
-                              float* row_values, std::uint32_t contact_count, cudaStream_t stream) {
+                              const std::uint8_t* fixed, float* row_values,
+                              std::uint32_t contact_count, cudaStream_t stream) {
   apply_mechanics_b<<<block_count(contact_count), threads_per_block, 0, stream>>>(
-      first_rows, second_rows, first_slots, second_slots, input, row_values, contact_count);
+      first_rows, second_rows, first_slots, second_slots, input, fixed, row_values, contact_count);
 }
 
 void launch_apply_mechanics_transpose(const MechanicsDofsGpu* first_rows,
@@ -274,18 +286,19 @@ void launch_apply_mechanics_transpose(const MechanicsDofsGpu* first_rows,
 
 void launch_add_mechanics_regularizer(const float4* axes, const float4* geometry,
                                       const MechanicsDofsGpu* input, MechanicsDofsGpu* output,
-                                      float mu_a, float gamma, std::uint32_t cell_count,
-                                      cudaStream_t stream) {
+                                      const std::uint8_t* fixed, float mu_a, float gamma,
+                                      std::uint32_t cell_count, cudaStream_t stream) {
   add_mechanics_regularizer<<<block_count(cell_count), threads_per_block, 0, stream>>>(
-      axes, geometry, input, output, mu_a, gamma, cell_count);
+      axes, geometry, input, output, fixed, mu_a, gamma, cell_count);
 }
 
 void launch_initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_side,
                                          MechanicsDofsGpu* solution, MechanicsDofsGpu* residual,
                                          MechanicsDofsGpu* search_direction,
-                                         std::uint32_t cell_count, cudaStream_t stream) {
+                                         const std::uint8_t* fixed, std::uint32_t cell_count,
+                                         cudaStream_t stream) {
   initialize_mechanics_vectors<<<block_count(cell_count), threads_per_block, 0, stream>>>(
-      right_hand_side, solution, residual, search_direction, cell_count);
+      right_hand_side, solution, residual, search_direction, fixed, cell_count);
 }
 
 void launch_update_mechanics_solution_residual(MechanicsDofsGpu* solution,

@@ -24,7 +24,8 @@ void launch_build_mechanics_rows(const float4* centers, const float4* axes, cons
 void launch_apply_mechanics_b(const MechanicsDofsGpu* first_rows,
                               const MechanicsDofsGpu* second_rows, const std::uint32_t* first_slots,
                               const std::uint32_t* second_slots, const MechanicsDofsGpu* input,
-                              float* row_values, std::uint32_t contact_count, cudaStream_t stream);
+                              const std::uint8_t* fixed, float* row_values,
+                              std::uint32_t contact_count, cudaStream_t stream);
 
 void launch_apply_mechanics_transpose(const MechanicsDofsGpu* first_rows,
                                       const MechanicsDofsGpu* second_rows, const float* row_values,
@@ -35,13 +36,14 @@ void launch_apply_mechanics_transpose(const MechanicsDofsGpu* first_rows,
 
 void launch_add_mechanics_regularizer(const float4* axes, const float4* geometry,
                                       const MechanicsDofsGpu* input, MechanicsDofsGpu* output,
-                                      float mu_a, float gamma, std::uint32_t cell_count,
-                                      cudaStream_t stream);
+                                      const std::uint8_t* fixed, float mu_a, float gamma,
+                                      std::uint32_t cell_count, cudaStream_t stream);
 
 void launch_initialize_mechanics_vectors(const MechanicsDofsGpu* right_hand_side,
                                          MechanicsDofsGpu* solution, MechanicsDofsGpu* residual,
                                          MechanicsDofsGpu* search_direction,
-                                         std::uint32_t cell_count, cudaStream_t stream);
+                                         const std::uint8_t* fixed, std::uint32_t cell_count,
+                                         cudaStream_t stream);
 
 void launch_update_mechanics_solution_residual(MechanicsDofsGpu* solution,
                                                MechanicsDofsGpu* residual,

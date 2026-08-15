@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -679,6 +680,7 @@ class CudaBackend final : public ComputeBackend {
     ensure_contact_output_capacity(row_count);
     ensure_mechanics_capacity(geometry.size(), row_count);
     upload_contact_cells(geometry);
+    upload_mechanics_fixed(state.cell_attributes().fixed);
     upload_mechanics_contacts(contacts, external_contacts);
     upload_mechanics_incidence(contacts, external_contacts);
 
@@ -1096,6 +1098,7 @@ class CudaBackend final : public ComputeBackend {
 
   void ensure_mechanics_capacity(std::size_t cell_count, std::size_t contact_count) {
     mechanics_incidence_offsets_.reserve(cell_count + 1, "mechanics incidence offsets");
+    mechanics_fixed_.reserve(cell_count, "mechanics fixed flags");
     mechanics_solution_.reserve(cell_count, "mechanics solution");
     mechanics_rhs_.reserve(cell_count, "mechanics right-hand side");
     mechanics_residual_.reserve(cell_count, "mechanics residual");
@@ -1109,6 +1112,12 @@ class CudaBackend final : public ComputeBackend {
     mechanics_row_values_.reserve(contact_count, "mechanics row values");
     mechanics_row_rhs_.reserve(contact_count, "mechanics row right-hand side");
     mechanics_incidence_indices_.reserve(contact_count * 2, "mechanics incidence indices");
+  }
+
+  void upload_mechanics_fixed(std::span<const std::uint8_t> fixed) {
+    check_cuda(cudaMemcpy(mechanics_fixed_.data(), fixed.data(), fixed.size_bytes(),
+                          cudaMemcpyHostToDevice),
+               "failed to upload CUDA mechanics fixed flags");
   }
 
   void upload_mechanics_contacts(const ContactGraph& contacts,
@@ -1183,7 +1192,8 @@ class CudaBackend final : public ComputeBackend {
                                 const MechanicsParameters& parameters) {
     cuda::launch_apply_mechanics_b(mechanics_first_rows_.data(), mechanics_second_rows_.data(),
                                    contact_first_slots_.data(), contact_second_slots_.data(), input,
-                                   mechanics_row_values_.data(), contact_count, stream_);
+                                   mechanics_fixed_.data(), mechanics_row_values_.data(),
+                                   contact_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA mechanics-B kernel");
     cuda::launch_apply_mechanics_transpose(
         mechanics_first_rows_.data(), mechanics_second_rows_.data(), mechanics_row_values_.data(),
@@ -1191,8 +1201,8 @@ class CudaBackend final : public ComputeBackend {
         contact_first_slots_.data(), output, cell_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA mechanics-transpose kernel");
     cuda::launch_add_mechanics_regularizer(contact_axes_.data(), contact_geometry_.data(), input,
-                                           output, parameters.mu_a, parameters.gamma, cell_count,
-                                           stream_);
+                                           output, mechanics_fixed_.data(), parameters.mu_a,
+                                           parameters.gamma, cell_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA mechanics-regularizer kernel");
   }
 
@@ -1340,7 +1350,7 @@ class CudaBackend final : public ComputeBackend {
     check_cuda(cudaGetLastError(), "failed to launch the CUDA mechanics-RHS kernel");
     cuda::launch_initialize_mechanics_vectors(mechanics_rhs_.data(), mechanics_solution_.data(),
                                               mechanics_residual_.data(), mechanics_search_.data(),
-                                              cell_count, stream_);
+                                              mechanics_fixed_.data(), cell_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA mechanics-initialize kernel");
     return reduce_mechanics_dot(mechanics_residual_.data(), mechanics_residual_.data(), cell_count,
                                 "CUDA mechanics initialization failed");
@@ -1489,6 +1499,7 @@ class CudaBackend final : public ComputeBackend {
   CudaBuffer<float> mechanics_row_rhs_;
   CudaBuffer<std::uint32_t> mechanics_incidence_offsets_;
   CudaBuffer<std::uint32_t> mechanics_incidence_indices_;
+  CudaBuffer<std::uint8_t> mechanics_fixed_;
   CudaBuffer<cuda::MechanicsDofsGpu> mechanics_solution_;
   CudaBuffer<cuda::MechanicsDofsGpu> mechanics_rhs_;
   CudaBuffer<cuda::MechanicsDofsGpu> mechanics_residual_;
