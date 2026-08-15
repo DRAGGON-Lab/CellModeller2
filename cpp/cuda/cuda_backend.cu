@@ -101,6 +101,7 @@ class CudaBackend final : public ComputeBackend {
 
   [[nodiscard]] bool supports(BackendFeature feature) const noexcept override {
     return feature == BackendFeature::growth || feature == BackendFeature::cell_contacts ||
+           feature == BackendFeature::external_constraints ||
            feature == BackendFeature::cell_mechanics;
   }
 
@@ -166,8 +167,42 @@ class CudaBackend final : public ComputeBackend {
   }
 
   [[nodiscard]] ExternalContactGraph find_external_contacts(
-      const WorldState&, const ConstraintSet&, const ConstraintContactParameters&) override {
-    throw std::runtime_error("CUDA external constraints are not implemented in this build");
+      const WorldState& state, const ConstraintSet& constraints,
+      const ConstraintContactParameters& parameters) override {
+    validate_constraint_contact_parameters(parameters);
+    state.validate();
+    const auto geometry = state.geometry_state();
+    if (geometry.size() == 0 || constraints.empty()) {
+      return ExternalContactGraph(geometry.size(), {});
+    }
+    if (geometry.size() > std::numeric_limits<std::uint32_t>::max() ||
+        constraints.size() > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::overflow_error("CUDA external-contact launch exceeds the uint32 index space");
+    }
+    if (geometry.size() > std::numeric_limits<std::size_t>::max() / constraints.size()) {
+      throw std::overflow_error("CUDA external-contact pair count overflow");
+    }
+    const auto pair_count = geometry.size() * constraints.size();
+    if (pair_count > std::numeric_limits<std::uint32_t>::max() / 2) {
+      throw std::overflow_error("CUDA external-contact staging exceeds the uint32 scan space");
+    }
+
+    ensure_contact_cell_capacity(geometry.size());
+    ensure_external_constraint_capacity(constraints.size());
+    ensure_contact_pair_capacity(pair_count);
+    upload_contact_cells(geometry);
+    upload_external_constraints(constraints);
+    const auto contact_count = count_external_contacts(
+        static_cast<std::uint32_t>(geometry.size()), static_cast<std::uint32_t>(constraints.size()),
+        static_cast<std::uint32_t>(pair_count), parameters);
+    if (contact_count == 0) {
+      return ExternalContactGraph(geometry.size(), {});
+    }
+
+    ensure_contact_output_capacity(contact_count);
+    fill_external_contacts(static_cast<std::uint32_t>(geometry.size()),
+                           static_cast<std::uint32_t>(constraints.size()), parameters);
+    return download_external_contacts(geometry.size(), contact_count);
   }
 
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
@@ -183,30 +218,32 @@ class CudaBackend final : public ComputeBackend {
     if (external_contacts.cell_count() != geometry.size()) {
       throw std::invalid_argument("external contact graph and world state cell counts disagree");
     }
-    if (!external_contacts.empty()) {
-      throw std::runtime_error("CUDA external mechanics are not implemented in this build");
+    if (external_contacts.size() > std::numeric_limits<std::size_t>::max() - contacts.size()) {
+      throw std::overflow_error("CUDA mechanics row count overflow");
     }
+    const auto row_count = contacts.size() + external_contacts.size();
     if (geometry.size() > std::numeric_limits<std::uint32_t>::max() ||
-        contacts.size() > std::numeric_limits<std::uint32_t>::max() / 2) {
+        row_count > std::numeric_limits<std::uint32_t>::max() / 2) {
       throw std::overflow_error("CUDA mechanics exceeds the uint32 index space");
     }
 
     MechanicsSolveResult result;
     result.corrections.resize(geometry.size());
-    if (geometry.size() == 0 || contacts.empty()) {
+    if (geometry.size() == 0 || row_count == 0) {
       return result;
     }
 
     validate_mechanics_contacts(geometry, contacts);
+    validate_external_mechanics_contacts(geometry, external_contacts);
     ensure_contact_cell_capacity(geometry.size());
-    ensure_contact_output_capacity(contacts.size());
-    ensure_mechanics_capacity(geometry.size(), contacts.size());
+    ensure_contact_output_capacity(row_count);
+    ensure_mechanics_capacity(geometry.size(), row_count);
     upload_contact_cells(geometry);
-    upload_mechanics_contacts(contacts);
-    upload_mechanics_incidence(contacts);
+    upload_mechanics_contacts(contacts, external_contacts);
+    upload_mechanics_incidence(contacts, external_contacts);
 
     const auto cell_count = static_cast<std::uint32_t>(geometry.size());
-    const auto contact_count = static_cast<std::uint32_t>(contacts.size());
+    const auto contact_count = static_cast<std::uint32_t>(row_count);
     auto residual_squared = initialize_mechanics(cell_count, contact_count);
     result.report.initial_residual_rms =
         std::sqrt(residual_squared / static_cast<float>(cell_count));
@@ -291,6 +328,10 @@ class CudaBackend final : public ComputeBackend {
     contact_scan_b_.reserve(count, "contact scan B");
   }
 
+  void ensure_external_constraint_capacity(std::size_t count) {
+    external_constraints_.reserve(count, "external constraints");
+  }
+
   void ensure_contact_output_capacity(std::size_t count) {
     contact_first_ids_.reserve(count, "contact first IDs");
     contact_second_ids_.reserve(count, "contact second IDs");
@@ -329,6 +370,60 @@ class CudaBackend final : public ComputeBackend {
                "failed to upload CUDA contact cell geometry");
   }
 
+  void upload_external_constraints(const ConstraintSet& constraints) {
+    std::vector<cuda::ExternalConstraintGpu> values;
+    values.reserve(constraints.size());
+    for (const auto& plane : constraints.planes()) {
+      values.push_back({
+          .id = plane.id,
+          .kind = static_cast<std::uint32_t>(ExternalConstraintKind::plane),
+          .allowed_region = 0,
+          .geometry = make_float4(plane.point.x, plane.point.y, plane.point.z, 0.0F),
+          .parameters = make_float4(plane.inward_normal.x, plane.inward_normal.y,
+                                    plane.inward_normal.z, plane.coefficient),
+      });
+    }
+    for (const auto& sphere : constraints.spheres()) {
+      values.push_back({
+          .id = sphere.id,
+          .kind = static_cast<std::uint32_t>(ExternalConstraintKind::sphere),
+          .allowed_region = static_cast<std::uint32_t>(sphere.allowed_region),
+          .geometry = make_float4(sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius),
+          .parameters = make_float4(0.0F, 0.0F, 0.0F, sphere.coefficient),
+      });
+    }
+    std::ranges::sort(values, {}, &cuda::ExternalConstraintGpu::id);
+    copy_to_device(external_constraints_, values, "failed to upload CUDA external constraints");
+  }
+
+  void scan_contact_counts(std::uint32_t element_count) {
+    const std::uint32_t* scan_input = contact_counts_.data();
+    std::uint32_t* scan_output = contact_scan_a_.data();
+    std::uint32_t offset = 1;
+    while (offset < element_count) {
+      cuda::launch_inclusive_scan_step(scan_input, scan_output, offset, element_count, stream_);
+      check_cuda(cudaGetLastError(), "failed to launch the CUDA contact-scan kernel");
+      scan_input = scan_output;
+      scan_output =
+          scan_output == contact_scan_a_.data() ? contact_scan_b_.data() : contact_scan_a_.data();
+      if (offset > element_count / 2) {
+        break;
+      }
+      offset *= 2;
+    }
+    contact_inclusive_counts_ = scan_input;
+  }
+
+  [[nodiscard]] std::uint32_t download_contact_count(std::uint32_t pair_count,
+                                                     const char* operation) {
+    std::uint32_t contact_count = 0;
+    check_cuda(cudaMemcpyAsync(&contact_count, contact_inclusive_counts_ + pair_count - 1,
+                               sizeof(contact_count), cudaMemcpyDeviceToHost, stream_),
+               "failed to download the CUDA contact count");
+    check_cuda(cudaStreamSynchronize(stream_), operation);
+    return contact_count;
+  }
+
   [[nodiscard]] std::uint32_t count_contacts(std::uint32_t cell_count,
                                              std::uint32_t pair_slot_count,
                                              const ContactParameters& parameters) {
@@ -341,29 +436,8 @@ class CudaBackend final : public ComputeBackend {
                                contact_geometry_.data(), contact_counts_.data(), gpu_parameters,
                                cell_count, stream_);
     check_cuda(cudaGetLastError(), "failed to launch the CUDA contact-count kernel");
-
-    const std::uint32_t* scan_input = contact_counts_.data();
-    std::uint32_t* scan_output = contact_scan_a_.data();
-    std::uint32_t offset = 1;
-    while (offset < pair_slot_count) {
-      cuda::launch_inclusive_scan_step(scan_input, scan_output, offset, pair_slot_count, stream_);
-      check_cuda(cudaGetLastError(), "failed to launch the CUDA contact-scan kernel");
-      scan_input = scan_output;
-      scan_output =
-          scan_output == contact_scan_a_.data() ? contact_scan_b_.data() : contact_scan_a_.data();
-      if (offset > pair_slot_count / 2) {
-        break;
-      }
-      offset *= 2;
-    }
-    contact_inclusive_counts_ = scan_input;
-
-    std::uint32_t contact_count = 0;
-    check_cuda(cudaMemcpyAsync(&contact_count, contact_inclusive_counts_ + pair_slot_count - 1,
-                               sizeof(contact_count), cudaMemcpyDeviceToHost, stream_),
-               "failed to download the CUDA contact count");
-    check_cuda(cudaStreamSynchronize(stream_), "CUDA contact count or scan failed");
-    return contact_count;
+    scan_contact_counts(pair_slot_count);
+    return download_contact_count(pair_slot_count, "CUDA contact count or scan failed");
   }
 
   void fill_contacts(std::uint32_t cell_count, const ContactParameters& parameters) {
@@ -430,6 +504,89 @@ class CudaBackend final : public ComputeBackend {
     return ContactGraph(cell_count, std::move(contacts));
   }
 
+  [[nodiscard]] std::uint32_t count_external_contacts(
+      std::uint32_t cell_count, std::uint32_t constraint_count, std::uint32_t pair_count,
+      const ConstraintContactParameters& parameters) {
+    const cuda::ConstraintContactParametersGpu gpu_parameters{
+        .activation_margin = parameters.activation_margin,
+        .degeneracy_epsilon = parameters.degeneracy_epsilon,
+    };
+    cuda::launch_external_contact_count(contact_ids_.data(), contact_centers_.data(),
+                                        contact_axes_.data(), contact_geometry_.data(),
+                                        external_constraints_.data(), contact_counts_.data(),
+                                        gpu_parameters, cell_count, constraint_count, stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA external-contact-count kernel");
+    scan_contact_counts(pair_count);
+    return download_contact_count(pair_count, "CUDA external contact count or scan failed");
+  }
+
+  void fill_external_contacts(std::uint32_t cell_count, std::uint32_t constraint_count,
+                              const ConstraintContactParameters& parameters) {
+    const cuda::ConstraintContactParametersGpu gpu_parameters{
+        .activation_margin = parameters.activation_margin,
+        .degeneracy_epsilon = parameters.degeneracy_epsilon,
+    };
+    cuda::launch_external_contact_fill(
+        contact_ids_.data(), contact_centers_.data(), contact_axes_.data(),
+        contact_geometry_.data(), external_constraints_.data(), contact_counts_.data(),
+        contact_inclusive_counts_, contact_first_ids_.data(), contact_second_ids_.data(),
+        contact_first_slots_.data(), contact_second_slots_.data(), contact_ordinals_.data(),
+        contact_points_.data(), contact_normals_.data(), contact_separations_.data(),
+        contact_weights_.data(), gpu_parameters, cell_count, constraint_count, stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA external-contact-fill kernel");
+  }
+
+  [[nodiscard]] ExternalContactGraph download_external_contacts(std::size_t cell_count,
+                                                                std::uint32_t contact_count) {
+    std::vector<std::uint64_t> cell_ids(contact_count);
+    std::vector<std::uint64_t> constraint_ids(contact_count);
+    std::vector<std::uint32_t> cell_slots(contact_count);
+    std::vector<std::uint32_t> constraint_kinds(contact_count);
+    std::vector<std::uint32_t> endpoints(contact_count);
+    std::vector<float4> points(contact_count);
+    std::vector<float4> normals(contact_count);
+    std::vector<float> separations(contact_count);
+    std::vector<float> weights(contact_count);
+
+    copy_to_host(cell_ids, contact_first_ids_, "failed to download CUDA external cell IDs");
+    copy_to_host(constraint_ids, contact_second_ids_,
+                 "failed to download CUDA external constraint IDs");
+    copy_to_host(cell_slots, contact_first_slots_, "failed to download CUDA external cell slots");
+    copy_to_host(constraint_kinds, contact_second_slots_,
+                 "failed to download CUDA external constraint kinds");
+    copy_to_host(endpoints, contact_ordinals_, "failed to download CUDA external endpoints");
+    copy_to_host(points, contact_points_, "failed to download CUDA external contact points");
+    copy_to_host(normals, contact_normals_, "failed to download CUDA external contact normals");
+    copy_to_host(separations, contact_separations_,
+                 "failed to download CUDA external contact separations");
+    copy_to_host(weights, contact_weights_, "failed to download CUDA external contact weights");
+    check_cuda(cudaStreamSynchronize(stream_), "CUDA external contact fill or download failed");
+
+    std::vector<ExternalContact> contacts;
+    contacts.reserve(contact_count);
+    for (std::uint32_t index = 0; index < contact_count; ++index) {
+      if (constraint_kinds[index] > static_cast<std::uint32_t>(ExternalConstraintKind::sphere) ||
+          endpoints[index] > static_cast<std::uint32_t>(RodEndpoint::positive)) {
+        throw std::runtime_error("CUDA external-contact kernel produced an invalid tag");
+      }
+      contacts.push_back({
+          .cell_id = cell_ids[index],
+          .cell_slot = cell_slots[index],
+          .constraint_id = constraint_ids[index],
+          .constraint_kind = static_cast<ExternalConstraintKind>(constraint_kinds[index]),
+          .endpoint = static_cast<RodEndpoint>(endpoints[index]),
+          .point_on_cell = {points[index].x, points[index].y, points[index].z},
+          .normal = {normals[index].x, normals[index].y, normals[index].z},
+          .signed_separation = separations[index],
+          .weight = weights[index],
+      });
+    }
+    std::ranges::sort(contacts, {}, [](const ExternalContact& contact) {
+      return std::tuple{contact.cell_id, contact.constraint_id, contact.endpoint};
+    });
+    return ExternalContactGraph(cell_count, std::move(contacts));
+  }
+
   static void validate_mechanics_contacts(const CellGeometryView& geometry,
                                           const ContactGraph& contacts) {
     for (const auto& contact : contacts.contacts()) {
@@ -437,6 +594,17 @@ class CudaBackend final : public ComputeBackend {
       const auto second = static_cast<std::size_t>(contact.second_slot);
       if (geometry.ids[first] != contact.first_id || geometry.ids[second] != contact.second_id) {
         throw std::invalid_argument("contact graph identifiers do not match current state slots");
+      }
+    }
+  }
+
+  static void validate_external_mechanics_contacts(const CellGeometryView& geometry,
+                                                   const ExternalContactGraph& contacts) {
+    for (const auto& contact : contacts.contacts()) {
+      const auto cell = static_cast<std::size_t>(contact.cell_slot);
+      if (geometry.ids[cell] != contact.cell_id) {
+        throw std::invalid_argument(
+            "external contact graph identifiers do not match current state slots");
       }
     }
   }
@@ -470,13 +638,15 @@ class CudaBackend final : public ComputeBackend {
     mechanics_incidence_indices_.reserve(contact_count * 2, "mechanics incidence indices");
   }
 
-  void upload_mechanics_contacts(const ContactGraph& contacts) {
-    std::vector<std::uint32_t> first_slots(contacts.size());
-    std::vector<std::uint32_t> second_slots(contacts.size());
-    std::vector<float4> points(contacts.size());
-    std::vector<float4> normals(contacts.size());
-    std::vector<float> separations(contacts.size());
-    std::vector<float> weights(contacts.size());
+  void upload_mechanics_contacts(const ContactGraph& contacts,
+                                 const ExternalContactGraph& external_contacts) {
+    const auto row_count = contacts.size() + external_contacts.size();
+    std::vector<std::uint32_t> first_slots(row_count);
+    std::vector<std::uint32_t> second_slots(row_count);
+    std::vector<float4> points(row_count);
+    std::vector<float4> normals(row_count);
+    std::vector<float> separations(row_count);
+    std::vector<float> weights(row_count);
     for (std::size_t index = 0; index < contacts.size(); ++index) {
       const auto& contact = contacts.contacts()[index];
       first_slots[index] = contact.first_slot;
@@ -486,6 +656,18 @@ class CudaBackend final : public ComputeBackend {
       normals[index] = make_float4(contact.normal.x, contact.normal.y, contact.normal.z, 0.0F);
       separations[index] = contact.signed_separation;
       weights[index] = contact.weight;
+    }
+    for (std::size_t index = 0; index < external_contacts.size(); ++index) {
+      const auto output_index = contacts.size() + index;
+      const auto& contact = external_contacts.contacts()[index];
+      first_slots[output_index] = contact.cell_slot;
+      second_slots[output_index] = invalid_slot;
+      points[output_index] = make_float4(contact.point_on_cell.x, contact.point_on_cell.y,
+                                         contact.point_on_cell.z, 0.0F);
+      normals[output_index] =
+          make_float4(contact.normal.x, contact.normal.y, contact.normal.z, 0.0F);
+      separations[output_index] = contact.signed_separation;
+      weights[output_index] = contact.weight;
     }
     copy_to_device(contact_first_slots_, first_slots,
                    "failed to upload CUDA mechanics first slots");
@@ -498,18 +680,23 @@ class CudaBackend final : public ComputeBackend {
     copy_to_device(contact_weights_, weights, "failed to upload CUDA mechanics contact weights");
   }
 
-  void upload_mechanics_incidence(const ContactGraph& contacts) {
+  void upload_mechanics_incidence(const ContactGraph& contacts,
+                                  const ExternalContactGraph& external_contacts) {
     std::vector<std::uint32_t> offsets(contacts.cell_count() + 1);
-    std::vector<std::uint32_t> indices(contacts.size() * 2);
+    std::vector<std::uint32_t> indices(contacts.size() * 2 + external_contacts.size());
     std::uint32_t cursor = 0;
     for (std::size_t slot = 0; slot < contacts.cell_count(); ++slot) {
       offsets[slot] = cursor;
       for (const auto contact_index : contacts.incident_contact_indices(static_cast<Slot>(slot))) {
         indices[cursor++] = static_cast<std::uint32_t>(contact_index);
       }
+      for (const auto contact_index :
+           external_contacts.incident_contact_indices(static_cast<Slot>(slot))) {
+        indices[cursor++] = static_cast<std::uint32_t>(contacts.size() + contact_index);
+      }
     }
     offsets[contacts.cell_count()] = cursor;
-    if (cursor != contacts.size() * 2) {
+    if (cursor != contacts.size() * 2 + external_contacts.size()) {
       throw std::logic_error("contact incidence size is inconsistent");
     }
     copy_to_device(mechanics_incidence_offsets_, offsets,
@@ -658,6 +845,7 @@ class CudaBackend final : public ComputeBackend {
   CudaBuffer<float4> contact_centers_;
   CudaBuffer<float4> contact_axes_;
   CudaBuffer<float4> contact_geometry_;
+  CudaBuffer<cuda::ExternalConstraintGpu> external_constraints_;
 
   CudaBuffer<std::uint32_t> contact_counts_;
   CudaBuffer<std::uint32_t> contact_scan_a_;

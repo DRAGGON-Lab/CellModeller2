@@ -87,14 +87,18 @@ __global__ void build_mechanics_rows(const float4* centers, const float4* axes,
   const auto point = make_float3(points[index].x, points[index].y, points[index].z);
   const auto normal = make_float3(normals[index].x, normals[index].y, normals[index].z);
   const auto first_center = make_float3(centers[first].x, centers[first].y, centers[first].z);
-  const auto second_center = make_float3(centers[second].x, centers[second].y, centers[second].z);
   const auto first_axis = make_float3(axes[first].x, axes[first].y, axes[first].z);
-  const auto second_axis = make_float3(axes[second].x, axes[second].y, axes[second].z);
   const auto weight = weights[index];
   first_rows[index] = contact_jacobian(normal, subtract(point, first_center), first_axis,
                                        geometry[first].x + 2.0F * geometry[first].y, weight);
-  second_rows[index] = contact_jacobian(normal, subtract(point, second_center), second_axis,
-                                        geometry[second].x + 2.0F * geometry[second].y, weight);
+  if (second == 0xffffffffU) {
+    second_rows[index] = zero_dofs();
+  } else {
+    const auto second_center = make_float3(centers[second].x, centers[second].y, centers[second].z);
+    const auto second_axis = make_float3(axes[second].x, axes[second].y, axes[second].z);
+    second_rows[index] = contact_jacobian(normal, subtract(point, second_center), second_axis,
+                                          geometry[second].x + 2.0F * geometry[second].y, weight);
+  }
   right_hand_side[index] = weight * separations[index];
 }
 
@@ -107,8 +111,11 @@ __global__ void apply_mechanics_b(const MechanicsDofsGpu* first_rows,
   if (index >= contact_count) {
     return;
   }
-  row_values[index] = dof_dot(first_rows[index], input[first_slots[index]]) -
-                      dof_dot(second_rows[index], input[second_slots[index]]);
+  const auto second = second_slots[index];
+  row_values[index] = dof_dot(first_rows[index], input[first_slots[index]]);
+  if (second != 0xffffffffU) {
+    row_values[index] -= dof_dot(second_rows[index], input[second]);
+  }
 }
 
 __global__ void apply_mechanics_transpose(const MechanicsDofsGpu* first_rows,

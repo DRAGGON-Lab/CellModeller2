@@ -12,6 +12,21 @@ struct ContactParametersGpu {
   float degeneracy_epsilon;
 };
 
+struct alignas(16) ExternalConstraintGpu {
+  std::uint64_t id;
+  std::uint32_t kind;
+  std::uint32_t allowed_region;
+  float4 geometry;
+  float4 parameters;
+};
+
+static_assert(sizeof(ExternalConstraintGpu) == 48);
+
+struct ConstraintContactParametersGpu {
+  float activation_margin;
+  float degeneracy_epsilon;
+};
+
 void launch_contact_count(const std::uint64_t* ids, const float4* centers, const float4* axes,
                           const float4* geometry, std::uint32_t* counts,
                           ContactParametersGpu parameters, std::uint32_t cell_count,
@@ -29,5 +44,21 @@ void launch_contact_fill(const std::uint64_t* ids, const float4* centers, const 
                          float4* points_on_first, float4* normals, float* separations,
                          float* weights, ContactParametersGpu parameters, std::uint32_t cell_count,
                          cudaStream_t stream);
+
+void launch_external_contact_count(const std::uint64_t* ids, const float4* centers,
+                                   const float4* axes, const float4* geometry,
+                                   const ExternalConstraintGpu* constraints, std::uint32_t* counts,
+                                   ConstraintContactParametersGpu parameters,
+                                   std::uint32_t cell_count, std::uint32_t constraint_count,
+                                   cudaStream_t stream);
+
+void launch_external_contact_fill(
+    const std::uint64_t* ids, const float4* centers, const float4* axes, const float4* geometry,
+    const ExternalConstraintGpu* constraints, const std::uint32_t* counts,
+    const std::uint32_t* inclusive_counts, std::uint64_t* cell_ids, std::uint64_t* constraint_ids,
+    std::uint32_t* cell_slots, std::uint32_t* constraint_kinds, std::uint32_t* endpoints,
+    float4* points_on_cell, float4* normals, float* separations, float* weights,
+    ConstraintContactParametersGpu parameters, std::uint32_t cell_count,
+    std::uint32_t constraint_count, cudaStream_t stream);
 
 }  // namespace cm2::cuda

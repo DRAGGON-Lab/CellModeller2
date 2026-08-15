@@ -61,5 +61,5 @@ The external-constraint scenario compares correction vectors and integrated
 cell geometry with the CPU reference for plane, outside-sphere, and
 inside-sphere boundaries. It uses the mechanics tolerances above and requires
 an available backend without external-constraint support to reject a nonempty
-constraint set explicitly. This lets the same executable become the native
-Metal and CUDA acceptance gate as those implementations are added.
+constraint set explicitly. The same executable is the native Metal and CUDA
+hardware acceptance gate.

@@ -27,6 +27,14 @@ struct PairPoints {
   std::uint32_t count;
 };
 
+struct ExternalEvaluation {
+  float3 centerline_points[2];
+  float3 normals[2];
+  float separations[2];
+  bool active[2];
+  std::uint32_t active_count;
+};
+
 __device__ float3 add(float3 left, float3 right) {
   return make_float3(left.x + right.x, left.y + right.y, left.z + right.z);
 }
@@ -207,6 +215,45 @@ __device__ float3 deterministic_normal(const Capsule& first, const Capsule& seco
   return normalized_vector(cross_product(first.axis, basis));
 }
 
+__device__ ExternalEvaluation
+evaluate_external_constraint(const Capsule& cell, const ExternalConstraintGpu& constraint,
+                             ConstraintContactParametersGpu contact_parameters) {
+  ExternalEvaluation result{};
+  const auto half_length = cell.length * 0.5F;
+  result.centerline_points[0] = subtract(cell.center, multiply(cell.axis, half_length));
+  result.centerline_points[1] = add(cell.center, multiply(cell.axis, half_length));
+  for (std::uint32_t endpoint = 0; endpoint < 2; ++endpoint) {
+    const auto point = result.centerline_points[endpoint];
+    if (constraint.kind == 0) {
+      const auto inward_normal =
+          make_float3(constraint.parameters.x, constraint.parameters.y, constraint.parameters.z);
+      const auto plane_point =
+          make_float3(constraint.geometry.x, constraint.geometry.y, constraint.geometry.z);
+      result.separations[endpoint] =
+          dot_product(subtract(point, plane_point), inward_normal) - cell.radius;
+      result.normals[endpoint] = multiply(inward_normal, -1.0F);
+    } else {
+      const auto sphere_center =
+          make_float3(constraint.geometry.x, constraint.geometry.y, constraint.geometry.z);
+      const auto center_delta = subtract(point, sphere_center);
+      const auto distance = magnitude(center_delta);
+      const auto radial = distance > contact_parameters.degeneracy_epsilon
+                              ? multiply(center_delta, 1.0F / distance)
+                              : make_float3(1.0F, 0.0F, 0.0F);
+      if (constraint.allowed_region == 0) {
+        result.separations[endpoint] = distance - constraint.geometry.w - cell.radius;
+        result.normals[endpoint] = multiply(radial, -1.0F);
+      } else {
+        result.separations[endpoint] = constraint.geometry.w - distance - cell.radius;
+        result.normals[endpoint] = radial;
+      }
+    }
+    result.active[endpoint] = result.separations[endpoint] < contact_parameters.activation_margin;
+    result.active_count += result.active[endpoint] ? 1U : 0U;
+  }
+  return result;
+}
+
 __global__ void count_cell_contacts(const std::uint64_t* ids, const float4* centers,
                                     const float4* axes, const float4* geometry,
                                     std::uint32_t* counts, ContactParametersGpu parameters,
@@ -295,6 +342,68 @@ __global__ void fill_cell_contacts(
   }
 }
 
+__global__ void count_external_contacts(const std::uint64_t* ids, const float4* centers,
+                                        const float4* axes, const float4* geometry,
+                                        const ExternalConstraintGpu* constraints,
+                                        std::uint32_t* counts,
+                                        ConstraintContactParametersGpu parameters,
+                                        std::uint32_t cell_count, std::uint32_t constraint_count) {
+  const auto constraint_index = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto cell_slot = blockIdx.y * blockDim.y + threadIdx.y;
+  if (cell_slot >= cell_count || constraint_index >= constraint_count) {
+    return;
+  }
+  const auto pair_index = cell_slot * constraint_count + constraint_index;
+  const auto cell = load_capsule(ids, centers, axes, geometry, cell_slot);
+  counts[pair_index] =
+      evaluate_external_constraint(cell, constraints[constraint_index], parameters).active_count;
+}
+
+__global__ void fill_external_contacts(
+    const std::uint64_t* ids, const float4* centers, const float4* axes, const float4* geometry,
+    const ExternalConstraintGpu* constraints, const std::uint32_t* counts,
+    const std::uint32_t* inclusive_counts, std::uint64_t* cell_ids, std::uint64_t* constraint_ids,
+    std::uint32_t* cell_slots, std::uint32_t* constraint_kinds, std::uint32_t* endpoints,
+    float4* points_on_cell, float4* normals, float* separations, float* weights,
+    ConstraintContactParametersGpu parameters, std::uint32_t cell_count,
+    std::uint32_t constraint_count) {
+  const auto constraint_index = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto cell_slot = blockIdx.y * blockDim.y + threadIdx.y;
+  if (cell_slot >= cell_count || constraint_index >= constraint_count) {
+    return;
+  }
+  const auto pair_index = cell_slot * constraint_count + constraint_index;
+  const auto pair_contact_count = counts[pair_index];
+  if (pair_contact_count == 0) {
+    return;
+  }
+
+  const auto cell = load_capsule(ids, centers, axes, geometry, cell_slot);
+  const auto constraint = constraints[constraint_index];
+  const auto evaluation = evaluate_external_constraint(cell, constraint, parameters);
+  const auto weight =
+      constraint.parameters.w * (evaluation.active_count == 2 ? inverse_sqrt_two : 1.0F);
+  auto output_index = inclusive_counts[pair_index] - pair_contact_count;
+  for (std::uint32_t endpoint = 0; endpoint < 2; ++endpoint) {
+    if (!evaluation.active[endpoint]) {
+      continue;
+    }
+    const auto point = add(evaluation.centerline_points[endpoint],
+                           multiply(evaluation.normals[endpoint], cell.radius));
+    const auto normal = evaluation.normals[endpoint];
+    cell_ids[output_index] = cell.id;
+    constraint_ids[output_index] = constraint.id;
+    cell_slots[output_index] = cell.slot;
+    constraint_kinds[output_index] = constraint.kind;
+    endpoints[output_index] = endpoint;
+    points_on_cell[output_index] = make_float4(point.x, point.y, point.z, 0.0F);
+    normals[output_index] = make_float4(normal.x, normal.y, normal.z, 0.0F);
+    separations[output_index] = evaluation.separations[endpoint];
+    weights[output_index] = weight;
+    ++output_index;
+  }
+}
+
 }  // namespace
 
 void launch_contact_count(const std::uint64_t* ids, const float4* centers, const float4* axes,
@@ -331,6 +440,36 @@ void launch_contact_fill(const std::uint64_t* ids, const float4* centers, const 
       ids, centers, axes, geometry, counts, inclusive_counts, first_ids, second_ids, first_slots,
       second_slots, ordinals, points_on_first, normals, separations, weights, parameters,
       cell_count);
+}
+
+void launch_external_contact_count(const std::uint64_t* ids, const float4* centers,
+                                   const float4* axes, const float4* geometry,
+                                   const ExternalConstraintGpu* constraints, std::uint32_t* counts,
+                                   ConstraintContactParametersGpu parameters,
+                                   std::uint32_t cell_count, std::uint32_t constraint_count,
+                                   cudaStream_t stream) {
+  constexpr dim3 threads(16, 16);
+  const dim3 blocks((constraint_count + threads.x - 1) / threads.x,
+                    (cell_count + threads.y - 1) / threads.y);
+  count_external_contacts<<<blocks, threads, 0, stream>>>(
+      ids, centers, axes, geometry, constraints, counts, parameters, cell_count, constraint_count);
+}
+
+void launch_external_contact_fill(
+    const std::uint64_t* ids, const float4* centers, const float4* axes, const float4* geometry,
+    const ExternalConstraintGpu* constraints, const std::uint32_t* counts,
+    const std::uint32_t* inclusive_counts, std::uint64_t* cell_ids, std::uint64_t* constraint_ids,
+    std::uint32_t* cell_slots, std::uint32_t* constraint_kinds, std::uint32_t* endpoints,
+    float4* points_on_cell, float4* normals, float* separations, float* weights,
+    ConstraintContactParametersGpu parameters, std::uint32_t cell_count,
+    std::uint32_t constraint_count, cudaStream_t stream) {
+  constexpr dim3 threads(16, 16);
+  const dim3 blocks((constraint_count + threads.x - 1) / threads.x,
+                    (cell_count + threads.y - 1) / threads.y);
+  fill_external_contacts<<<blocks, threads, 0, stream>>>(
+      ids, centers, axes, geometry, constraints, counts, inclusive_counts, cell_ids, constraint_ids,
+      cell_slots, constraint_kinds, endpoints, points_on_cell, normals, separations, weights,
+      parameters, cell_count, constraint_count);
 }
 
 }  // namespace cm2::cuda

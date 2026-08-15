@@ -95,12 +95,12 @@ rows. A simulation with constraints must execute both geometry and mechanics
 on a backend that advertises external-constraint support; unsupported native
 backends fail explicitly instead of dropping the boundary rows.
 
-The Metal implementation uploads stable-ID-sorted tagged constraints and runs
-a native MSL count/scan/fill pipeline over cell-constraint pairs. Each pair
+The Metal and CUDA implementations upload stable-ID-sorted tagged constraints
+and run native count/scan/fill pipelines over cell-constraint pairs. Each pair
 emits zero, one, or two endpoint rows into dynamic storage. Pair and external
 rows are then combined in the native solver buffers; a reserved invalid second
-slot marks the one-sided row inside the Metal operator without reintroducing a
-sentinel into the public contact model.
+slot marks the one-sided row inside each private operator without reintroducing
+a sentinel into the public contact model.
 
 CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal

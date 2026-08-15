@@ -18,8 +18,8 @@ The initial slice establishes:
 - structure-of-arrays state owned by the engine;
 - deterministic growth and division semantics;
 - CPU capsule contacts and native Metal/CUDA contact implementations;
-- typed CPU and native Metal plane and inside/outside sphere constraints;
-- matrix-free CPU and native Metal rod-mechanics solvers with diagnostics;
+- typed CPU and native Metal/CUDA plane and inside/outside sphere constraints;
+- matrix-free CPU and native Metal/CUDA rod-mechanics solvers with diagnostics;
 - a C++ CPU reference backend;
 - a small Python API backed by nanobind;
 - C++ and Python conformance tests;
@@ -36,10 +36,12 @@ implementation, but both its contact and mechanics conformance still require
 execution on NVIDIA hardware. `relax_cell_mechanics` applies a converged result
 through the shared bounded-rotation and non-shortening integration contract.
 Both GPU contact paths use an exhaustive correctness stage while the scalable
-broad phase is under construction. Plane and sphere constraints are conformant
-on CPU and native Metal, where their rows participate in the same matrix-free
-mechanics solve and relaxation path as cell-cell contacts. The native CUDA
-constraint implementation is the next compatibility slice.
+broad phase is under construction. Plane and sphere constraints have native
+Metal and CUDA geometry and mechanics paths, where their rows participate in
+the same matrix-free solve and relaxation path as cell-cell contacts. Metal is
+conformant on Apple GPU hardware; the CUDA implementation compiles against the
+12.8 toolkit but still requires execution of the shared fixtures on NVIDIA
+hardware.
 
 ## Build the C++ reference tests
 
