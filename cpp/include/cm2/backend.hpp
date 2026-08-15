@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "cm2/constraints.hpp"
 #include "cm2/contact_graph.hpp"
 #include "cm2/mechanics.hpp"
 #include "cm2/types.hpp"
@@ -18,6 +19,9 @@ class ComputeBackend {
   virtual void advance_growth(WorldState& state, float dt) = 0;
   [[nodiscard]] virtual ContactGraph find_cell_contacts(const WorldState& state,
                                                         const ContactParameters& parameters) = 0;
+  [[nodiscard]] virtual ExternalContactGraph find_external_contacts(
+      const WorldState& state, const ConstraintSet& constraints,
+      const ConstraintContactParameters& parameters) = 0;
   [[nodiscard]] virtual MechanicsSolveResult solve_cell_mechanics(
       const WorldState& state, const ContactGraph& contacts,
       const MechanicsParameters& parameters) = 0;

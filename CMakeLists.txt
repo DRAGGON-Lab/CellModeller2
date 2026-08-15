@@ -19,11 +19,13 @@ option(CM2_ENABLE_METAL "Build the native Apple Metal backend" ${CM2_METAL_DEFAU
 
 add_library(cm2_core STATIC
   cpp/core/contact_graph.cpp
+  cpp/core/constraints.cpp
   cpp/core/mechanics_integration.cpp
   cpp/core/world_state.cpp
   cpp/core/simulation.cpp
   cpp/cpu/cpu_backend.cpp
   cpp/cpu/cpu_contacts.cpp
+  cpp/cpu/cpu_constraints.cpp
   cpp/cpu/cpu_mechanics.cpp
 )
 add_library(cm2::core ALIAS cm2_core)
@@ -147,6 +149,10 @@ if(CM2_BUILD_TESTS)
   add_executable(cm2_contact_geometry_test tests/cpp/contact_geometry_test.cpp)
   target_link_libraries(cm2_contact_geometry_test PRIVATE cm2::core)
   add_test(NAME contact_geometry COMMAND cm2_contact_geometry_test)
+
+  add_executable(cm2_constraint_geometry_test tests/cpp/constraint_geometry_test.cpp)
+  target_link_libraries(cm2_constraint_geometry_test PRIVATE cm2::core)
+  add_test(NAME constraint_geometry COMMAND cm2_constraint_geometry_test)
 
   add_executable(cm2_mechanics_operator_test tests/cpp/mechanics_operator_test.cpp)
   target_link_libraries(cm2_mechanics_operator_test PRIVATE cm2::core)

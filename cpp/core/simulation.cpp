@@ -60,6 +60,14 @@ std::size_t Simulation::cell_count() const noexcept { return state_.size(); }
 
 CellId Simulation::add_cell(const CellInit& cell) { return state_.add_cell(cell); }
 
+ConstraintId Simulation::add_plane_constraint(const PlaneConstraintInit& plane) {
+  return constraints_.add_plane(plane);
+}
+
+ConstraintId Simulation::add_sphere_constraint(const SphereConstraintInit& sphere) {
+  return constraints_.add_sphere(sphere);
+}
+
 std::pair<CellId, CellId> Simulation::divide_equal(CellId parent_id) {
   return state_.divide_equal(parent_id);
 }
@@ -74,6 +82,14 @@ void Simulation::step(float dt) {
 
 ContactGraph Simulation::find_cell_contacts(const ContactParameters& parameters) {
   return backend_->find_cell_contacts(state_, parameters);
+}
+
+ExternalContactGraph Simulation::find_external_contacts(
+    const ConstraintContactParameters& parameters) {
+  if (!backend_->supports(BackendFeature::external_constraints)) {
+    throw std::runtime_error("selected backend does not implement external constraints");
+  }
+  return backend_->find_external_contacts(state_, constraints_, parameters);
 }
 
 MechanicsSolveResult Simulation::solve_cell_mechanics(

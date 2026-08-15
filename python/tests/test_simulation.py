@@ -7,9 +7,13 @@ from cellmodeller2 import (
     BackendFeature,
     BackendKind,
     CellInit,
+    ConstraintContactParameters,
     ContactParameters,
+    ExternalConstraintKind,
     MechanicsIntegrationParameters,
     MechanicsParameters,
+    PlaneConstraintInit,
+    RodEndpoint,
     Simulation,
     SolverBreakdown,
     SolverStatus,
@@ -85,8 +89,7 @@ def test_contact_graph_is_available_through_the_public_api(backend: BackendKind)
     assert graph.incident_contact_indices(0) == [0, 1]
     assert [contact.ordinal for contact in graph.contacts] == [0, 1]
     assert all(
-        math.isclose(contact.signed_separation, -0.2, abs_tol=1.0e-6)
-        for contact in graph.contacts
+        math.isclose(contact.signed_separation, -0.2, abs_tol=1.0e-6) for contact in graph.contacts
     )
 
 
@@ -111,6 +114,45 @@ def test_cpu_mechanics_reports_convergence() -> None:
     assert len(result.corrections) == 2
     assert result.corrections[0].translation.y < 0.0
     assert result.corrections[1].translation.y > 0.0
+
+
+def test_cpu_plane_constraint_graph_is_typed_and_incident() -> None:
+    simulation = Simulation()
+    cell = CellInit()
+    cell.position = Vec3(0.0, 0.25, 0.0)
+    cell.length = 2.0
+    cell.radius = 0.5
+    cell_id = simulation.add_cell(cell)
+
+    plane = PlaneConstraintInit()
+    plane.point = Vec3(0.0, 0.0, 0.0)
+    plane.inward_normal = Vec3(0.0, 2.0, 0.0)
+    plane.coefficient = 3.0
+    constraint_id = simulation.add_plane_constraint(plane)
+
+    parameters = ConstraintContactParameters()
+    graph = simulation.find_external_contacts(parameters)
+
+    assert simulation.supports(BackendFeature.EXTERNAL_CONSTRAINTS)
+    assert graph.cell_count == 1
+    assert len(graph) == 2
+    assert graph.incident_contact_indices(0) == [0, 1]
+    assert all(contact.cell_id == cell_id for contact in graph.contacts)
+    assert all(contact.constraint_id == constraint_id for contact in graph.contacts)
+    assert all(
+        contact.constraint_kind == ExternalConstraintKind.PLANE for contact in graph.contacts
+    )
+    assert [contact.endpoint for contact in graph.contacts] == [
+        RodEndpoint.NEGATIVE,
+        RodEndpoint.POSITIVE,
+    ]
+    assert all(math.isclose(contact.signed_separation, -0.25) for contact in graph.contacts)
+    assert all(math.isclose(contact.normal.y, -1.0) for contact in graph.contacts)
+    assert all(math.isclose(contact.point_on_cell.y, -0.25) for contact in graph.contacts)
+    assert all(
+        math.isclose(contact.weight, 3.0 / math.sqrt(2.0), rel_tol=1.0e-6)
+        for contact in graph.contacts
+    )
 
 
 def test_cpu_mechanics_relaxation_updates_geometry() -> None:

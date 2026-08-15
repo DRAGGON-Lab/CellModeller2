@@ -59,6 +59,12 @@ where each contact arm is measured from the cell center. Plane and sphere rows
 have only the cell-side entry and multiply `w_k` by their configured
 coefficient.
 
+The legacy external-contact record stores a centerline endpoint even though
+the mechanics row is a surface-contact constraint. CellModeller2 records the
+corresponding capsule surface point and represents plane, outside-sphere, and
+inside-sphere orientation explicitly. These choices remove an ambiguous legacy
+comment and the need to infer constraint type from a negative integer.
+
 The implementation solves the regularized normal equations
 
 ```text

@@ -20,10 +20,14 @@ class Simulation {
   [[nodiscard]] std::size_t cell_count() const noexcept;
 
   CellId add_cell(const CellInit& cell);
+  ConstraintId add_plane_constraint(const PlaneConstraintInit& plane);
+  ConstraintId add_sphere_constraint(const SphereConstraintInit& sphere);
   std::pair<CellId, CellId> divide_equal(CellId parent_id);
   void step(float dt);
   [[nodiscard]] ContactGraph find_cell_contacts(
       const ContactParameters& parameters = ContactParameters{});
+  [[nodiscard]] ExternalContactGraph find_external_contacts(
+      const ConstraintContactParameters& parameters = ConstraintContactParameters{});
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
       const MechanicsParameters& mechanics_parameters = MechanicsParameters{},
       const ContactParameters& contact_parameters = ContactParameters{});
@@ -40,6 +44,7 @@ class Simulation {
 
  private:
   WorldState state_;
+  ConstraintSet constraints_;
   std::unique_ptr<ComputeBackend> backend_;
   double time_{0.0};
 };

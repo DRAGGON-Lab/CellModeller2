@@ -72,6 +72,23 @@ directly shorten a cell. All updates are validated before any world-state array
 is mutated. `Simulation.step` remains the growth-only primitive;
 `relax_cell_mechanics` is the explicit contact-relaxation operation.
 
+Planes and spheres are stored in a simulation-owned constraint set with stable
+IDs shared across constraint kinds. A plane declares a point and a normalized
+inward normal; its permitted half-space lies in the inward direction. A sphere
+explicitly declares whether cells are permitted inside or outside. Constraint
+contact generation examines both capsule centerline endpoints and emits a
+typed row when its signed surface separation is below the activation margin.
+Negative separation means penetration in every case.
+
+An external contact normal points from the permitted region toward the
+constraint boundary: opposite a plane's inward normal, toward the center of an
+outside sphere, and away from the center of an inside sphere. `point_on_cell`
+is the capsule surface point reached from the centerline endpoint along that
+normal, not the endpoint itself. When both rod endpoints are active, each row
+has weight `coefficient / sqrt(2)`; otherwise the single row has the full
+coefficient. A sphere-center degeneracy uses the positive x-axis as its
+deterministic radial direction before applying the inside/outside orientation.
+
 CPU, Metal, and CUDA own separate implementations. They share contact fixtures,
 operator probes, tolerances, and exact endpoint invariants. Metal uses Metal
 compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
@@ -83,7 +100,8 @@ compute pipelines and MSL; CUDA uses CUDA C++ and the CUDA Runtime API.
 3. Native Metal and CUDA count/scan/fill pipelines.
 4. CPU matrix-free operator and diagnosed conjugate-gradient solver.
 5. Native Metal and CUDA operator, reductions, and solver loops.
-6. Typed plane and sphere constraints.
+6. Typed plane and sphere constraint geometry.
+7. External-constraint mechanics rows and native Metal/CUDA conformance.
 
 This order isolates geometry disagreements before solver behavior can hide
 them. A feature ledger entry advances only when the corresponding shared

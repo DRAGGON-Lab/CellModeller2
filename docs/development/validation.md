@@ -16,6 +16,12 @@ runs the same fixture against each backend compiled into that build. Its exact
 state checks and numerical tolerances are recorded beside the test in
 `tests/conformance/README.md`.
 
+External constraint geometry begins with focused CPU fixtures covering plane
+normal normalization, one- and two-endpoint weighting, inside/outside sphere
+orientation, stable typed IDs, and deterministic sphere-center degeneracy.
+These fixtures become shared backend conformance tests when the native Metal
+and CUDA geometry pipelines are added.
+
 A CUDA toolkit-only build proves source and link compatibility, not backend
 conformance. CUDA rows advance only after the shared executable runs on an
 NVIDIA device. `backend_available` reports runtime device availability, while

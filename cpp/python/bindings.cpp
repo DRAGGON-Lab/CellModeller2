@@ -22,7 +22,20 @@ NB_MODULE(_core, module) {
   nb::enum_<cm2::BackendFeature>(module, "BackendFeature")
       .value("GROWTH", cm2::BackendFeature::growth)
       .value("CELL_CONTACTS", cm2::BackendFeature::cell_contacts)
-      .value("CELL_MECHANICS", cm2::BackendFeature::cell_mechanics);
+      .value("CELL_MECHANICS", cm2::BackendFeature::cell_mechanics)
+      .value("EXTERNAL_CONSTRAINTS", cm2::BackendFeature::external_constraints);
+
+  nb::enum_<cm2::SphereRegion>(module, "SphereRegion")
+      .value("OUTSIDE", cm2::SphereRegion::outside)
+      .value("INSIDE", cm2::SphereRegion::inside);
+
+  nb::enum_<cm2::ExternalConstraintKind>(module, "ExternalConstraintKind")
+      .value("PLANE", cm2::ExternalConstraintKind::plane)
+      .value("SPHERE", cm2::ExternalConstraintKind::sphere);
+
+  nb::enum_<cm2::RodEndpoint>(module, "RodEndpoint")
+      .value("NEGATIVE", cm2::RodEndpoint::negative)
+      .value("POSITIVE", cm2::RodEndpoint::positive);
 
   nb::enum_<cm2::SolverStatus>(module, "SolverStatus")
       .value("CONVERGED", cm2::SolverStatus::converged)
@@ -100,6 +113,52 @@ NB_MODULE(_core, module) {
           },
           "slot"_a);
 
+  nb::class_<cm2::PlaneConstraintInit>(module, "PlaneConstraintInit")
+      .def(nb::init<>())
+      .def_rw("point", &cm2::PlaneConstraintInit::point)
+      .def_rw("inward_normal", &cm2::PlaneConstraintInit::inward_normal)
+      .def_rw("coefficient", &cm2::PlaneConstraintInit::coefficient);
+
+  nb::class_<cm2::SphereConstraintInit>(module, "SphereConstraintInit")
+      .def(nb::init<>())
+      .def_rw("center", &cm2::SphereConstraintInit::center)
+      .def_rw("radius", &cm2::SphereConstraintInit::radius)
+      .def_rw("coefficient", &cm2::SphereConstraintInit::coefficient)
+      .def_rw("allowed_region", &cm2::SphereConstraintInit::allowed_region);
+
+  nb::class_<cm2::ConstraintContactParameters>(module, "ConstraintContactParameters")
+      .def(nb::init<>())
+      .def_rw("activation_margin", &cm2::ConstraintContactParameters::activation_margin)
+      .def_rw("degeneracy_epsilon", &cm2::ConstraintContactParameters::degeneracy_epsilon);
+
+  nb::class_<cm2::ExternalContact>(module, "ExternalContact")
+      .def_ro("cell_id", &cm2::ExternalContact::cell_id)
+      .def_ro("cell_slot", &cm2::ExternalContact::cell_slot)
+      .def_ro("constraint_id", &cm2::ExternalContact::constraint_id)
+      .def_ro("constraint_kind", &cm2::ExternalContact::constraint_kind)
+      .def_ro("endpoint", &cm2::ExternalContact::endpoint)
+      .def_ro("point_on_cell", &cm2::ExternalContact::point_on_cell)
+      .def_ro("normal", &cm2::ExternalContact::normal)
+      .def_ro("signed_separation", &cm2::ExternalContact::signed_separation)
+      .def_ro("weight", &cm2::ExternalContact::weight);
+
+  nb::class_<cm2::ExternalContactGraph>(module, "ExternalContactGraph")
+      .def_prop_ro("cell_count", &cm2::ExternalContactGraph::cell_count)
+      .def_prop_ro("empty", &cm2::ExternalContactGraph::empty)
+      .def_prop_ro("contacts",
+                   [](const cm2::ExternalContactGraph& graph) {
+                     return std::vector<cm2::ExternalContact>(graph.contacts().begin(),
+                                                              graph.contacts().end());
+                   })
+      .def("__len__", &cm2::ExternalContactGraph::size)
+      .def(
+          "incident_contact_indices",
+          [](const cm2::ExternalContactGraph& graph, cm2::Slot slot) {
+            const auto indices = graph.incident_contact_indices(slot);
+            return std::vector<std::size_t>(indices.begin(), indices.end());
+          },
+          "slot"_a);
+
   nb::class_<cm2::CellCorrection>(module, "CellCorrection")
       .def_ro("translation", &cm2::CellCorrection::translation)
       .def_ro("rotation", &cm2::CellCorrection::rotation)
@@ -136,10 +195,14 @@ NB_MODULE(_core, module) {
       .def_prop_ro("time", &cm2::Simulation::time)
       .def_prop_ro("cell_count", &cm2::Simulation::cell_count)
       .def("add_cell", &cm2::Simulation::add_cell, "cell"_a)
+      .def("add_plane_constraint", &cm2::Simulation::add_plane_constraint, "plane"_a)
+      .def("add_sphere_constraint", &cm2::Simulation::add_sphere_constraint, "sphere"_a)
       .def("divide_equal", &cm2::Simulation::divide_equal, "parent_id"_a)
       .def("step", &cm2::Simulation::step, "dt"_a)
       .def("find_cell_contacts", &cm2::Simulation::find_cell_contacts,
            "parameters"_a = cm2::ContactParameters{})
+      .def("find_external_contacts", &cm2::Simulation::find_external_contacts,
+           "parameters"_a = cm2::ConstraintContactParameters{})
       .def("solve_cell_mechanics", &cm2::Simulation::solve_cell_mechanics,
            "mechanics_parameters"_a = cm2::MechanicsParameters{},
            "contact_parameters"_a = cm2::ContactParameters{})

@@ -1,0 +1,148 @@
+#include "cm2/constraints.hpp"
+
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <utility>
+
+namespace cm2 {
+namespace {
+
+bool finite(const Vec3& value) {
+  return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+void validate_coefficient(float coefficient) {
+  if (!std::isfinite(coefficient) || coefficient <= 0.0F) {
+    throw std::invalid_argument("constraint coefficient must be finite and positive");
+  }
+}
+
+std::size_t checked_offset_count(std::size_t cell_count) {
+  if (cell_count > static_cast<std::size_t>(invalid_slot) ||
+      cell_count == std::numeric_limits<std::size_t>::max()) {
+    throw std::overflow_error("external contact graph exceeds the slot index space");
+  }
+  return cell_count + 1;
+}
+
+void validate_contact(const ExternalContact& contact, std::size_t cell_count) {
+  if (contact.cell_id == invalid_cell_id || contact.constraint_id == invalid_constraint_id) {
+    throw std::invalid_argument("external contact has an invalid identity");
+  }
+  if (contact.cell_slot >= cell_count) {
+    throw std::invalid_argument("external contact cell slot is invalid");
+  }
+  if (!finite(contact.point_on_cell) || !finite(contact.normal) ||
+      !std::isfinite(contact.signed_separation) || !std::isfinite(contact.weight) ||
+      contact.weight <= 0.0F) {
+    throw std::invalid_argument("external contact contains a non-finite or invalid field");
+  }
+  if (std::abs(norm(contact.normal) - 1.0F) > 1.0e-4F) {
+    throw std::invalid_argument("external contact normal is not unit length");
+  }
+}
+
+}  // namespace
+
+ConstraintId ConstraintSet::allocate_id() {
+  if (next_id_ == invalid_constraint_id || next_id_ == std::numeric_limits<ConstraintId>::max()) {
+    throw std::overflow_error("constraint identifier space exhausted");
+  }
+  return next_id_++;
+}
+
+ConstraintId ConstraintSet::add_plane(const PlaneConstraintInit& plane) {
+  if (!finite(plane.point) || !finite(plane.inward_normal)) {
+    throw std::invalid_argument("plane fields must be finite");
+  }
+  const auto normal_magnitude = norm(plane.inward_normal);
+  if (!std::isfinite(normal_magnitude) || normal_magnitude <= 0.0F) {
+    throw std::invalid_argument("plane inward normal must be non-zero");
+  }
+  validate_coefficient(plane.coefficient);
+  const auto id = allocate_id();
+  planes_.push_back({
+      .id = id,
+      .point = plane.point,
+      .inward_normal = plane.inward_normal * (1.0F / normal_magnitude),
+      .coefficient = plane.coefficient,
+  });
+  return id;
+}
+
+ConstraintId ConstraintSet::add_sphere(const SphereConstraintInit& sphere) {
+  if (!finite(sphere.center) || !std::isfinite(sphere.radius) || sphere.radius <= 0.0F) {
+    throw std::invalid_argument("sphere geometry must be finite with a positive radius");
+  }
+  validate_coefficient(sphere.coefficient);
+  const auto id = allocate_id();
+  spheres_.push_back({
+      .id = id,
+      .center = sphere.center,
+      .radius = sphere.radius,
+      .coefficient = sphere.coefficient,
+      .allowed_region = sphere.allowed_region,
+  });
+  return id;
+}
+
+std::size_t ConstraintSet::size() const noexcept { return planes_.size() + spheres_.size(); }
+
+bool ConstraintSet::empty() const noexcept { return planes_.empty() && spheres_.empty(); }
+
+std::span<const PlaneConstraint> ConstraintSet::planes() const& noexcept { return planes_; }
+
+std::span<const SphereConstraint> ConstraintSet::spheres() const& noexcept { return spheres_; }
+
+void validate_constraint_contact_parameters(const ConstraintContactParameters& parameters) {
+  if (!std::isfinite(parameters.activation_margin) || parameters.activation_margin < 0.0F) {
+    throw std::invalid_argument("constraint activation margin must be finite and non-negative");
+  }
+  if (!std::isfinite(parameters.degeneracy_epsilon) || parameters.degeneracy_epsilon <= 0.0F) {
+    throw std::invalid_argument("constraint degeneracy epsilon must be finite and positive");
+  }
+}
+
+ExternalContactGraph::ExternalContactGraph(std::size_t cell_count,
+                                           std::vector<ExternalContact> contacts)
+    : cell_count_(cell_count),
+      contacts_(std::move(contacts)),
+      incidence_offsets_(checked_offset_count(cell_count)) {
+  for (const auto& contact : contacts_) {
+    validate_contact(contact, cell_count_);
+    ++incidence_offsets_[static_cast<std::size_t>(contact.cell_slot) + 1];
+  }
+  for (std::size_t index = 1; index < incidence_offsets_.size(); ++index) {
+    incidence_offsets_[index] += incidence_offsets_[index - 1];
+  }
+
+  incidence_contact_indices_.resize(contacts_.size());
+  auto cursors = incidence_offsets_;
+  for (std::size_t index = 0; index < contacts_.size(); ++index) {
+    const auto slot = static_cast<std::size_t>(contacts_[index].cell_slot);
+    incidence_contact_indices_[cursors[slot]++] = index;
+  }
+}
+
+std::size_t ExternalContactGraph::cell_count() const noexcept { return cell_count_; }
+
+std::size_t ExternalContactGraph::size() const noexcept { return contacts_.size(); }
+
+bool ExternalContactGraph::empty() const noexcept { return contacts_.empty(); }
+
+std::span<const ExternalContact> ExternalContactGraph::contacts() const& noexcept {
+  return contacts_;
+}
+
+std::span<const std::size_t> ExternalContactGraph::incident_contact_indices(Slot slot) const& {
+  const auto index = static_cast<std::size_t>(slot);
+  if (index >= cell_count_) {
+    throw std::out_of_range("external contact incidence slot is out of range");
+  }
+  const auto begin = incidence_offsets_[index];
+  const auto end = incidence_offsets_[index + 1];
+  return std::span<const std::size_t>(incidence_contact_indices_).subspan(begin, end - begin);
+}
+
+}  // namespace cm2

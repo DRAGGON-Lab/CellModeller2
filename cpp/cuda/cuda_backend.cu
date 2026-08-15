@@ -165,6 +165,11 @@ class CudaBackend final : public ComputeBackend {
     return download_contacts(geometry.size(), contact_count);
   }
 
+  [[nodiscard]] ExternalContactGraph find_external_contacts(
+      const WorldState&, const ConstraintSet&, const ConstraintContactParameters&) override {
+    throw std::runtime_error("CUDA external constraints are not implemented in this build");
+  }
+
   [[nodiscard]] MechanicsSolveResult solve_cell_mechanics(
       const WorldState& state, const ContactGraph& contacts,
       const MechanicsParameters& parameters) override {
