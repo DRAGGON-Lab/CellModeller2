@@ -92,6 +92,7 @@ if(CM2_ENABLE_CUDA)
 
   target_sources(cm2_core PRIVATE
     cpp/cuda/cuda_backend.cu
+    cpp/cuda/kernels/contacts.cu
     cpp/cuda/kernels/growth.cu
   )
   target_compile_definitions(cm2_core PRIVATE CM2_HAS_CUDA=1)

@@ -1,8 +1,9 @@
 # CUDA environment
 
-The native CUDA growth slice uses CUDA C++ kernels and the CUDA Runtime API
-directly. Configure, build, and test it on a machine with the CUDA Toolkit and
-an NVIDIA GPU:
+The native CUDA growth and contact-geometry slices use CUDA C++ kernels and the
+CUDA Runtime API directly. Contact generation has native count, inclusive-scan,
+and fill kernels. Configure, build, and test them on a machine with the CUDA
+Toolkit and an NVIDIA GPU:
 
 ```console
 cmake --preset cuda-debug
@@ -14,6 +15,12 @@ ctest --preset cuda-debug
 CUDA toolchain dependency. The conformance test constructs a real CUDA backend
 and cannot pass through a CPU fallback.
 
-The source is present, but CUDA conformance remains pending until this test is
-recorded on NVIDIA hardware. Test reports must include the device, driver,
-toolkit, and target compute capability.
+The CUDA 12.8 toolkit compiles and links the full CUDA-enabled project in
+NVIDIA's official arm64 development container. That driverless validation does
+not establish CUDA conformance. Growth and contact conformance remain pending
+until the tests are recorded on NVIDIA hardware. Test reports must include the
+device, driver, toolkit, and target compute capability.
+
+The current contact implementation uses exhaustive pair staging to establish
+geometry correctness. The scalable capsule-bounds broad phase remains required
+before contact generation is production-ready.

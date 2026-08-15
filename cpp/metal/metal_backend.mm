@@ -451,4 +451,10 @@ class MetalBackend final : public ComputeBackend {
 
 std::unique_ptr<ComputeBackend> make_metal_backend() { return std::make_unique<MetalBackend>(); }
 
+bool metal_backend_available() noexcept {
+  @autoreleasepool {
+    return MTLCreateSystemDefaultDevice() != nil;
+  }
+}
+
 }  // namespace cm2

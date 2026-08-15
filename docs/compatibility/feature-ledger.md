@@ -9,7 +9,7 @@ has an initial contract; it does not mean a GPU implementation exists.
 | P0 | Cell creation and division | `Simulator`, `CLBacterium` | deterministic equal division first; asymmetric and jitter policies follow | equal division conformant on CPU and Metal; CUDA hardware validation pending |
 | P0 | Exponential-Euler length growth | `CLBacterium` | explicit `length += rate * length * dt` reference step | CPU and Metal conformant; CUDA hardware validation pending |
 | P0 | 2D/3D rod mechanics | `CLBacterium` | typed contact graph and diagnosed matrix-free solve | legacy audited; CPU reference next |
-| P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic incidence graph; no silent contact cap | CPU and Metal exhaustive geometry conformant; scalable broad phase and CUDA pending |
+| P0 | Cell-cell contacts | `CLBacterium.cl` | dynamic incidence graph; no silent contact cap | CPU and Metal exhaustive geometry conformant; CUDA builds with hardware validation pending; scalable broad phase pending |
 | P0 | Plane and sphere constraints | `CLBacterium.cl` | typed constraint records; no sentinel cell IDs | legacy audited; implementation pending |
 | P0 | Mechanics solver | `CLBacterium` | regularized matrix-free CG/PCG with residual report | legacy audited; operator fixtures pending |
 | P0 | Species Euler integration | `CLEulerIntegrator` | typed rate plan and growth dilution | specified |

@@ -34,12 +34,12 @@ bool backend_available(BackendKind kind) noexcept {
   }
 #if CM2_HAS_METAL
   if (kind == BackendKind::metal) {
-    return true;
+    return metal_backend_available();
   }
 #endif
 #if CM2_HAS_CUDA
   if (kind == BackendKind::cuda) {
-    return true;
+    return cuda_backend_available();
   }
 #endif
   return false;

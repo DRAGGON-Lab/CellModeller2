@@ -22,6 +22,8 @@ class ComputeBackend {
 [[nodiscard]] std::unique_ptr<ComputeBackend> make_cpu_backend();
 [[nodiscard]] std::unique_ptr<ComputeBackend> make_metal_backend();
 [[nodiscard]] std::unique_ptr<ComputeBackend> make_cuda_backend();
+[[nodiscard]] bool metal_backend_available() noexcept;
+[[nodiscard]] bool cuda_backend_available() noexcept;
 [[nodiscard]] bool backend_available(BackendKind kind) noexcept;
 
 }  // namespace cm2

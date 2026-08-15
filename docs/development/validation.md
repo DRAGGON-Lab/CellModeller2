@@ -16,5 +16,10 @@ runs the same fixture against each backend compiled into that build. Its exact
 state checks and numerical tolerances are recorded beside the test in
 `tests/conformance/README.md`.
 
+A CUDA toolkit-only build proves source and link compatibility, not backend
+conformance. CUDA rows advance only after the shared executable runs on an
+NVIDIA device. `backend_available` reports runtime device availability, while
+`Simulation.supports` reports features implemented by a constructed backend.
+
 Pull requests must not claim a backend supports a feature when it invokes the
 CPU reference or transfers the full state to the host to complete the step.
