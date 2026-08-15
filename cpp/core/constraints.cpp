@@ -1,4 +1,4 @@
-#include "cm2/constraints.hpp"
+#include "cm/constraints.hpp"
 
 #include <cmath>
 #include <limits>
@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 bool finite(const Vec3& value) {
@@ -225,4 +225,4 @@ std::span<const std::size_t> ExternalContactGraph::incident_contact_indices(Slot
   return std::span<const std::size_t>(incidence_contact_indices_).subspan(begin, end - begin);
 }
 
-}  // namespace cm2
+}  // namespace cm

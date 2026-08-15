@@ -16,15 +16,15 @@
 #include <utility>
 #include <vector>
 
-#include "cm2/backend.hpp"
-#include "cm2/metal/contacts_source.hpp"
-#include "cm2/metal/coupled_rates_source.hpp"
-#include "cm2/metal/growth_source.hpp"
-#include "cm2/metal/mechanics_source.hpp"
-#include "cm2/metal/signals_source.hpp"
-#include "cm2/metal/species_source.hpp"
+#include "cm/backend.hpp"
+#include "cm/metal/contacts_source.hpp"
+#include "cm/metal/coupled_rates_source.hpp"
+#include "cm/metal/growth_source.hpp"
+#include "cm/metal/mechanics_source.hpp"
+#include "cm/metal/signals_source.hpp"
+#include "cm/metal/species_source.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 struct MetalFloat2 {
@@ -2099,4 +2099,4 @@ std::size_t metal_backend_device_count() noexcept {
   }
 }
 
-}  // namespace cm2
+}  // namespace cm

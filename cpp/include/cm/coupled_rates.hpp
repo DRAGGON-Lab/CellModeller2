@@ -5,9 +5,9 @@
 #include <span>
 #include <vector>
 
-#include "cm2/species.hpp"
+#include "cm/species.hpp"
 
-namespace cm2 {
+namespace cm {
 
 class SignalGrid;
 class WorldState;
@@ -47,4 +47,4 @@ void validate_coupled_step(const WorldState& state, const SignalGrid& grid,
                                                     std::span<const float> previous_lengths,
                                                     float dt);
 
-}  // namespace cm2
+}  // namespace cm

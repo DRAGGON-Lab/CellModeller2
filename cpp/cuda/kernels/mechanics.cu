@@ -1,6 +1,6 @@
 #include "mechanics.cuh"
 
-namespace cm2::cuda {
+namespace cm::cuda {
 namespace {
 
 constexpr std::uint32_t threads_per_block = 256;
@@ -338,4 +338,4 @@ void launch_reduce_sum_pairs(const float* input, float* output, std::uint32_t el
                                                                                 element_count);
 }
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

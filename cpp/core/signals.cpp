@@ -1,4 +1,4 @@
-#include "cm2/signals.hpp"
+#include "cm/signals.hpp"
 
 #include <algorithm>
 #include <array>
@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 std::size_t checked_multiply(std::size_t left, std::size_t right, const char* name) {
@@ -527,4 +527,4 @@ SignalSolveReport advance_signal_grid_cpu(SignalGrid& grid, float dt) {
   return result.report;
 }
 
-}  // namespace cm2
+}  // namespace cm

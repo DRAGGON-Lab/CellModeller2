@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace cm2 {
+namespace cm {
 
 using CellId = std::uint64_t;
 using Slot = std::uint32_t;
@@ -78,4 +78,4 @@ struct BackendInfo {
   bool native{false};
 };
 
-}  // namespace cm2
+}  // namespace cm

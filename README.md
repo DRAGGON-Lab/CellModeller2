@@ -241,7 +241,7 @@ Metal on macOS:
 
 ```console
 scripts/run_metal_conformance.sh
-CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_metal_application_conformance.sh
+CM_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_metal_application_conformance.sh
 ```
 
 CUDA development:
@@ -249,7 +249,7 @@ CUDA development:
 ```console
 scripts/run_cuda_compile_check.sh
 scripts/run_cuda_conformance.sh
-CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
+CM_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
 ```
 
 The conformance runners require clean source trees and emit checksummed evidence containing the exact commit, environment, device inventory, logs, and machine-readable results. See [validation](docs/development/validation.md), the [Metal environment guide](environments/metal/README.md), and the [CUDA environment guide](environments/cuda/README.md).

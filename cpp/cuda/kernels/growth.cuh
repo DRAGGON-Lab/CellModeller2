@@ -4,9 +4,9 @@
 
 #include <cstdint>
 
-namespace cm2::cuda {
+namespace cm::cuda {
 
 void launch_growth(float* lengths, const float* growth_rates, float dt, std::uint32_t count,
                    cudaStream_t stream);
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

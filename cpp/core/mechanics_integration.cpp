@@ -4,9 +4,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "cm2/mechanics.hpp"
+#include "cm/mechanics.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 struct GeometryUpdate {
@@ -90,4 +90,4 @@ void integrate_mechanics_result(WorldState& state, const MechanicsSolveResult& r
   }
 }
 
-}  // namespace cm2
+}  // namespace cm

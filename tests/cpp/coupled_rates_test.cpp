@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -11,9 +11,9 @@ bool close(float left, float right, float tolerance = 1.0e-6F) {
   return std::abs(left - right) <= tolerance;
 }
 
-cm2::SignalGridSpec grid_spec(cm2::GridShape shape, cm2::Vec3 spacing = {1.0F, 1.0F, 1.0F},
+cm::SignalGridSpec grid_spec(cm::GridShape shape, cm::Vec3 spacing = {1.0F, 1.0F, 1.0F},
                               float diffusion = 0.0F) {
-  cm2::SignalGridSpec spec;
+  cm::SignalGridSpec spec;
   spec.signal_count = 1;
   spec.shape = shape;
   spec.spacing = spacing;
@@ -22,12 +22,12 @@ cm2::SignalGridSpec grid_spec(cm2::GridShape shape, cm2::Vec3 spacing = {1.0F, 1
   return spec;
 }
 
-cm2::RateInstruction constant(float value) {
-  return {.operation = cm2::RateOp::constant, .value = value};
+cm::RateInstruction constant(float value) {
+  return {.operation = cm::RateOp::constant, .value = value};
 }
 
-cm2::RateInstruction signal(std::uint32_t index) {
-  return {.operation = cm2::RateOp::signal, .first = index};
+cm::RateInstruction signal(std::uint32_t index) {
+  return {.operation = cm::RateOp::signal, .first = index};
 }
 
 template <typename Exception, typename Function>
@@ -42,16 +42,16 @@ void assert_throws(Function&& function) {
 }
 
 void test_sample_and_scatter_share_trilinear_weights() {
-  cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 1);
+  cm::Simulation simulation(cm::BackendKind::cpu, 1, 1);
   simulation.configure_signal_grid(grid_spec({2, 2, 2}, {2.0F, 1.0F, 1.0F}),
                                    std::vector<float>(8, 4.0F));
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.position = {1.0F, 0.5F, 0.5F};
   cell.growth_rate = 0.0F;
   cell.species = {10.0F};
   const auto id = simulation.add_cell(cell);
   simulation.set_coupled_rate_plan(
-      cm2::CoupledRatePlan(1, 1, {signal(0), constant(-2.0F)}, {0}, {1}));
+      cm::CoupledRatePlan(1, 1, {signal(0), constant(-2.0F)}, {0}, {1}));
 
   simulation.step(0.5F);
 
@@ -62,14 +62,14 @@ void test_sample_and_scatter_share_trilinear_weights() {
     grid_amount += level * 2.0F;
   }
   assert(close(grid_amount, 63.0F));
-  assert(simulation.supports(cm2::BackendFeature::coupled_rates));
+  assert(simulation.supports(cm::BackendFeature::coupled_rates));
 }
 
 void test_old_grid_sampling_follows_post_growth_dilution() {
-  cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 1);
+  cm::Simulation simulation(cm::BackendKind::cpu, 1, 1);
   simulation.configure_signal_grid(grid_spec({3, 1, 1}, {1.0F, 1.0F, 1.0F}, 1.0F),
                                    {0.0F, 2.0F, 0.0F});
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.position = {1.0F, 0.0F, 0.0F};
   cell.length = 2.0F;
   cell.radius = 0.5F;
@@ -77,7 +77,7 @@ void test_old_grid_sampling_follows_post_growth_dilution() {
   cell.species = {4.0F};
   const auto id = simulation.add_cell(cell);
   simulation.set_coupled_rate_plan(
-      cm2::CoupledRatePlan(1, 1, {signal(0), constant(0.0F)}, {0}, {1}));
+      cm::CoupledRatePlan(1, 1, {signal(0), constant(0.0F)}, {0}, {1}));
 
   simulation.step(0.25F);
 
@@ -90,14 +90,14 @@ void test_old_grid_sampling_follows_post_growth_dilution() {
 }
 
 void test_crank_nicolson_includes_coupled_sources() {
-  cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 0);
+  cm::Simulation simulation(cm::BackendKind::cpu, 1, 0);
   auto spec = grid_spec({1, 1, 1});
-  spec.integration = cm2::SignalIntegrationKind::crank_nicolson;
+  spec.integration = cm::SignalIntegrationKind::crank_nicolson;
   simulation.configure_signal_grid(spec, {1.0F});
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.growth_rate = 0.0F;
   simulation.add_cell(cell);
-  simulation.set_coupled_rate_plan(cm2::CoupledRatePlan(0, 1, {constant(2.0F)}, {}, {0}));
+  simulation.set_coupled_rate_plan(cm::CoupledRatePlan(0, 1, {constant(2.0F)}, {}, {0}));
 
   simulation.step(1.0F);
 
@@ -107,15 +107,15 @@ void test_crank_nicolson_includes_coupled_sources() {
 }
 
 void test_invalid_position_is_rejected_before_growth() {
-  cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 1);
+  cm::Simulation simulation(cm::BackendKind::cpu, 1, 1);
   simulation.configure_signal_grid(grid_spec({2, 1, 1}), {1.0F, 1.0F});
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.position = {2.0F, 0.0F, 0.0F};
   cell.length = 2.0F;
   cell.growth_rate = 1.0F;
   cell.species = {3.0F};
   const auto id = simulation.add_cell(cell);
-  simulation.set_coupled_rate_plan(cm2::CoupledRatePlan(1, 1, {constant(0.0F)}, {0}, {0}));
+  simulation.set_coupled_rate_plan(cm::CoupledRatePlan(1, 1, {constant(0.0F)}, {0}, {0}));
 
   assert_throws<std::out_of_range>([&] { simulation.step(0.25F); });
   assert(close(simulation.cell(id).length, 2.0F));
@@ -125,18 +125,18 @@ void test_invalid_position_is_rejected_before_growth() {
 }
 
 void test_coupled_plan_is_exact_checkpoint_state() {
-  cm2::Simulation simulation(cm2::BackendKind::cpu, 1, 1);
+  cm::Simulation simulation(cm::BackendKind::cpu, 1, 1);
   simulation.configure_signal_grid(grid_spec({1, 1, 1}), {2.0F});
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.growth_rate = 0.0F;
   cell.species = {1.0F};
   simulation.add_cell(cell);
   simulation.set_coupled_rate_plan(
-      cm2::CoupledRatePlan(1, 1, {signal(0), constant(0.0F)}, {0}, {1}));
+      cm::CoupledRatePlan(1, 1, {signal(0), constant(0.0F)}, {0}, {1}));
 
   const auto checkpoint = simulation.checkpoint();
   assert(checkpoint.coupled_rate_plan.has_value());
-  cm2::Simulation restored(cm2::BackendKind::cpu, checkpoint);
+  cm::Simulation restored(cm::BackendKind::cpu, checkpoint);
   assert(restored.has_coupled_rate_plan());
   restored.step(0.5F);
   assert(close(restored.cells()[0].species[0], 2.0F));
@@ -146,9 +146,9 @@ void test_coupled_plan_is_exact_checkpoint_state() {
 
 void test_signal_inputs_are_reserved_for_coupled_plans() {
   assert_throws<std::invalid_argument>(
-      [&] { static_cast<void>(cm2::SpeciesRatePlan(1, {signal(0)}, {0})); });
+      [&] { static_cast<void>(cm::SpeciesRatePlan(1, {signal(0)}, {0})); });
   assert_throws<std::invalid_argument>(
-      [&] { static_cast<void>(cm2::CoupledRatePlan(1, 1, {signal(1)}, {0}, {0})); });
+      [&] { static_cast<void>(cm::CoupledRatePlan(1, 1, {signal(1)}, {0}, {0})); });
 }
 
 }  // namespace

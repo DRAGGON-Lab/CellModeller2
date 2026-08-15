@@ -5,8 +5,8 @@
 #include <stdexcept>
 #include <tuple>
 
-#include "cm2/contact_graph.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/contact_graph.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -14,9 +14,9 @@ bool close(float actual, float expected, float tolerance = 1.0e-5F) {
   return std::abs(actual - expected) <= tolerance;
 }
 
-cm2::CellId add_capsule(cm2::WorldState& state, cm2::Vec3 center, cm2::Vec3 axis,
+cm::CellId add_capsule(cm::WorldState& state, cm::Vec3 center, cm::Vec3 axis,
                         float length = 2.0F, float radius = 0.5F) {
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.position = center;
   cell.direction = axis;
   cell.length = length;
@@ -25,11 +25,11 @@ cm2::CellId add_capsule(cm2::WorldState& state, cm2::Vec3 center, cm2::Vec3 axis
 }
 
 void test_separated_capsules_have_no_contact() {
-  cm2::WorldState state;
+  cm::WorldState state;
   add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   add_capsule(state, {4.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
 
-  const auto graph = cm2::find_cell_contacts_cpu(state);
+  const auto graph = cm::find_cell_contacts_cpu(state);
   assert(graph.cell_count() == 2);
   assert(graph.empty());
   assert(graph.incident_contact_indices(0).empty());
@@ -37,11 +37,11 @@ void test_separated_capsules_have_no_contact() {
 }
 
 void test_end_on_contact_has_signed_separation() {
-  cm2::WorldState state;
+  cm::WorldState state;
   add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   add_capsule(state, {2.9F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
 
-  const auto graph = cm2::find_cell_contacts_cpu(state);
+  const auto graph = cm::find_cell_contacts_cpu(state);
   assert(graph.size() == 1);
   const auto& contact = graph.contacts().front();
   assert(contact.first_id == 1);
@@ -54,11 +54,11 @@ void test_end_on_contact_has_signed_separation() {
 }
 
 void test_parallel_overlap_uses_two_weighted_contacts() {
-  cm2::WorldState state;
+  cm::WorldState state;
   add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   add_capsule(state, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
 
-  const auto graph = cm2::find_cell_contacts_cpu(state);
+  const auto graph = cm::find_cell_contacts_cpu(state);
   assert(graph.size() == 2);
   const auto contacts = graph.contacts();
   assert(contacts[0].ordinal == 0);
@@ -79,13 +79,13 @@ void test_parallel_overlap_uses_two_weighted_contacts() {
 }
 
 void test_neighbors_use_sorted_stable_ids_after_division() {
-  cm2::WorldState state;
+  cm::WorldState state;
   const auto parent = add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   const auto neighbor =
       add_capsule(state, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   const auto [first_daughter, second_daughter] = state.divide_equal(parent);
 
-  const auto graph = cm2::find_cell_contacts_cpu(state);
+  const auto graph = cm::find_cell_contacts_cpu(state);
   assert(state.cell(first_daughter).slot == 0);
   assert(first_daughter > neighbor);
   assert(second_daughter > first_daughter);
@@ -100,7 +100,7 @@ void test_neighbors_use_sorted_stable_ids_after_division() {
 }
 
 void test_neighbor_lookup_checks_slot_bounds() {
-  const cm2::ContactGraph graph(0, {});
+  const cm::ContactGraph graph(0, {});
   bool rejected = false;
   try {
     static_cast<void>(graph.neighbor_ids(0));
@@ -111,37 +111,37 @@ void test_neighbor_lookup_checks_slot_bounds() {
 }
 
 void test_skew_and_coincident_contacts_have_finite_normals() {
-  cm2::WorldState skew;
+  cm::WorldState skew;
   add_capsule(skew, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   add_capsule(skew, {0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F});
-  const auto skew_graph = cm2::find_cell_contacts_cpu(skew);
+  const auto skew_graph = cm::find_cell_contacts_cpu(skew);
   const auto skew_contact = skew_graph.contacts().front();
   assert(close(skew_contact.normal.z, 1.0F));
-  assert(close(cm2::norm(skew_contact.normal), 1.0F));
+  assert(close(cm::norm(skew_contact.normal), 1.0F));
 
-  cm2::WorldState coincident;
+  cm::WorldState coincident;
   add_capsule(coincident, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   add_capsule(coincident, {0.0F, 0.0F, 0.0F}, {-1.0F, 0.0F, 0.0F}, 4.0F);
-  const auto graph = cm2::find_cell_contacts_cpu(coincident);
+  const auto graph = cm::find_cell_contacts_cpu(coincident);
   const auto contacts = graph.contacts();
   assert(contacts.size() == 2);
   for (const auto& contact : contacts) {
     assert(std::isfinite(contact.normal.x));
     assert(std::isfinite(contact.normal.y));
     assert(std::isfinite(contact.normal.z));
-    assert(close(cm2::norm(contact.normal), 1.0F));
+    assert(close(cm::norm(contact.normal), 1.0F));
     assert(close(contact.signed_separation, -1.0F));
   }
 }
 
 void test_contact_graph_has_no_per_cell_limit() {
-  cm2::WorldState state;
+  cm::WorldState state;
   constexpr std::size_t capsule_count = 31;
   for (std::size_t index = 0; index < capsule_count; ++index) {
     add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   }
 
-  const auto graph = cm2::find_cell_contacts_cpu(state);
+  const auto graph = cm::find_cell_contacts_cpu(state);
   const auto pair_count = capsule_count * (capsule_count - 1) / 2;
   assert(graph.size() == pair_count * 2);
   assert(graph.incident_contact_indices(0).size() == (capsule_count - 1) * 2);
@@ -149,20 +149,20 @@ void test_contact_graph_has_no_per_cell_limit() {
 }
 
 void test_sweep_and_prune_stages_only_overlapping_bounds() {
-  cm2::WorldState sparse;
+  cm::WorldState sparse;
   constexpr std::size_t capsule_count = 2048;
   for (std::size_t index = 0; index < capsule_count; ++index) {
     add_capsule(sparse, {static_cast<float>(index) * 10.0F, 0.0F, 0.0F},
                 {1.0F, 0.0F, 0.0F});
   }
-  assert(cm2::find_cell_contact_candidates(sparse).empty());
-  assert(cm2::find_cell_contacts_cpu(sparse).empty());
+  assert(cm::find_cell_contact_candidates(sparse).empty());
+  assert(cm::find_cell_contacts_cpu(sparse).empty());
 
-  cm2::WorldState dense;
+  cm::WorldState dense;
   for (std::size_t index = 0; index < 31; ++index) {
     add_capsule(dense, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   }
-  const auto candidates = cm2::find_cell_contact_candidates(dense);
+  const auto candidates = cm::find_cell_contact_candidates(dense);
   const auto geometry = dense.geometry_state();
   assert(candidates.size() == 31 * 30 / 2);
   for (const auto& candidate : candidates) {
@@ -171,7 +171,7 @@ void test_sweep_and_prune_stages_only_overlapping_bounds() {
 }
 
 void test_sweep_and_prune_matches_exhaustive_oracle() {
-  cm2::WorldState state;
+  cm::WorldState state;
   constexpr std::size_t capsule_count = 257;
   for (std::size_t index = 0; index < capsule_count; ++index) {
     const auto x = static_cast<float>((index * 37) % 101) * 0.21F;
@@ -186,10 +186,10 @@ void test_sweep_and_prune_matches_exhaustive_oracle() {
   }
 
   for (const auto margin : {0.0F, 0.01F, 0.5F}) {
-    cm2::ContactParameters parameters;
+    cm::ContactParameters parameters;
     parameters.activation_margin = margin;
-    const auto actual = cm2::find_cell_contacts_cpu(state, parameters);
-    const auto expected = cm2::find_cell_contacts_cpu_exhaustive(state, parameters);
+    const auto actual = cm::find_cell_contacts_cpu(state, parameters);
+    const auto expected = cm::find_cell_contacts_cpu_exhaustive(state, parameters);
     assert(actual.size() == expected.size());
     for (std::size_t index = 0; index < expected.size(); ++index) {
       assert(actual.contacts()[index].first_id == expected.contacts()[index].first_id);
@@ -202,14 +202,14 @@ void test_sweep_and_prune_matches_exhaustive_oracle() {
 }
 
 void test_contacts_are_sorted_by_stable_identity() {
-  cm2::WorldState state;
+  cm::WorldState state;
   const auto old = add_capsule(state, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   add_capsule(state, {0.0F, 0.2F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   static_cast<void>(state.divide_equal(old));
 
-  const auto graph = cm2::find_cell_contacts_cpu(state);
+  const auto graph = cm::find_cell_contacts_cpu(state);
   const auto contacts = graph.contacts();
-  auto previous = std::tuple{cm2::invalid_cell_id, cm2::invalid_cell_id, std::uint8_t{0}};
+  auto previous = std::tuple{cm::invalid_cell_id, cm::invalid_cell_id, std::uint8_t{0}};
   for (const auto& contact : contacts) {
     const auto key = std::tuple{contact.first_id, contact.second_id, contact.ordinal};
     assert(contact.first_id < contact.second_id);
@@ -219,15 +219,15 @@ void test_contacts_are_sorted_by_stable_identity() {
 }
 
 void test_pair_order_reverses_the_contact_normal() {
-  cm2::WorldState forward;
+  cm::WorldState forward;
   add_capsule(forward, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
   add_capsule(forward, {0.0F, 0.8F, 0.0F}, {-1.0F, 0.0F, 0.0F}, 4.0F);
-  const auto forward_graph = cm2::find_cell_contacts_cpu(forward);
+  const auto forward_graph = cm::find_cell_contacts_cpu(forward);
 
-  cm2::WorldState reversed;
+  cm::WorldState reversed;
   add_capsule(reversed, {0.0F, 0.8F, 0.0F}, {-1.0F, 0.0F, 0.0F}, 4.0F);
   add_capsule(reversed, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 4.0F);
-  const auto reversed_graph = cm2::find_cell_contacts_cpu(reversed);
+  const auto reversed_graph = cm::find_cell_contacts_cpu(reversed);
 
   assert(forward_graph.size() == reversed_graph.size());
   for (std::size_t index = 0; index < forward_graph.size(); ++index) {
@@ -242,12 +242,12 @@ void test_pair_order_reverses_the_contact_normal() {
 }
 
 void test_invalid_parameters_are_rejected() {
-  cm2::WorldState state;
-  cm2::ContactParameters parameters;
+  cm::WorldState state;
+  cm::ContactParameters parameters;
   parameters.parallel_sine_threshold = 2.0F;
   bool rejected = false;
   try {
-    static_cast<void>(cm2::find_cell_contacts_cpu(state, parameters));
+    static_cast<void>(cm::find_cell_contacts_cpu(state, parameters));
   } catch (const std::invalid_argument&) {
     rejected = true;
   }
@@ -255,10 +255,10 @@ void test_invalid_parameters_are_rejected() {
 }
 
 void test_simulation_exposes_the_backend_contact_contract() {
-  cm2::Simulation simulation;
-  cm2::CellInit first;
+  cm::Simulation simulation;
+  cm::CellInit first;
   first.length = 4.0F;
-  cm2::CellInit second = first;
+  cm::CellInit second = first;
   second.position.y = 0.8F;
   simulation.add_cell(first);
   simulation.add_cell(second);

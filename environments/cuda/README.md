@@ -4,7 +4,7 @@ CUDA is the NVIDIA backend under active development. It is implemented directly 
 
 The current implementation includes native growth, species-rate interpretation, contact geometry, constraints, mechanics, signaling, and coupled-rate stages. Contact generation uses count, inclusive-scan, and fill kernels over deterministic sweep-and-prune candidates. Mechanics uses native Jacobian assembly, matrix-free operators, vector updates, and reduction kernels with a host-orchestrated conjugate-gradient loop. Coupled rates keep sampling, interpretation, transport, and deterministic source gathering device-resident.
 
-`CM2_ENABLE_CUDA` is off by default so ordinary CPU builds do not acquire a CUDA toolchain dependency.
+`CM_ENABLE_CUDA` is off by default so ordinary CPU builds do not acquire a CUDA toolchain dependency.
 
 ## Compile check
 
@@ -14,7 +14,7 @@ Run the driverless source and link gate in NVIDIA's CUDA 12.8.1 development cont
 scripts/run_cuda_compile_check.sh
 ```
 
-The script mounts the source read-only, builds all CUDA-enabled native targets, lists the registered tests without executing them, and writes checksummed compiler, image, configure, and build evidence. Override `CM2_CUDA_ARCHITECTURES` or `CM2_CUDA_CONTAINER_IMAGE` to test another target or toolkit image.
+The script mounts the source read-only, builds all CUDA-enabled native targets, lists the registered tests without executing them, and writes checksummed compiler, image, configure, and build evidence. Override `CM_CUDA_ARCHITECTURES` or `CM_CUDA_CONTAINER_IMAGE` to test another target or toolkit image.
 
 The `CUDA compile check` workflow runs this gate for pull requests, pushes to `main`, and manual dispatches on GitHub's hosted Ubuntu runner. Compilation establishes toolchain compatibility, not numerical or application behavior.
 
@@ -35,7 +35,7 @@ Pass a path as the script's sole argument to select a different new evidence dir
 Run the Python, compatibility, and application gate with a checkout of the pinned original CellModeller source:
 
 ```console
-CM2_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
+CM_LEGACY_ROOT=/path/to/pinned/CellModeller scripts/run_cuda_application_conformance.sh
 ```
 
 This gate builds the Python extension with CUDA enabled, runs the full Python and recorded-trajectory suites, executes all 24 runnable legacy examples on CPU and every CUDA device, and exercises controller resume, viewer scene semantics, and analysis export with native derived contacts.

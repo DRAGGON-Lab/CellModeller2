@@ -3,13 +3,13 @@
 #include <stdexcept>
 #include <vector>
 
-#include "cm2/signals.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/signals.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
-cm2::SignalGridSpec line_spec(std::uint32_t length) {
-  cm2::SignalGridSpec spec;
+cm::SignalGridSpec line_spec(std::uint32_t length) {
+  cm::SignalGridSpec spec;
   spec.signal_count = 1;
   spec.shape = {.x = length, .y = 1, .z = 1};
   spec.diffusion = {1.0F};
@@ -34,8 +34,8 @@ void assert_close(float actual, float expected) { assert(std::abs(actual - expec
 
 int main() {
   {
-    cm2::SignalGrid grid(line_spec(3), {0.0F, 1.0F, 0.0F});
-    static_cast<void>(cm2::advance_signal_grid_cpu(grid, 0.25F));
+    cm::SignalGrid grid(line_spec(3), {0.0F, 1.0F, 0.0F});
+    static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.25F));
     const auto levels = grid.levels();
     assert_close(levels[0], 0.25F);
     assert_close(levels[1], 0.5F);
@@ -44,17 +44,17 @@ int main() {
 
     const std::vector<float> before(levels.begin(), levels.end());
     assert_throws<std::invalid_argument>(
-        [&] { static_cast<void>(cm2::advance_signal_grid_cpu(grid, 0.51F)); });
+        [&] { static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.51F)); });
     assert(std::vector<float>(grid.levels().begin(), grid.levels().end()) == before);
   }
 
   {
     auto spec = line_spec(3);
-    spec.integration = cm2::SignalIntegrationKind::crank_nicolson;
+    spec.integration = cm::SignalIntegrationKind::crank_nicolson;
     spec.solver.absolute_tolerance = 1.0e-7F;
     spec.solver.relative_tolerance = 1.0e-6F;
-    cm2::SignalGrid grid(spec, {0.0F, 1.0F, 0.0F});
-    const auto report = cm2::advance_signal_grid_cpu(grid, 1.0F);
+    cm::SignalGrid grid(spec, {0.0F, 1.0F, 0.0F});
+    const auto report = cm::advance_signal_grid_cpu(grid, 1.0F);
     assert(report.converged);
     assert(report.iterations > 0);
     assert(report.residual_rms <= 2.0e-6F);
@@ -65,24 +65,24 @@ int main() {
 
   {
     auto spec = line_spec(9);
-    spec.integration = cm2::SignalIntegrationKind::crank_nicolson;
+    spec.integration = cm::SignalIntegrationKind::crank_nicolson;
     spec.solver.max_iterations = 1;
     spec.solver.absolute_tolerance = 1.0e-12F;
     spec.solver.relative_tolerance = 0.0F;
-    cm2::SignalGrid grid(spec, {0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    const auto result = cm2::signal_grid_crank_nicolson_candidate(grid, 2.0F);
+    cm::SignalGrid grid(spec, {0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F});
+    const auto result = cm::signal_grid_crank_nicolson_candidate(grid, 2.0F);
     assert(!result.report.converged);
     assert(result.report.iterations == 1);
     assert_throws<std::runtime_error>(
-        [&] { static_cast<void>(cm2::advance_signal_grid_cpu(grid, 2.0F)); });
+        [&] { static_cast<void>(cm::advance_signal_grid_cpu(grid, 2.0F)); });
   }
 
   {
     auto spec = line_spec(2);
-    spec.x_lower.kind = cm2::GridBoundaryKind::fixed;
+    spec.x_lower.kind = cm::GridBoundaryKind::fixed;
     spec.x_lower.values = {2.0F};
-    cm2::SignalGrid grid(spec, {0.0F, 0.0F});
-    static_cast<void>(cm2::advance_signal_grid_cpu(grid, 0.25F));
+    cm::SignalGrid grid(spec, {0.0F, 0.0F});
+    static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.25F));
     assert_close(grid.levels()[0], 0.5F);
     assert_close(grid.levels()[1], 0.0F);
   }
@@ -91,10 +91,10 @@ int main() {
     auto spec = line_spec(4);
     spec.diffusion = {0.0F};
     spec.advection = {{1.0F, 0.0F, 0.0F}};
-    spec.x_lower.kind = cm2::GridBoundaryKind::periodic;
-    spec.x_upper.kind = cm2::GridBoundaryKind::periodic;
-    cm2::SignalGrid grid(spec, {1.0F, 0.0F, 0.0F, 0.0F});
-    static_cast<void>(cm2::advance_signal_grid_cpu(grid, 0.5F));
+    spec.x_lower.kind = cm::GridBoundaryKind::periodic;
+    spec.x_upper.kind = cm::GridBoundaryKind::periodic;
+    cm::SignalGrid grid(spec, {1.0F, 0.0F, 0.0F, 0.0F});
+    static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.5F));
     assert_close(grid.levels()[0], 0.5F);
     assert_close(grid.levels()[1], 0.5F);
     assert_close(grid.levels()[2], 0.0F);
@@ -105,8 +105,8 @@ int main() {
     auto spec = line_spec(4);
     spec.diffusion = {0.0F};
     spec.advection = {{1.0F, 0.0F, 0.0F}};
-    cm2::SignalGrid grid(spec, {0.0F, 0.0F, 0.0F, 1.0F});
-    static_cast<void>(cm2::advance_signal_grid_cpu(grid, 0.5F));
+    cm::SignalGrid grid(spec, {0.0F, 0.0F, 0.0F, 1.0F});
+    static_cast<void>(cm::advance_signal_grid_cpu(grid, 0.5F));
     assert_close(grid.levels()[0], 0.0F);
     assert_close(grid.levels()[1], 0.0F);
     assert_close(grid.levels()[2], 0.0F);
@@ -114,36 +114,36 @@ int main() {
   }
 
   {
-    cm2::SignalGridSpec spec;
+    cm::SignalGridSpec spec;
     spec.signal_count = 1;
     spec.shape = {.x = 2, .y = 2, .z = 2};
     spec.diffusion = {0.0F};
     spec.advection = {{0.0F, 0.0F, 0.0F}};
-    cm2::SignalGrid grid(spec, {0.0F, 1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F, 7.0F});
+    cm::SignalGrid grid(spec, {0.0F, 1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F, 7.0F});
     assert_close(grid.sample({0.5F, 0.5F, 0.5F})[0], 3.5F);
     assert_close(grid.sample({1.0F, 1.0F, 1.0F})[0], 7.0F);
     assert_throws<std::out_of_range>([&] { static_cast<void>(grid.sample({1.01F, 0.0F, 0.0F})); });
 
-    cm2::SignalGrid reduced(line_spec(2), {2.0F, 4.0F});
+    cm::SignalGrid reduced(line_spec(2), {2.0F, 4.0F});
     assert_close(reduced.sample({0.5F, 99.0F, -37.0F})[0], 3.0F);
   }
 
   {
     auto invalid = line_spec(3);
-    invalid.x_lower.kind = cm2::GridBoundaryKind::periodic;
+    invalid.x_lower.kind = cm::GridBoundaryKind::periodic;
     assert_throws<std::invalid_argument>([&] { invalid.validate(); });
-    invalid.x_upper.kind = cm2::GridBoundaryKind::periodic;
+    invalid.x_upper.kind = cm::GridBoundaryKind::periodic;
     invalid.diffusion = {-1.0F};
     assert_throws<std::invalid_argument>([&] { invalid.validate(); });
   }
 
   {
-    cm2::Simulation simulation;
+    cm::Simulation simulation;
     const auto spec = line_spec(3);
     simulation.configure_signal_grid(spec, {0.0F, 1.0F, 0.0F});
     assert(simulation.has_signal_grid());
     assert(simulation.signal_count() == 1);
-    assert(simulation.supports(cm2::BackendFeature::signals));
+    assert(simulation.supports(cm::BackendFeature::signals));
     simulation.step(0.25F);
     assert_close(simulation.signal_levels()[0], 0.25F);
     assert(simulation.time() == 0.25);
@@ -151,11 +151,11 @@ int main() {
     assert(checkpoint.signal_grid.has_value());
     assert(checkpoint.signal_grid->levels == simulation.signal_levels());
 
-    cm2::Simulation restored(cm2::BackendKind::cpu, checkpoint);
+    cm::Simulation restored(cm::BackendKind::cpu, checkpoint);
     assert(restored.signal_levels() == simulation.signal_levels());
     assert_close(restored.sample_signals({1.0F, 0.0F, 0.0F})[0], 0.5F);
 
-    cm2::CellInit cell;
+    cm::CellInit cell;
     restored.add_cell(cell);
     assert_throws<std::logic_error>([&] { restored.configure_signal_grid(spec); });
   }

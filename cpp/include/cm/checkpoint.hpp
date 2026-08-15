@@ -3,13 +3,13 @@
 #include <cstdint>
 #include <optional>
 
-#include "cm2/constraints.hpp"
-#include "cm2/coupled_rates.hpp"
-#include "cm2/signals.hpp"
-#include "cm2/species.hpp"
-#include "cm2/world_state.hpp"
+#include "cm/constraints.hpp"
+#include "cm/coupled_rates.hpp"
+#include "cm/signals.hpp"
+#include "cm/species.hpp"
+#include "cm/world_state.hpp"
 
-namespace cm2 {
+namespace cm {
 
 inline constexpr std::uint32_t checkpoint_schema_version = 3;
 
@@ -25,4 +25,4 @@ struct SimulationCheckpoint {
   void validate() const;
 };
 
-}  // namespace cm2
+}  // namespace cm

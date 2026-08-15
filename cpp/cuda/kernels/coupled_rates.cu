@@ -2,7 +2,7 @@
 
 #include "coupled_rates.cuh"
 
-namespace cm2::cuda {
+namespace cm::cuda {
 namespace {
 
 constexpr float pi = 3.14159265358979323846F;
@@ -338,4 +338,4 @@ cudaError_t launch_advance_coupled(
   return cudaGetLastError();
 }
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

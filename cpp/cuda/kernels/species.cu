@@ -1,6 +1,6 @@
 #include "species.cuh"
 
-namespace cm2::cuda {
+namespace cm::cuda {
 namespace {
 
 constexpr float pi = 3.14159265358979323846F;
@@ -134,4 +134,4 @@ void launch_advance_species(float* levels, const float* previous_lengths, const 
       workspace, error, dt, species_count, instruction_count, cell_count);
 }
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

@@ -6,9 +6,9 @@
 #include <tuple>
 #include <vector>
 
-#include "cm2/constraints.hpp"
+#include "cm/constraints.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 constexpr float inverse_sqrt_two = 0.7071067811865475F;
@@ -129,4 +129,4 @@ ExternalContactGraph find_external_contacts_cpu(const WorldState& state,
   return ExternalContactGraph(geometry.size(), std::move(contacts));
 }
 
-}  // namespace cm2
+}  // namespace cm

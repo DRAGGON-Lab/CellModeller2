@@ -2,7 +2,7 @@
 
 #include "contacts.cuh"
 
-namespace cm2::cuda {
+namespace cm::cuda {
 namespace {
 
 constexpr float inverse_sqrt_two = 0.7071067811865475F;
@@ -469,4 +469,4 @@ void launch_external_contact_fill(
       parameters, cell_count, constraint_count);
 }
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

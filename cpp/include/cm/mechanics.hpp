@@ -4,12 +4,12 @@
 #include <span>
 #include <vector>
 
-#include "cm2/constraints.hpp"
-#include "cm2/contact_graph.hpp"
-#include "cm2/types.hpp"
-#include "cm2/world_state.hpp"
+#include "cm/constraints.hpp"
+#include "cm/contact_graph.hpp"
+#include "cm/types.hpp"
+#include "cm/world_state.hpp"
 
-namespace cm2 {
+namespace cm {
 
 struct CellCorrection {
   Vec3 translation{};
@@ -90,4 +90,4 @@ void integrate_mechanics_result(
     const WorldState& state, const ContactGraph& contacts,
     const MechanicsParameters& parameters = MechanicsParameters{});
 
-}  // namespace cm2
+}  // namespace cm

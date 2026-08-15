@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "backend_devices.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -19,9 +19,9 @@ bool close(float actual, float expected) {
   return std::abs(actual - expected) <= tolerance;
 }
 
-cm2::CellId add_capsule(cm2::Simulation& simulation, cm2::Vec3 center, cm2::Vec3 axis,
+cm::CellId add_capsule(cm::Simulation& simulation, cm::Vec3 center, cm::Vec3 axis,
                         float length = 4.0F, float radius = 0.5F) {
-  cm2::CellInit cell;
+  cm::CellInit cell;
   cell.position = center;
   cell.direction = axis;
   cell.length = length;
@@ -29,7 +29,7 @@ cm2::CellId add_capsule(cm2::Simulation& simulation, cm2::Vec3 center, cm2::Vec3
   return simulation.add_cell(cell);
 }
 
-void populate_mixed_colony(cm2::Simulation& simulation) {
+void populate_mixed_colony(cm::Simulation& simulation) {
   add_capsule(simulation, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   add_capsule(simulation, {0.2F, 0.8F, 0.0F}, {1.0F, 0.2F, 0.0F});
   add_capsule(simulation, {-0.3F, 0.1F, 0.7F}, {0.0F, 1.0F, 0.3F});
@@ -46,8 +46,8 @@ void require_close(float actual, float expected, std::string_view scenario, std:
   std::abort();
 }
 
-void compare_corrections(const cm2::MechanicsSolveResult& actual,
-                         const cm2::MechanicsSolveResult& expected, std::string_view scenario) {
+void compare_corrections(const cm::MechanicsSolveResult& actual,
+                         const cm::MechanicsSolveResult& expected, std::string_view scenario) {
   assert(actual.report.status == expected.report.status);
   assert(actual.report.breakdown == expected.report.breakdown);
   require_close(actual.report.initial_residual_rms, expected.report.initial_residual_rms, scenario,
@@ -66,48 +66,48 @@ void compare_corrections(const cm2::MechanicsSolveResult& actual,
   }
 }
 
-void run_converged_colony(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend, 0, 0, device_index);
+void run_converged_colony(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation reference(cm::BackendKind::cpu);
+  cm::Simulation candidate(backend, 0, 0, device_index);
   populate_mixed_colony(reference);
   populate_mixed_colony(candidate);
 
-  cm2::MechanicsParameters parameters;
+  cm::MechanicsParameters parameters;
   parameters.residual_rms_tolerance = 2.0e-5F;
   const auto expected = reference.solve_cell_mechanics(parameters);
   const auto actual = candidate.solve_cell_mechanics(parameters);
-  assert(expected.report.status == cm2::SolverStatus::converged);
+  assert(expected.report.status == cm::SolverStatus::converged);
   assert(actual.report.final_residual_rms <= parameters.residual_rms_tolerance);
   compare_corrections(actual, expected, "converged colony");
 }
 
-void run_iteration_limit(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend, 0, 0, device_index);
+void run_iteration_limit(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation reference(cm::BackendKind::cpu);
+  cm::Simulation candidate(backend, 0, 0, device_index);
   populate_mixed_colony(reference);
   populate_mixed_colony(candidate);
 
-  cm2::MechanicsParameters parameters;
+  cm::MechanicsParameters parameters;
   parameters.residual_rms_tolerance = 0.0F;
   parameters.max_iterations = 1;
   const auto expected = reference.solve_cell_mechanics(parameters);
   const auto actual = candidate.solve_cell_mechanics(parameters);
-  assert(expected.report.status == cm2::SolverStatus::iteration_limit);
+  assert(expected.report.status == cm::SolverStatus::iteration_limit);
   assert(actual.report.iterations == 1);
   compare_corrections(actual, expected, "iteration limit");
 }
 
-void run_empty_systems(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation empty(backend, 0, 0, device_index);
+void run_empty_systems(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation empty(backend, 0, 0, device_index);
   const auto empty_result = empty.solve_cell_mechanics();
-  assert(empty_result.report.status == cm2::SolverStatus::converged);
+  assert(empty_result.report.status == cm::SolverStatus::converged);
   assert(empty_result.corrections.empty());
 
-  cm2::Simulation separated(backend, 0, 0, device_index);
+  cm::Simulation separated(backend, 0, 0, device_index);
   add_capsule(separated, {}, {1.0F, 0.0F, 0.0F});
   add_capsule(separated, {10.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   const auto separated_result = separated.solve_cell_mechanics();
-  assert(separated_result.report.status == cm2::SolverStatus::converged);
+  assert(separated_result.report.status == cm::SolverStatus::converged);
   assert(separated_result.report.iterations == 0);
   for (const auto& correction : separated_result.corrections) {
     assert(correction.translation.x == 0.0F);
@@ -116,28 +116,28 @@ void run_empty_systems(cm2::BackendKind backend, std::uint32_t device_index) {
   }
 }
 
-void run_buffer_growth(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation simulation(backend, 0, 0, device_index);
+void run_buffer_growth(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation simulation(backend, 0, 0, device_index);
   add_capsule(simulation, {}, {1.0F, 0.0F, 0.0F});
   add_capsule(simulation, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F});
   const auto first = simulation.solve_cell_mechanics();
-  assert(first.report.status == cm2::SolverStatus::converged);
+  assert(first.report.status == cm::SolverStatus::converged);
 
   for (std::size_t index = 0; index < 7; ++index) {
     add_capsule(simulation, {0.1F * static_cast<float>(index), 0.2F, 0.1F}, {1.0F, 0.1F, 0.0F});
   }
   const auto grown = simulation.solve_cell_mechanics();
-  assert(grown.report.status == cm2::SolverStatus::converged);
+  assert(grown.report.status == cm::SolverStatus::converged);
   assert(grown.corrections.size() == 9);
 }
 
-void run_integrated_relaxation(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend, 0, 0, device_index);
+void run_integrated_relaxation(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation reference(cm::BackendKind::cpu);
+  cm::Simulation candidate(backend, 0, 0, device_index);
   populate_mixed_colony(reference);
   populate_mixed_colony(candidate);
 
-  cm2::MechanicsParameters parameters;
+  cm::MechanicsParameters parameters;
   parameters.residual_rms_tolerance = 2.0e-5F;
   const auto expected = reference.relax_cell_mechanics(parameters);
   const auto actual = candidate.relax_cell_mechanics(parameters);
@@ -157,9 +157,9 @@ void run_integrated_relaxation(cm2::BackendKind backend, std::uint32_t device_in
   }
 }
 
-void run_fixed_cell_relaxation(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation reference(cm2::BackendKind::cpu);
-  cm2::Simulation candidate(backend, 0, 0, device_index);
+void run_fixed_cell_relaxation(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation reference(cm::BackendKind::cpu);
+  cm::Simulation candidate(backend, 0, 0, device_index);
   const auto reference_fixed = add_capsule(reference, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   const auto candidate_fixed = add_capsule(candidate, {0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
   const auto reference_free = add_capsule(reference, {0.0F, 0.8F, 0.0F}, {1.0F, 0.0F, 0.0F});
@@ -167,12 +167,12 @@ void run_fixed_cell_relaxation(cm2::BackendKind backend, std::uint32_t device_in
   reference.set_cell_fixed(reference_fixed, true);
   candidate.set_cell_fixed(candidate_fixed, true);
 
-  cm2::MechanicsParameters parameters;
+  cm::MechanicsParameters parameters;
   parameters.residual_rms_tolerance = 2.0e-5F;
   const auto expected = reference.solve_cell_mechanics(parameters);
   const auto actual = candidate.solve_cell_mechanics(parameters);
   compare_corrections(actual, expected, "fixed-cell solve");
-  assert(actual.report.status == cm2::SolverStatus::converged);
+  assert(actual.report.status == cm::SolverStatus::converged);
   assert(actual.corrections[0].translation.x == 0.0F);
   assert(actual.corrections[0].translation.y == 0.0F);
   assert(actual.corrections[0].translation.z == 0.0F);
@@ -196,9 +196,9 @@ void run_fixed_cell_relaxation(cm2::BackendKind backend, std::uint32_t device_in
 }  // namespace
 
 int main() {
-  cm2::test::for_each_backend_device([](cm2::BackendKind backend, std::uint32_t device_index) {
-    cm2::Simulation capability_probe(backend, 0, 0, device_index);
-    if (!capability_probe.supports(cm2::BackendFeature::cell_mechanics)) {
+  cm::test::for_each_backend_device([](cm::BackendKind backend, std::uint32_t device_index) {
+    cm::Simulation capability_probe(backend, 0, 0, device_index);
+    if (!capability_probe.supports(cm::BackendFeature::cell_mechanics)) {
       return;
     }
     run_empty_systems(backend, device_index);

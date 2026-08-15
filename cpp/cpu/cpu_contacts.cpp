@@ -8,9 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "cm2/contact_graph.hpp"
+#include "cm/contact_graph.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 constexpr float inverse_sqrt_two = 0.7071067811865475F;
@@ -226,4 +226,4 @@ ContactGraph find_cell_contacts_cpu_exhaustive(const WorldState& state,
   return contacts_for_candidates(state, parameters, candidates);
 }
 
-}  // namespace cm2
+}  // namespace cm

@@ -8,9 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "cm2/types.hpp"
+#include "cm/types.hpp"
 
-namespace cm2 {
+namespace cm {
 
 struct CellInit {
   Vec3 position{};
@@ -144,4 +144,4 @@ class WorldState {
   std::unordered_map<CellId, CellId> lineage_;
 };
 
-}  // namespace cm2
+}  // namespace cm

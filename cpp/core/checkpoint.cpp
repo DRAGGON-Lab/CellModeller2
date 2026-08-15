@@ -1,9 +1,9 @@
-#include "cm2/checkpoint.hpp"
+#include "cm/checkpoint.hpp"
 
 #include <cmath>
 #include <stdexcept>
 
-namespace cm2 {
+namespace cm {
 
 void SimulationCheckpoint::validate() const {
   if (schema_version != checkpoint_schema_version) {
@@ -33,4 +33,4 @@ void SimulationCheckpoint::validate() const {
   }
 }
 
-}  // namespace cm2
+}  // namespace cm

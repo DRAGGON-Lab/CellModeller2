@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "backend_devices.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -22,9 +22,9 @@ bool close(float actual, float expected) {
          absolute_tolerance + relative_tolerance * std::abs(expected);
 }
 
-cm2::SpeciesRatePlan make_plan() {
-  using enum cm2::RateOp;
-  return cm2::SpeciesRatePlan(species_count,
+cm::SpeciesRatePlan make_plan() {
+  using enum cm::RateOp;
+  return cm::SpeciesRatePlan(species_count,
                               {
                                   {.operation = species, .first = 0},
                                   {.operation = species, .first = 1},
@@ -70,10 +70,10 @@ cm2::SpeciesRatePlan make_plan() {
                               {32, 34, 39});
 }
 
-void populate(cm2::Simulation& simulation) {
+void populate(cm::Simulation& simulation) {
   simulation.set_species_rate_plan(make_plan());
   for (std::size_t index = 0; index < cell_count; ++index) {
-    cm2::CellInit cell;
+    cm::CellInit cell;
     cell.position = {static_cast<float>(index % 19) * 0.03F, static_cast<float>(index % 7) * -0.02F,
                      static_cast<float>(index % 5) * 0.01F};
     cell.length = 1.0F + static_cast<float>(index % 13) * 0.1F;
@@ -85,11 +85,11 @@ void populate(cm2::Simulation& simulation) {
         0.2F + static_cast<float>(index % 23) * 0.01F,
         static_cast<float>(index % 9) * -0.03F,
     };
-    assert(simulation.add_cell(cell) == static_cast<cm2::CellId>(index + 1));
+    assert(simulation.add_cell(cell) == static_cast<cm::CellId>(index + 1));
   }
 }
 
-void compare(const cm2::Simulation& actual, const cm2::Simulation& expected) {
+void compare(const cm::Simulation& actual, const cm::Simulation& expected) {
   assert(actual.cell_count() == expected.cell_count());
   assert(actual.species_count() == expected.species_count());
   assert(std::abs(actual.time() - expected.time()) <= 1.0e-12);
@@ -106,9 +106,9 @@ void compare(const cm2::Simulation& actual, const cm2::Simulation& expected) {
   }
 }
 
-void run_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation reference(cm2::BackendKind::cpu, cell_count, species_count);
-  cm2::Simulation candidate(backend, cell_count, species_count, device_index);
+void run_scenario(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation reference(cm::BackendKind::cpu, cell_count, species_count);
+  cm::Simulation candidate(backend, cell_count, species_count, device_index);
   populate(reference);
   populate(candidate);
   for (const auto dt : time_steps) {
@@ -119,15 +119,15 @@ void run_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
   candidate.validate();
 }
 
-void run_non_finite_rejection(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation simulation(backend, 1, 1, device_index);
-  cm2::CellInit cell;
+void run_non_finite_rejection(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation simulation(backend, 1, 1, device_index);
+  cm::CellInit cell;
   cell.growth_rate = 0.0F;
   cell.species = {1.0F};
   const auto id = simulation.add_cell(cell);
-  using enum cm2::RateOp;
+  using enum cm::RateOp;
   simulation.set_species_rate_plan(
-      cm2::SpeciesRatePlan(1,
+      cm::SpeciesRatePlan(1,
                            {
                                {.operation = constant, .value = 0.0F},
                                {.operation = divide, .first = 0, .second = 0},
@@ -147,9 +147,9 @@ void run_non_finite_rejection(cm2::BackendKind backend, std::uint32_t device_ind
 }  // namespace
 
 int main() {
-  cm2::test::for_each_backend_device([](cm2::BackendKind backend, std::uint32_t device_index) {
-    cm2::Simulation probe(backend, 0, 0, device_index);
-    if (probe.supports(cm2::BackendFeature::species)) {
+  cm::test::for_each_backend_device([](cm::BackendKind backend, std::uint32_t device_index) {
+    cm::Simulation probe(backend, 0, 0, device_index);
+    if (probe.supports(cm::BackendFeature::species)) {
       run_scenario(backend, device_index);
       run_non_finite_rejection(backend, device_index);
     }

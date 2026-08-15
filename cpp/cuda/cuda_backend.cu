@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "cm2/backend.hpp"
+#include "cm/backend.hpp"
 #include "kernels/contacts.cuh"
 #include "kernels/coupled_rates.cuh"
 #include "kernels/growth.cuh"
@@ -23,7 +23,7 @@
 #include "kernels/signals.cuh"
 #include "kernels/species.cuh"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 void check_cuda(cudaError_t result, const char* operation) {
@@ -1526,4 +1526,4 @@ std::size_t cuda_backend_device_count() noexcept {
   return device_count > 0 ? static_cast<std::size_t>(device_count) : 0;
 }
 
-}  // namespace cm2
+}  // namespace cm

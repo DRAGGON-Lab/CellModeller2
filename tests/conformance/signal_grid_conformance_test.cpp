@@ -6,28 +6,28 @@
 #include <vector>
 
 #include "backend_devices.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
-cm2::SignalGridSpec make_spec() {
-  cm2::SignalGridSpec spec;
+cm::SignalGridSpec make_spec() {
+  cm::SignalGridSpec spec;
   spec.signal_count = 2;
   spec.shape = {.x = 9, .y = 7, .z = 5};
   spec.origin = {-4.0F, -3.0F, -2.0F};
   spec.spacing = {1.0F, 0.75F, 1.25F};
   spec.diffusion = {0.2F, 0.05F};
   spec.advection = {{0.1F, -0.2F, 0.05F}, {-0.05F, 0.03F, -0.08F}};
-  spec.x_lower.kind = cm2::GridBoundaryKind::periodic;
-  spec.x_upper.kind = cm2::GridBoundaryKind::periodic;
-  spec.z_lower.kind = cm2::GridBoundaryKind::fixed;
+  spec.x_lower.kind = cm::GridBoundaryKind::periodic;
+  spec.x_upper.kind = cm::GridBoundaryKind::periodic;
+  spec.z_lower.kind = cm::GridBoundaryKind::fixed;
   spec.z_lower.values = {0.25F, 0.5F};
-  spec.z_upper.kind = cm2::GridBoundaryKind::fixed;
+  spec.z_upper.kind = cm::GridBoundaryKind::fixed;
   spec.z_upper.values = {1.0F, 0.75F};
   return spec;
 }
 
-std::vector<float> make_levels(const cm2::SignalGridSpec& spec) {
+std::vector<float> make_levels(const cm::SignalGridSpec& spec) {
   std::vector<float> levels(spec.level_count());
   for (std::size_t index = 0; index < levels.size(); ++index) {
     levels[index] = 0.5F + (0.001F * static_cast<float>((index * 37) % 211));
@@ -41,7 +41,7 @@ bool close(float actual, float expected) {
          tolerance + (tolerance * std::max(std::abs(actual), std::abs(expected)));
 }
 
-void assert_matches(const cm2::Simulation& actual, const cm2::Simulation& expected) {
+void assert_matches(const cm::Simulation& actual, const cm::Simulation& expected) {
   assert(actual.signal_count() == expected.signal_count());
   assert(actual.signal_levels().size() == expected.signal_levels().size());
   const auto actual_levels = actual.signal_levels();
@@ -56,18 +56,18 @@ void assert_matches(const cm2::Simulation& actual, const cm2::Simulation& expect
   }
 }
 
-void run_case(cm2::SignalIntegrationKind integration, float dt) {
+void run_case(cm::SignalIntegrationKind integration, float dt) {
   auto spec = make_spec();
   spec.integration = integration;
   const auto levels = make_levels(spec);
-  cm2::Simulation reference;
+  cm::Simulation reference;
   reference.configure_signal_grid(spec, levels);
   reference.step(dt);
 
-  cm2::test::for_each_backend_device([&](cm2::BackendKind backend, std::uint32_t device_index) {
-    cm2::Simulation candidate(backend, 0, 0, device_index);
+  cm::test::for_each_backend_device([&](cm::BackendKind backend, std::uint32_t device_index) {
+    cm::Simulation candidate(backend, 0, 0, device_index);
     candidate.configure_signal_grid(spec, levels);
-    if (!candidate.supports(cm2::BackendFeature::signals)) {
+    if (!candidate.supports(cm::BackendFeature::signals)) {
       return;
     }
     candidate.step(dt);
@@ -80,6 +80,6 @@ void run_case(cm2::SignalIntegrationKind integration, float dt) {
 }  // namespace
 
 int main() {
-  run_case(cm2::SignalIntegrationKind::forward_euler, 0.02F);
-  run_case(cm2::SignalIntegrationKind::crank_nicolson, 0.5F);
+  run_case(cm::SignalIntegrationKind::forward_euler, 0.02F);
+  run_case(cm::SignalIntegrationKind::crank_nicolson, 0.5F);
 }

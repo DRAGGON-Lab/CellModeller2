@@ -5,10 +5,10 @@
 #include <span>
 #include <vector>
 
-#include "cm2/types.hpp"
-#include "cm2/world_state.hpp"
+#include "cm/types.hpp"
+#include "cm/world_state.hpp"
 
-namespace cm2 {
+namespace cm {
 
 using ConstraintId = std::uint64_t;
 inline constexpr ConstraintId invalid_constraint_id = 0;
@@ -132,4 +132,4 @@ class ExternalContactGraph {
     const WorldState& state, const ConstraintSet& constraints,
     const ConstraintContactParameters& parameters = ConstraintContactParameters{});
 
-}  // namespace cm2
+}  // namespace cm

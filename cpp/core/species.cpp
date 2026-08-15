@@ -1,4 +1,4 @@
-#include "cm2/species.hpp"
+#include "cm/species.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -7,7 +7,7 @@
 #include <string>
 #include <utility>
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 std::uint32_t checked_index(std::size_t index) {
@@ -134,4 +134,4 @@ float effective_cell_surface_area(float length, float radius) noexcept {
   return 2.0F * pi * radius * (length + 2.0F * radius);
 }
 
-}  // namespace cm2
+}  // namespace cm

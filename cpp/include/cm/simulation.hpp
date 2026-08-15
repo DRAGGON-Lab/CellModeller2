@@ -7,10 +7,10 @@
 #include <utility>
 #include <vector>
 
-#include "cm2/backend.hpp"
-#include "cm2/checkpoint.hpp"
+#include "cm/backend.hpp"
+#include "cm/checkpoint.hpp"
 
-namespace cm2 {
+namespace cm {
 
 class Simulation {
  public:
@@ -78,4 +78,4 @@ class Simulation {
   double time_{0.0};
 };
 
-}  // namespace cm2
+}  // namespace cm

@@ -7,9 +7,9 @@
 #include <utility>
 #include <vector>
 
-#include "cm2/mechanics.hpp"
+#include "cm/mechanics.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 constexpr std::size_t degrees_of_freedom = 7;
@@ -433,4 +433,4 @@ MechanicsSolveResult solve_cell_mechanics_cpu(const WorldState& state, const Con
                                   parameters);
 }
 
-}  // namespace cm2
+}  // namespace cm

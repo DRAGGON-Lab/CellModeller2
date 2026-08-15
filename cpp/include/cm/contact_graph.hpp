@@ -5,10 +5,10 @@
 #include <span>
 #include <vector>
 
-#include "cm2/types.hpp"
-#include "cm2/world_state.hpp"
+#include "cm/types.hpp"
+#include "cm/world_state.hpp"
 
-namespace cm2 {
+namespace cm {
 
 struct ContactParameters {
   float activation_margin{0.01F};
@@ -67,4 +67,4 @@ class ContactGraph {
 [[nodiscard]] ContactGraph find_cell_contacts_cpu_exhaustive(
     const WorldState& state, const ContactParameters& parameters = ContactParameters{});
 
-}  // namespace cm2
+}  // namespace cm

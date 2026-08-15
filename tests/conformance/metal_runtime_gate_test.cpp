@@ -5,7 +5,7 @@
 #include <limits>
 #include <string>
 
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -17,7 +17,7 @@ int fail(const std::string& message) {
 }  // namespace
 
 int main() {
-  const auto device_count = cm2::backend_device_count(cm2::BackendKind::metal);
+  const auto device_count = cm::backend_device_count(cm::BackendKind::metal);
   if (device_count == 0) {
     return fail("the Metal-enabled build did not discover an Apple GPU");
   }
@@ -28,13 +28,13 @@ int main() {
         return fail("the Metal device index exceeds the backend index type");
       }
       const auto device_index = static_cast<std::uint32_t>(index);
-      if (!cm2::backend_available(cm2::BackendKind::metal, device_index)) {
+      if (!cm::backend_available(cm::BackendKind::metal, device_index)) {
         return fail("an enumerated Metal device is not available through the backend");
       }
 
-      cm2::Simulation simulation(cm2::BackendKind::metal, 0, device_index);
+      cm::Simulation simulation(cm::BackendKind::metal, 0, device_index);
       const auto info = simulation.backend_info();
-      if (info.kind != cm2::BackendKind::metal || !info.native ||
+      if (info.kind != cm::BackendKind::metal || !info.native ||
           info.device_index != device_index || info.name != "metal" || info.device.empty()) {
         return fail("the constructed backend did not identify the selected native Metal device");
       }

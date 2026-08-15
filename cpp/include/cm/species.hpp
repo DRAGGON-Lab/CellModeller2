@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-namespace cm2 {
+namespace cm {
 
 class WorldState;
 
@@ -75,4 +75,4 @@ class SpeciesRatePlan {
 void advance_species_cpu(WorldState& state, const SpeciesRatePlan& plan,
                          std::span<const float> previous_lengths, float dt);
 
-}  // namespace cm2
+}  // namespace cm

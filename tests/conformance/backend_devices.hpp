@@ -6,9 +6,9 @@
 #include <limits>
 #include <stdexcept>
 
-#include "cm2/backend.hpp"
+#include "cm/backend.hpp"
 
-namespace cm2::test {
+namespace cm::test {
 
 template <typename Function>
 void for_each_backend_device(Function&& function) {
@@ -24,4 +24,4 @@ void for_each_backend_device(Function&& function) {
   }
 }
 
-}  // namespace cm2::test
+}  // namespace cm::test

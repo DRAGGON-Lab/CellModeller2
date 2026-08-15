@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-#include "cm2/coupled_rates.hpp"
-#include "cm2/signals.hpp"
-#include "cm2/world_state.hpp"
+#include "cm/coupled_rates.hpp"
+#include "cm/signals.hpp"
+#include "cm/world_state.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 float evaluate_instruction(const RateInstruction& instruction, std::span<const float> workspace,
@@ -207,4 +207,4 @@ SignalSolveReport advance_coupled_cpu(WorldState& state, SignalGrid& grid,
   return signal_report;
 }
 
-}  // namespace cm2
+}  // namespace cm

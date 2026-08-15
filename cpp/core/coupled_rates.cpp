@@ -1,4 +1,4 @@
-#include "cm2/coupled_rates.hpp"
+#include "cm/coupled_rates.hpp"
 
 #include <cmath>
 #include <limits>
@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 void checked_index(std::size_t index, const char* name) {
@@ -140,4 +140,4 @@ void CoupledRatePlan::validate() const {
   }
 }
 
-}  // namespace cm2
+}  // namespace cm

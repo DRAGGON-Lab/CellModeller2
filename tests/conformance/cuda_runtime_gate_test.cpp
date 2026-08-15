@@ -5,7 +5,7 @@
 #include <limits>
 #include <string>
 
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -17,7 +17,7 @@ int fail(const std::string& message) {
 }  // namespace
 
 int main() {
-  const auto device_count = cm2::backend_device_count(cm2::BackendKind::cuda);
+  const auto device_count = cm::backend_device_count(cm::BackendKind::cuda);
   if (device_count == 0) {
     return fail("the CUDA-enabled build did not discover an NVIDIA device");
   }
@@ -28,13 +28,13 @@ int main() {
         return fail("the CUDA device index exceeds the backend index type");
       }
       const auto device_index = static_cast<std::uint32_t>(index);
-      if (!cm2::backend_available(cm2::BackendKind::cuda, device_index)) {
+      if (!cm::backend_available(cm::BackendKind::cuda, device_index)) {
         return fail("an enumerated CUDA device is not available through the backend");
       }
 
-      cm2::Simulation simulation(cm2::BackendKind::cuda, 0, device_index);
+      cm::Simulation simulation(cm::BackendKind::cuda, 0, device_index);
       const auto info = simulation.backend_info();
-      if (info.kind != cm2::BackendKind::cuda || !info.native ||
+      if (info.kind != cm::BackendKind::cuda || !info.native ||
           info.device_index != device_index || info.name != "cuda" || info.device.empty()) {
         return fail("the constructed backend did not identify the selected native CUDA device");
       }

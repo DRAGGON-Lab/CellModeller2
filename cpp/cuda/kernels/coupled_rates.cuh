@@ -7,7 +7,7 @@
 #include "signals.cuh"
 #include "species.cuh"
 
-namespace cm2::cuda {
+namespace cm::cuda {
 
 cudaError_t launch_advance_coupled(
     float* species_levels, const float* previous_lengths, const float4* centers,
@@ -20,4 +20,4 @@ cudaError_t launch_advance_coupled(
     std::uint32_t signal_count, std::uint32_t instruction_count, std::uint32_t cell_count,
     std::uint32_t level_count, bool crank_nicolson, cudaStream_t stream);
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

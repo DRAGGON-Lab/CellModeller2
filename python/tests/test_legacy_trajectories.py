@@ -23,7 +23,7 @@ from cellmodeller2.runner import native_simulation
 
 _ROOT = Path(__file__).resolve().parents[2]
 _REFERENCE = _ROOT / "compatibility" / "legacy-trajectories-v1.json"
-_LEGACY_ROOT_VALUE = os.environ.get("CM2_LEGACY_ROOT")
+_LEGACY_ROOT_VALUE = os.environ.get("CM_LEGACY_ROOT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,7 +200,7 @@ def test_recorded_legacy_trajectory_contract(
     scenario: dict[str, Any],
 ) -> None:
     if _LEGACY_ROOT_VALUE is None:
-        pytest.skip("CM2_LEGACY_ROOT is required for recorded legacy trajectory tests")
+        pytest.skip("CM_LEGACY_ROOT is required for recorded legacy trajectory tests")
     if not backend_available(backend):
         pytest.skip("native backend is not built")
     legacy_root = Path(_LEGACY_ROOT_VALUE)

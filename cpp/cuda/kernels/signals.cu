@@ -2,7 +2,7 @@
 
 #include "signals.cuh"
 
-namespace cm2::cuda {
+namespace cm::cuda {
 namespace {
 
 __device__ std::uint32_t site_index(SignalGridShapeGpu shape, std::uint32_t x, std::uint32_t y,
@@ -227,4 +227,4 @@ void launch_signal_crank_nicolson_residual_terms(const float* current, const flo
       spacing, half_dt, signal_count, level_count);
 }
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

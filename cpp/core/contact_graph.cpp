@@ -1,4 +1,4 @@
-#include "cm2/contact_graph.hpp"
+#include "cm/contact_graph.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -7,7 +7,7 @@
 #include <tuple>
 #include <utility>
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 struct CapsuleBounds {
@@ -202,4 +202,4 @@ std::span<const CellId> ContactGraph::neighbor_ids(Slot slot) const& {
   return std::span<const CellId>(neighbor_ids_).subspan(begin, end - begin);
 }
 
-}  // namespace cm2
+}  // namespace cm

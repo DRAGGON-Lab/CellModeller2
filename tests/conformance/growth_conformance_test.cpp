@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "backend_devices.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
@@ -20,9 +20,9 @@ bool close(float actual, float expected) {
   return std::abs(actual - expected) <= tolerance;
 }
 
-void run_growth_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
-  cm2::Simulation simulation(backend, cell_count, 0, device_index);
-  std::vector<cm2::CellId> ids;
+void run_growth_scenario(cm::BackendKind backend, std::uint32_t device_index) {
+  cm::Simulation simulation(backend, cell_count, 0, device_index);
+  std::vector<cm::CellId> ids;
   std::vector<float> expected_lengths;
   std::vector<float> growth_rates;
   ids.reserve(cell_count);
@@ -31,7 +31,7 @@ void run_growth_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
 
   simulation.step(0.0F);
   for (std::size_t index = 0; index < cell_count; ++index) {
-    cm2::CellInit cell;
+    cm::CellInit cell;
     cell.position = {
         static_cast<float>(index) * 0.25F,
         static_cast<float>(index % 5) * -0.125F,
@@ -43,7 +43,7 @@ void run_growth_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
     cell.cell_type = static_cast<std::int32_t>(index % 4);
 
     const auto id = simulation.add_cell(cell);
-    assert(id == static_cast<cm2::CellId>(index + 1));
+    assert(id == static_cast<cm::CellId>(index + 1));
     ids.push_back(id);
     expected_lengths.push_back(cell.length);
     growth_rates.push_back(cell.growth_rate);
@@ -63,7 +63,7 @@ void run_growth_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
   for (std::size_t index = 0; index < cell_count; ++index) {
     const auto cell = simulation.cell(ids[index]);
     assert(cell.id == ids[index]);
-    assert(cell.slot == static_cast<cm2::Slot>(index));
+    assert(cell.slot == static_cast<cm::Slot>(index));
     assert(close(cell.length, expected_lengths[index]));
     assert(cell.growth_rate == growth_rates[index]);
     assert(cell.cell_type == static_cast<std::int32_t>(index % 4));
@@ -81,6 +81,6 @@ void run_growth_scenario(cm2::BackendKind backend, std::uint32_t device_index) {
 }  // namespace
 
 int main() {
-  cm2::test::for_each_backend_device(run_growth_scenario);
+  cm::test::for_each_backend_device(run_growth_scenario);
   return 0;
 }

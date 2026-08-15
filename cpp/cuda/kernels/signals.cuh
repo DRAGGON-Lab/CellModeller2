@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace cm2::cuda {
+namespace cm::cuda {
 
 struct SignalGridShapeGpu {
   std::uint32_t x;
@@ -46,4 +46,4 @@ void launch_signal_crank_nicolson_residual_terms(const float* current, const flo
                                                  float half_dt, std::uint32_t signal_count,
                                                  std::uint32_t level_count, cudaStream_t stream);
 
-}  // namespace cm2::cuda
+}  // namespace cm::cuda

@@ -1,9 +1,9 @@
 #include <memory>
 #include <stdexcept>
 
-#include "cm2/backend.hpp"
+#include "cm/backend.hpp"
 
-namespace cm2 {
+namespace cm {
 namespace {
 
 class CpuBackend final : public ComputeBackend {
@@ -70,4 +70,4 @@ std::unique_ptr<ComputeBackend> make_cpu_backend(std::uint32_t device_index) {
   return std::make_unique<CpuBackend>();
 }
 
-}  // namespace cm2
+}  // namespace cm

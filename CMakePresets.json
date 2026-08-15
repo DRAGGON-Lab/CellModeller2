@@ -14,10 +14,10 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CM2_BUILD_PYTHON": "OFF",
-        "CM2_BUILD_TESTS": "ON",
-        "CM2_ENABLE_CUDA": "OFF",
-        "CM2_ENABLE_METAL": "OFF"
+        "CM_BUILD_PYTHON": "OFF",
+        "CM_BUILD_TESTS": "ON",
+        "CM_ENABLE_CUDA": "OFF",
+        "CM_ENABLE_METAL": "OFF"
       }
     },
     {
@@ -28,10 +28,10 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CM2_BUILD_PYTHON": "OFF",
-        "CM2_BUILD_TESTS": "ON",
-        "CM2_ENABLE_CUDA": "OFF",
-        "CM2_ENABLE_METAL": "ON"
+        "CM_BUILD_PYTHON": "OFF",
+        "CM_BUILD_TESTS": "ON",
+        "CM_ENABLE_CUDA": "OFF",
+        "CM_ENABLE_METAL": "ON"
       }
     },
     {
@@ -43,10 +43,10 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CUDA_ARCHITECTURES": "native",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CM2_BUILD_PYTHON": "OFF",
-        "CM2_BUILD_TESTS": "ON",
-        "CM2_ENABLE_CUDA": "ON",
-        "CM2_ENABLE_METAL": "OFF"
+        "CM_BUILD_PYTHON": "OFF",
+        "CM_BUILD_TESTS": "ON",
+        "CM_ENABLE_CUDA": "ON",
+        "CM_ENABLE_METAL": "OFF"
       }
     }
   ],

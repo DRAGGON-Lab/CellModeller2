@@ -6,18 +6,18 @@
 #include <vector>
 
 #include "backend_devices.hpp"
-#include "cm2/simulation.hpp"
+#include "cm/simulation.hpp"
 
 namespace {
 
-cm2::RateInstruction operation(cm2::RateOp op, std::uint32_t first = 0, std::uint32_t second = 0,
+cm::RateInstruction operation(cm::RateOp op, std::uint32_t first = 0, std::uint32_t second = 0,
                                float value = 0.0F) {
   return {.operation = op, .first = first, .second = second, .value = value};
 }
 
-cm2::Simulation make_reference(cm2::SignalIntegrationKind integration) {
-  cm2::Simulation simulation(cm2::BackendKind::cpu, 513, 3);
-  cm2::SignalGridSpec grid;
+cm::Simulation make_reference(cm::SignalIntegrationKind integration) {
+  cm::Simulation simulation(cm::BackendKind::cpu, 513, 3);
+  cm::SignalGridSpec grid;
   grid.signal_count = 2;
   grid.shape = {.x = 9, .y = 7, .z = 5};
   grid.origin = {-3.0F, -2.0F, -1.0F};
@@ -25,11 +25,11 @@ cm2::Simulation make_reference(cm2::SignalIntegrationKind integration) {
   grid.diffusion = {0.08F, 0.03F};
   grid.advection = {{0.05F, -0.02F, 0.01F}, {-0.03F, 0.04F, -0.01F}};
   grid.integration = integration;
-  grid.x_lower.kind = cm2::GridBoundaryKind::periodic;
-  grid.x_upper.kind = cm2::GridBoundaryKind::periodic;
-  grid.z_lower.kind = cm2::GridBoundaryKind::fixed;
+  grid.x_lower.kind = cm::GridBoundaryKind::periodic;
+  grid.x_upper.kind = cm::GridBoundaryKind::periodic;
+  grid.z_lower.kind = cm::GridBoundaryKind::fixed;
   grid.z_lower.values = {0.9F, 1.1F};
-  grid.z_upper.kind = cm2::GridBoundaryKind::fixed;
+  grid.z_upper.kind = cm::GridBoundaryKind::fixed;
   grid.z_upper.values = {1.2F, 1.0F};
   std::vector<float> levels(grid.level_count());
   for (std::size_t index = 0; index < levels.size(); ++index) {
@@ -41,7 +41,7 @@ cm2::Simulation make_reference(cm2::SignalIntegrationKind integration) {
     const auto x = static_cast<float>(index % 17) / 16.0F;
     const auto y = static_cast<float>((index * 7) % 19) / 18.0F;
     const auto z = static_cast<float>((index * 11) % 23) / 22.0F;
-    cm2::CellInit cell;
+    cm::CellInit cell;
     cell.position = {
         grid.origin.x + (x * grid.spacing.x * static_cast<float>(grid.shape.x - 1)),
         grid.origin.y + (y * grid.spacing.y * static_cast<float>(grid.shape.y - 1)),
@@ -59,8 +59,8 @@ cm2::Simulation make_reference(cm2::SignalIntegrationKind integration) {
     simulation.add_cell(cell);
   }
 
-  using enum cm2::RateOp;
-  std::vector<cm2::RateInstruction> instructions{
+  using enum cm::RateOp;
+  std::vector<cm::RateInstruction> instructions{
       operation(species, 0),
       operation(species, 1),
       operation(species, 2),
@@ -76,11 +76,11 @@ cm2::Simulation make_reference(cm2::SignalIntegrationKind integration) {
       operation(multiply, 4, 6),
   };
   simulation.set_coupled_rate_plan(
-      cm2::CoupledRatePlan(3, 2, std::move(instructions), {8, 9, 10}, {11, 12}));
+      cm::CoupledRatePlan(3, 2, std::move(instructions), {8, 9, 10}, {11, 12}));
   return simulation;
 }
 
-void assert_close(const cm2::Simulation& actual, const cm2::Simulation& expected) {
+void assert_close(const cm::Simulation& actual, const cm::Simulation& expected) {
   assert(actual.time() == expected.time());
   const auto actual_cells = actual.cells();
   const auto expected_cells = expected.cells();
@@ -100,15 +100,15 @@ void assert_close(const cm2::Simulation& actual, const cm2::Simulation& expected
   }
 }
 
-void run_case(cm2::SignalIntegrationKind integration, float dt) {
+void run_case(cm::SignalIntegrationKind integration, float dt) {
   auto source = make_reference(integration);
   const auto checkpoint = source.checkpoint();
-  cm2::Simulation expected(cm2::BackendKind::cpu, checkpoint);
+  cm::Simulation expected(cm::BackendKind::cpu, checkpoint);
   expected.step(dt);
 
-  cm2::test::for_each_backend_device([&](cm2::BackendKind backend, std::uint32_t device_index) {
-    cm2::Simulation candidate(backend, checkpoint, device_index);
-    if (!candidate.supports(cm2::BackendFeature::coupled_rates)) {
+  cm::test::for_each_backend_device([&](cm::BackendKind backend, std::uint32_t device_index) {
+    cm::Simulation candidate(backend, checkpoint, device_index);
+    if (!candidate.supports(cm::BackendFeature::coupled_rates)) {
       std::cout << "backend " << static_cast<int>(backend)
                 << " does not advertise coupled rates; skipping\n";
       return;
@@ -123,7 +123,7 @@ void run_case(cm2::SignalIntegrationKind integration, float dt) {
 }  // namespace
 
 int main() {
-  run_case(cm2::SignalIntegrationKind::forward_euler, 0.01F);
-  run_case(cm2::SignalIntegrationKind::crank_nicolson, 0.5F);
+  run_case(cm::SignalIntegrationKind::forward_euler, 0.01F);
+  run_case(cm::SignalIntegrationKind::crank_nicolson, 0.5F);
   return 0;
 }
