@@ -1,8 +1,17 @@
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from cellmodeller2 import BackendKind, GridShape, ModelContext, SignalGridSpec, Vec3
+from cellmodeller2 import (
+    BackendKind,
+    GridShape,
+    ModelContext,
+    SignalGridSpec,
+    SimulationController,
+    Vec3,
+)
 from cellmodeller2.microfluidics import TrapChannelDevice
 from cellmodeller2.runner import build_model
 
@@ -53,6 +62,7 @@ def test_trap_example_builds_steps_and_transports_nutrient() -> None:
         _EXAMPLES / "microfluidic_trap.py",
         ModelContext(BackendKind.CPU, 0, seed=11),
     )
+    assert isinstance(model, SimulationController)
     for _ in range(20):
         model.step(0.02)
 
