@@ -49,11 +49,13 @@ NUTRIENT_K = 5.0
 
 def _grid() -> SignalGridSpec:
     shape = GridShape()
-    shape.x, shape.y, shape.z = 31, 60, 6
+    # One solid guard layer below the floor and above the ceiling keeps every
+    # capsule endpoint inside the lattice when tilted cells sample the field.
+    shape.x, shape.y, shape.z = 31, 60, 8
     grid = SignalGridSpec()
     grid.signal_count = 1
     grid.shape = shape
-    grid.origin = Vec3(-27.5, -147.5, 0.825)
+    grid.origin = Vec3(-27.5, -147.5, -0.825)
     grid.spacing = Vec3(5.0, 5.0, 1.65)
     grid.diffusion = [40.0]
     grid.advection = [Vec3()]
