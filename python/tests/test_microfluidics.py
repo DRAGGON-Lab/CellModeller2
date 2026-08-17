@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from cellmodeller2 import BackendKind, GridShape, ModelContext, SignalGridSpec, Vec3
+from cellmodeller2.microfluidics import TrapChannelDevice
+from cellmodeller2.runner import build_model
+
+_EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+
+
+def _grid() -> SignalGridSpec:
+    shape = GridShape()
+    shape.x, shape.y, shape.z = 64, 72, 4
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.origin = Vec3(-140.0, -144.0, -8.0)
+    grid.spacing = Vec3(4.0, 4.0, 4.0)
+    grid.diffusion = [40.0]
+    grid.advection = [Vec3()]
+    return grid
+
+
+def test_device_grid_projection_is_engine_valid() -> None:
+    device = TrapChannelDevice(mean_flow_speed=20.0)
+    grid = _grid()
+    device.apply_to_grid(grid, inlet_values=[10.0], outlet_values=[0.0])
+    grid.validate()
+
+    assert grid.velocity_field is not None
+    assert any(value != 0.0 for value in grid.velocity_field.y_faces)
+    assert all(value == 0.0 for value in grid.velocity_field.x_faces)
+    assert all(value == 0.0 for value in grid.velocity_field.z_faces)
+    assert grid.y_lower.values == [10.0]
+
+    solid = sum(grid.obstacles)
+    assert 0 < solid < len(grid.obstacles)
+
+
+def test_channel_profile_is_parabolic_and_zero_in_walls() -> None:
+    device = TrapChannelDevice(mean_flow_speed=20.0)
+    center_x = (device.channel_far_x + device.trap_open_x) * 0.5
+    assert abs(device._channel_speed(center_x, 0.0) - 30.0) < 1.0e-6
+    assert device._channel_speed(device.trap_open_x + 1.0, 0.0) == 0.0
+    assert device._channel_speed(center_x, device.trap_half_z + 1.0) == 0.0
+    assert device._solid(device.trap_back_x + 0.5, 0.0, 0.0)
+    assert not device._solid(center_x, 0.0, 0.0)
+
+
+def test_trap_example_builds_steps_and_transports_nutrient() -> None:
+    model, _ = build_model(
+        _EXAMPLES / "microfluidic_trap.py",
+        ModelContext(BackendKind.CPU, 0, seed=11),
+    )
+    for _ in range(20):
+        model.step(0.02)
+
+    simulation = model.simulation
+    device = TrapChannelDevice()
+    channel_x = (device.channel_far_x + device.trap_open_x) * 0.5
+    upstream = simulation.sample_signals(Vec3(channel_x, -100.0, 0.0))[0]
+    trap_mouth = simulation.sample_signals(Vec3(-55.0, 0.0, 0.0))[0]
+    trap_interior = simulation.sample_signals(Vec3(0.0, 0.0, 0.0))[0]
+    assert upstream > 5.0
+    assert trap_mouth > trap_interior
+    assert upstream > trap_interior
+    assert len(simulation.cells()) >= 1
