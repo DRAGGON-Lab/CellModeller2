@@ -89,13 +89,14 @@ The photomask CAD for a real sensing-array device is in
 identical traps along media channels. `BiopixelTrapDevice` models one trap with
 the fabricated dimensions:
 
-- cavity 100 x 95 micrometers, only **1.65 micrometers tall**, so the colony is
-  squeezed into a monolayer under the cavity ceiling — the imaging geometry the
-  device is fabricated for;
-- a 10-micrometer-tall flow channel along the open face, so media flows past
-  the shallow cavity rather than through it;
-- floor and ceiling planes, full-height side and back walls, and a trap-ceiling
-  box that together produce the two-level z structure.
+- a cavity 100 x 95 micrometers, recessed only **1.65 micrometers** into the
+  trap layer, so the colony grows as a monolayer on the device floor;
+- the 10-micrometer flow layer on top: the mask's supply channels are about one
+  millimeter wide, so over any single trap the stream is uniform, with a
+  Poiseuille profile across the channel height and still water in the cavity;
+- floor and ceiling planes plus the trap-layer slab boxes around the cavity,
+  whose open top is the diffusive interface that feeds the colony — and the
+  shear plane that sweeps away any cell protruding into the stream.
 
 ```python
 from cellmodeller2.microfluidics import BiopixelTrapDevice
@@ -122,6 +123,11 @@ traps = match_rectangles(rectangles, 110.0, 100.0, tolerance=1.0)
 On this mask that yields the full biopixel array: **496 traps in a 16 x 31
 grid** at a 172.5 x 125 micrometer pitch, spanning 2.4 x 3.75 millimeters. The
 drawn outline is the 110 x 100 micrometer outer wall of the 100 x 95 cavity.
+With ``include_blocks=True`` the reader also traverses block definitions,
+where this mask keeps its flow layer: `Layer-5` carries supply channels about
+one millimeter wide plus 60-micrometer post features, on a separately laid-out
+plate (each mask layer is its own plate, registered only lithographically, so
+cross-layer alignment is not recoverable from the drawing).
 Each trap's `center` places a `BiopixelTrapDevice` on the physical die, so an
 array study can iterate the extracted centers while simulating one trap at a
 time.
@@ -135,8 +141,10 @@ array's gas-phase synchronization) is not part of this model. Run it live:
 uv run cm view --model examples/tutorials/biopixel_trap.py --seed 5 --dt 0.02 --backend metal --open
 ```
 
-The viewer shows the shallow cavity as a thin glass slab beside the taller
-channel, with the monolayer spreading at mid-cavity height.
+The viewer shows the cavity recessed in the trap-layer slab with the channel
+streaming over it; the monolayer spreads at mid-cavity height and the nutrient
+field stays uniform because the stream replenishes the cavity through its open
+top faster than the colony depletes it.
 
 ## Numerical guidance
 

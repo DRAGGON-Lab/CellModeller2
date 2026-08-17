@@ -67,3 +67,25 @@ def test_mask_reader_rejects_unusable_input(tmp_path: Path) -> None:
 
     with pytest.raises(MaskError, match="byte limit"):
         load_mask_polylines(_PRINDLE, max_bytes=1024)
+
+
+def test_block_traversal_reads_the_flow_layer() -> None:
+    polylines = load_mask_polylines(_PRINDLE, include_blocks=True)
+    blocks = {p.block for p in polylines if p.block is not None}
+    assert len(blocks) >= 2
+
+    layer5 = [p for p in polylines if p.layer == "Layer-5" and p.block is not None]
+    assert len(layer5) > 3000
+    supply = [
+        p
+        for p in layer5
+        if min(
+            max(v[0] for v in p.vertices) - min(v[0] for v in p.vertices),
+            max(v[1] for v in p.vertices) - min(v[1] for v in p.vertices),
+        )
+        >= 0.9
+    ]
+    assert len(supply) >= 40
+
+    modelspace_only = load_mask_polylines(_PRINDLE)
+    assert all(p.block is None for p in modelspace_only)

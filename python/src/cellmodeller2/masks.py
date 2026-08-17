@@ -30,6 +30,7 @@ class MaskPolyline:
     layer: str
     closed: bool
     vertices: tuple[tuple[float, float], ...]
+    block: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +45,15 @@ def load_mask_polylines(
     path: str | os.PathLike[str],
     *,
     max_bytes: int = MAX_MASK_BYTES,
+    include_blocks: bool = False,
 ) -> tuple[MaskPolyline, ...]:
-    """Read the model-space polylines of an ASCII DXF mask drawing."""
+    """Read the polylines of an ASCII DXF mask drawing.
+
+    Model-space entities always load. With ``include_blocks``, polylines inside
+    block definitions load as well, tagged with their block name; mask files
+    from array-based CAD workflows often keep real geometry only in otherwise
+    orphaned blocks, in world coordinates.
+    """
 
     source = Path(path)
     try:
@@ -68,6 +76,9 @@ def load_mask_polylines(
 
     polylines: list[MaskPolyline] = []
     in_entities = False
+    in_blocks = False
+    block_name: str | None = None
+    pending_block_name = False
     layer = ""
     closed = False
     xs: list[float] = []
@@ -82,6 +93,7 @@ def load_mask_polylines(
                     layer=layer,
                     closed=closed,
                     vertices=tuple(zip(xs, ys, strict=True)),
+                    block=block_name,
                 )
             )
         collecting = False
@@ -92,7 +104,10 @@ def load_mask_polylines(
         value = lines[index + 1].strip()
         index += 2
         if code != "0":
-            if collecting:
+            if pending_block_name and code == "2":
+                block_name = value
+                pending_block_name = False
+            elif collecting:
                 try:
                     if code == "8":
                         layer = value
@@ -106,12 +121,21 @@ def load_mask_polylines(
                     raise MaskError(f"mask contains a malformed {code} group") from error
             continue
         finish()
+        pending_block_name = False
         if value == "SECTION":
             section = lines[index + 1].strip() if index + 1 < len(lines) else ""
             in_entities = section == "ENTITIES"
+            in_blocks = section == "BLOCKS"
         elif value == "ENDSEC":
             in_entities = False
-        elif value == "LWPOLYLINE" and in_entities:
+            in_blocks = False
+        elif value == "BLOCK":
+            pending_block_name = True
+        elif value == "ENDBLK":
+            block_name = None
+        elif value == "LWPOLYLINE" and (
+            in_entities or (include_blocks and in_blocks and block_name is not None)
+        ):
             collecting = True
             layer = ""
             closed = False

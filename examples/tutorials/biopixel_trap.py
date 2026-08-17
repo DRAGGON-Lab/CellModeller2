@@ -3,11 +3,14 @@
 The device photomasks in ``docs/tutorials/devices/prindle.dwg`` and
 ``prindle.dxf`` lay out 496 identical cell traps in a 16 x 31 grid beside media
 channels; ``cellmodeller2.masks`` extracts that array directly from the DXF's
-trap layer. This model simulates a single trap with the fabricated dimensions:
-a 100 x 95 micrometer cavity of height 1.65 micrometers that squeezes the
-colony into a monolayer, open on one side to a 10-micrometer-tall flow channel.
-Every trap in the array sees the same fresh-media flow, so one simulated trap
-stands for each biopixel when inter-trap coupling is not modeled.
+trap layer, and the flow layer's supply channels measure about one millimeter
+wide there. This model simulates a single trap with the fabricated dimensions:
+a 100 x 95 micrometer cavity recessed 1.65 micrometers into the trap layer,
+open upward into the 10-micrometer flow layer whose millimeter-wide channel
+streams uniformly over the whole cavity. Cells grow in the cavity out of the
+stream; anything that protrudes into the channel is swept downstream and
+washed out. Every trap in the array sees the same stream, so one simulated
+trap stands for each biopixel when inter-trap coupling is not modeled.
 """
 
 from __future__ import annotations
@@ -46,11 +49,11 @@ NUTRIENT_K = 5.0
 
 def _grid() -> SignalGridSpec:
     shape = GridShape()
-    shape.x, shape.y, shape.z = 41, 60, 6
+    shape.x, shape.y, shape.z = 31, 60, 6
     grid = SignalGridSpec()
     grid.signal_count = 1
     grid.shape = shape
-    grid.origin = Vec3(-97.5, -147.5, 0.825)
+    grid.origin = Vec3(-27.5, -147.5, 0.825)
     grid.spacing = Vec3(5.0, 5.0, 1.65)
     grid.diffusion = [40.0]
     grid.advection = [Vec3()]
