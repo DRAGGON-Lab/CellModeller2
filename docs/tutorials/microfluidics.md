@@ -103,6 +103,29 @@ from cellmodeller2.microfluidics import BiopixelTrapDevice
 DEVICE = BiopixelTrapDevice(mean_flow_speed=20.0)
 ```
 
+### Reading the array from the mask
+
+`cellmodeller2.masks` extracts the trap layout directly from the DXF: it parses
+the model-space `LWPOLYLINE` outlines (a bounded, data-only reader; block
+definitions, which hold orphaned array remnants in mask files, are ignored) and
+selects axis-aligned rectangles by layer and size. Mask drawings use one unit
+per millimeter, so `unit_scale=1000.0` yields micrometers:
+
+```python
+from cellmodeller2.masks import extract_rectangles, load_mask_polylines, match_rectangles
+
+polylines = load_mask_polylines("docs/tutorials/devices/prindle.dxf")
+rectangles = extract_rectangles(polylines, layer="Layer-2", unit_scale=1000.0)
+traps = match_rectangles(rectangles, 110.0, 100.0, tolerance=1.0)
+```
+
+On this mask that yields the full biopixel array: **496 traps in a 16 x 31
+grid** at a 172.5 x 125 micrometer pitch, spanning 2.4 x 3.75 millimeters. The
+drawn outline is the 110 x 100 micrometer outer wall of the 100 x 95 cavity.
+Each trap's `center` places a `BiopixelTrapDevice` on the physical die, so an
+array study can iterate the extracted centers while simulating one trap at a
+time.
+
 Because every trap in the array sees the same inlet media and flow, one
 simulated trap is representative of each biopixel; running the single-trap
 model is running the array, one pixel at a time. Inter-trap coupling (the

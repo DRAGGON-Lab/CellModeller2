@@ -1,12 +1,13 @@
 """One biopixel of the Prindle sensing-array device.
 
 The device photomasks in ``docs/tutorials/devices/prindle.dwg`` and
-``prindle.dxf`` lay out an array of identical cell traps beside media channels.
-This model simulates a single trap with the fabricated dimensions: a
-100 x 95 micrometer cavity of height 1.65 micrometers that squeezes the colony
-into a monolayer, open on one side to a 10-micrometer-tall flow channel. Every
-trap in the array sees the same fresh-media flow, so one simulated trap stands
-for each biopixel when inter-trap coupling is not modeled.
+``prindle.dxf`` lay out 496 identical cell traps in a 16 x 31 grid beside media
+channels; ``cellmodeller2.masks`` extracts that array directly from the DXF's
+trap layer. This model simulates a single trap with the fabricated dimensions:
+a 100 x 95 micrometer cavity of height 1.65 micrometers that squeezes the
+colony into a monolayer, open on one side to a 10-micrometer-tall flow channel.
+Every trap in the array sees the same fresh-media flow, so one simulated trap
+stands for each biopixel when inter-trap coupling is not modeled.
 """
 
 from __future__ import annotations
