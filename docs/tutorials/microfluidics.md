@@ -8,6 +8,7 @@ chemistry, and carries media. Three examples cover the range:
 | [`examples/culture_dish.py`](../../examples/culture_dish.py) | round dish | one inside-cylinder constraint as a dish |
 | [`examples/microfluidic_trap.py`](../../examples/microfluidic_trap.py) | trap + channel | flow, obstacles, drift, washout |
 | [`examples/tutorials/danino_clock.py`](../../examples/tutorials/danino_clock.py) | trap + channel | the full quorum clock in a device |
+| [`examples/tutorials/biopixel_trap.py`](../../examples/tutorials/biopixel_trap.py) | biopixel array trap | fabricated dimensions, monolayer cavity |
 
 Run any of them live:
 
@@ -79,6 +80,40 @@ def _regulate(step):
 
 Removal keeps stable identifiers and lineage history, so analysis can count washout events
 and trace removed cells' ancestry from checkpoints.
+
+## A fabricated device: the Prindle biopixel array
+
+The photomask CAD for a real sensing-array device is in
+[`docs/tutorials/devices`](devices) as `prindle.dwg` and `prindle.dxf`
+(AutoCAD 2018; the DXF opens in most CAD viewers). The array tiles hundreds of
+identical traps along media channels. `BiopixelTrapDevice` models one trap with
+the fabricated dimensions:
+
+- cavity 100 x 95 micrometers, only **1.65 micrometers tall**, so the colony is
+  squeezed into a monolayer under the cavity ceiling — the imaging geometry the
+  device is fabricated for;
+- a 10-micrometer-tall flow channel along the open face, so media flows past
+  the shallow cavity rather than through it;
+- floor and ceiling planes, full-height side and back walls, and a trap-ceiling
+  box that together produce the two-level z structure.
+
+```python
+from cellmodeller2.microfluidics import BiopixelTrapDevice
+
+DEVICE = BiopixelTrapDevice(mean_flow_speed=20.0)
+```
+
+Because every trap in the array sees the same inlet media and flow, one
+simulated trap is representative of each biopixel; running the single-trap
+model is running the array, one pixel at a time. Inter-trap coupling (the
+array's gas-phase synchronization) is not part of this model. Run it live:
+
+```console
+uv run cm view --model examples/tutorials/biopixel_trap.py --seed 5 --dt 0.02 --backend metal --open
+```
+
+The viewer shows the shallow cavity as a thin glass slab beside the taller
+channel, with the monolayer spreading at mid-cavity height.
 
 ## Numerical guidance
 

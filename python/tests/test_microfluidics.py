@@ -13,7 +13,7 @@ from cellmodeller2 import (
     SimulationController,
     Vec3,
 )
-from cellmodeller2.microfluidics import TrapChannelDevice
+from cellmodeller2.microfluidics import BiopixelTrapDevice, TrapChannelDevice
 from cellmodeller2.runner import build_model
 
 _EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
@@ -78,3 +78,36 @@ def test_trap_example_builds_steps_and_transports_nutrient() -> None:
     with pytest.raises(ValueError, match="inside a grid obstacle"):
         simulation.sample_signals(Vec3(0.0, 100.0, 0.0))
     assert len(simulation.cells()) >= 1
+
+
+def test_biopixel_trap_matches_fabricated_dimensions() -> None:
+    device = BiopixelTrapDevice(mean_flow_speed=20.0)
+    assert device.trap_width == 100.0
+    assert device.trap_depth == 95.0
+    assert device.trap_height == 1.65
+    assert device.channel_height == 10.0
+
+    # Monolayer cavity: fluid below the trap ceiling, solid above it.
+    assert not device._solid(47.5, 0.0, 0.825)
+    assert device._solid(47.5, 0.0, 2.475)
+    # The channel keeps its full height.
+    assert not device._solid(-50.0, 0.0, 9.075)
+    assert device._channel_speed(-50.0, 5.0) == 30.0
+    assert device._channel_speed(47.5, 0.825) == 0.0
+
+
+def test_biopixel_example_confines_a_monolayer_under_flow() -> None:
+    model, _ = build_model(
+        _EXAMPLES / "tutorials" / "biopixel_trap.py",
+        ModelContext(BackendKind.CPU, 0, seed=5),
+    )
+    assert isinstance(model, SimulationController)
+    for _ in range(60):
+        model.step(0.02)
+
+    cells = model.simulation.cells()
+    assert len(cells) >= 2
+    for cell in cells:
+        assert 0.0 < cell.position.z < 1.65
+        assert -50.0 < cell.position.y < 50.0
+        assert cell.position.x < 105.0

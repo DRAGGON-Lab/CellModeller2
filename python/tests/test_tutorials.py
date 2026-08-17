@@ -50,6 +50,7 @@ _MODELS: tuple[tuple[str, dict[str, JSONValue], float], ...] = (
     ("plasmid_segregation.py", {"copies_per_cell": 10}, 0.001),
     ("conjugation.py", {"transfer_probability": 0.1}, 0.001),
     ("danino_clock.py", {}, 0.001),
+    ("biopixel_trap.py", {}, 0.001),
 )
 
 
