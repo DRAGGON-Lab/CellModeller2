@@ -367,4 +367,70 @@ int main() {
     invalid.advection = {{0.5F, 0.0F, 0.0F}};
     assert_throws<std::invalid_argument>([&] { invalid.validate(); });
   }
+
+  {
+    auto spec = line_spec(3);
+    spec.diffusion = {0.0F};
+    spec.x_lower.kind = cm::GridBoundaryKind::fixed;
+    spec.x_lower.values = {0.0F};
+    spec.x_upper.kind = cm::GridBoundaryKind::fixed;
+    spec.x_upper.values = {0.0F};
+    spec.velocity_field = cm::SignalGridVelocityField{
+        .x_faces = {1.0F, 1.0F, 1.0F, 1.0F},
+        .y_faces = std::vector<float>(6, 0.0F),
+        .z_faces = std::vector<float>(6, 0.0F),
+    };
+    cm::Simulation simulation;
+    simulation.configure_signal_grid(spec);
+    cm::CellInit mover;
+    mover.position = {1.0F, 0.0F, 0.0F};
+    mover.length = 0.0F;
+    mover.radius = 0.4F;
+    const auto mover_id = simulation.add_cell(mover);
+    cm::CellInit anchored = mover;
+    anchored.position = {0.5F, 0.0F, 0.0F};
+    anchored.fixed = true;
+    const auto anchored_id = simulation.add_cell(anchored);
+
+    simulation.apply_flow_drift(0.25F);
+    assert_close(simulation.cell(mover_id).position.x, 1.25F);
+    assert_close(simulation.cell(anchored_id).position.x, 0.5F);
+  }
+
+  {
+    cm::SignalGridSpec spec;
+    spec.signal_count = 1;
+    spec.shape = {.x = 3, .y = 3, .z = 1};
+    spec.diffusion = {0.0F};
+    spec.advection = {{0.0F, 0.0F, 0.0F}};
+    spec.x_lower.kind = cm::GridBoundaryKind::fixed;
+    spec.x_lower.values = {0.0F};
+    spec.x_upper.kind = cm::GridBoundaryKind::fixed;
+    spec.x_upper.values = {0.0F};
+    std::vector<float> x_faces(12, 0.0F);
+    for (std::uint32_t fx = 0; fx < 4; ++fx) {
+      for (std::uint32_t y = 0; y < 3; ++y) {
+        x_faces[(fx * 3) + y] = 0.5F * static_cast<float>(y);
+      }
+    }
+    spec.velocity_field = cm::SignalGridVelocityField{
+        .x_faces = x_faces,
+        .y_faces = std::vector<float>(12, 0.0F),
+        .z_faces = std::vector<float>(18, 0.0F),
+    };
+    cm::Simulation simulation;
+    simulation.configure_signal_grid(spec);
+    cm::CellInit rod;
+    rod.position = {1.0F, 1.0F, 0.0F};
+    rod.direction = {0.0F, 1.0F, 0.0F};
+    rod.length = 1.0F;
+    rod.radius = 0.3F;
+    const auto rod_id = simulation.add_cell(rod);
+
+    simulation.apply_flow_drift(0.1F);
+    const auto drifted = simulation.cell(rod_id);
+    assert(drifted.position.x > 1.0F);
+    assert(drifted.direction.x > 0.04F);
+    assert_close(cm::norm(drifted.direction), 1.0F);
+  }
 }

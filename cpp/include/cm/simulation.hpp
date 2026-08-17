@@ -31,6 +31,7 @@ class Simulation {
 
   CellId add_cell(const CellInit& cell);
   void remove_cell(CellId id);
+  void apply_flow_drift(float dt);
   ConstraintId add_plane_constraint(const PlaneConstraintInit& plane);
   ConstraintId add_sphere_constraint(const SphereConstraintInit& sphere);
   ConstraintId add_box_constraint(const BoxConstraintInit& box);

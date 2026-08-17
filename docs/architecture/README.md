@@ -15,6 +15,7 @@ The [numerical contract](numerical-contract.md) is the best starting point for w
 - [Axis-aligned box constraints](0016-box-constraints.md)
 - [Axis-aligned cylinder constraints](0018-cylinder-constraints.md)
 - [Cell removal](0020-cell-removal.md)
+- [Advective flow drift on cells](0021-flow-drift.md)
 
 ## Biological dynamics and signaling
 

@@ -121,6 +121,7 @@ class SignalGrid {
   [[nodiscard]] std::span<const float> levels() const& noexcept;
   [[nodiscard]] std::span<const float> levels() && = delete;
   [[nodiscard]] std::vector<float> sample(Vec3 position) const;
+  [[nodiscard]] Vec3 sample_velocity(Vec3 position) const;
   [[nodiscard]] SignalGridCheckpoint checkpoint() const;
   void set_levels(std::span<const float> levels);
   void replace_levels(std::vector<float> levels);

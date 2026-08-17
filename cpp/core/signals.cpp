@@ -582,6 +582,38 @@ std::vector<float> SignalGrid::sample(Vec3 position) const {
   return result;
 }
 
+Vec3 SignalGrid::sample_velocity(Vec3 position) const {
+  if (!spec_.velocity_field.has_value()) {
+    throw std::logic_error("signal grid does not declare a velocity field");
+  }
+  const auto stencil = signal_grid_stencil(spec_, position);
+  const auto& field = *spec_.velocity_field;
+  Vec3 result{};
+  for (std::size_t entry = 0; entry < stencil.count; ++entry) {
+    const auto site = stencil.sites[entry];
+    const auto weight = stencil.weights[entry];
+    if (weight == 0.0F) {
+      continue;
+    }
+    const auto z = site % spec_.shape.z;
+    const auto y = (site / spec_.shape.z) % spec_.shape.y;
+    const auto x = site / (static_cast<std::size_t>(spec_.shape.y) * spec_.shape.z);
+    const auto fx = static_cast<std::uint32_t>(x);
+    const auto fy = static_cast<std::uint32_t>(y);
+    const auto fz = static_cast<std::uint32_t>(z);
+    result.x += weight * 0.5F *
+                (field.x_faces[x_face_index(spec_.shape, fx, fy, fz)] +
+                 field.x_faces[x_face_index(spec_.shape, fx + 1, fy, fz)]);
+    result.y += weight * 0.5F *
+                (field.y_faces[y_face_index(spec_.shape, fx, fy, fz)] +
+                 field.y_faces[y_face_index(spec_.shape, fx, fy + 1, fz)]);
+    result.z += weight * 0.5F *
+                (field.z_faces[z_face_index(spec_.shape, fx, fy, fz)] +
+                 field.z_faces[z_face_index(spec_.shape, fx, fy, fz + 1)]);
+  }
+  return result;
+}
+
 SignalGridCheckpoint SignalGrid::checkpoint() const {
   validate();
   return {.spec = spec_, .levels = levels_};
