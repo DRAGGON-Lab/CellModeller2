@@ -196,6 +196,7 @@ def _remove_grid_obstacles(document: dict[str, Any]) -> None:
     grid = document["simulation"].get("signal_grid")
     if grid is not None:
         del grid["spec"]["obstacles"]
+        del grid["spec"]["velocity_field"]
 
 
 def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
