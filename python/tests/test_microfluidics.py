@@ -80,23 +80,22 @@ def test_trap_example_builds_steps_and_transports_nutrient() -> None:
     assert len(simulation.cells()) >= 1
 
 
-def test_biopixel_trap_matches_fabricated_dimensions() -> None:
-    device = BiopixelTrapDevice(mean_flow_speed=20.0)
+def test_biopixel_trap_dimensions_come_from_the_mask() -> None:
+    device = BiopixelTrapDevice.from_mask(
+        Path(__file__).resolve().parents[2] / "docs" / "tutorials" / "devices" / "prindle.dxf",
+        mean_flow_speed=20.0,
+    )
     assert device.trap_width == 100.0
     assert device.trap_depth == 95.0
     assert device.trap_height == 1.65
     assert device.channel_height == 10.0
 
-    # The cavity is fluid; the surrounding trap layer is solid at cavity depth.
+    # Monolayer cavity: fluid below the trap ceiling, solid above it.
     assert not device._solid(47.5, 0.0, 0.825)
-    assert device._solid(-10.0, 0.0, 0.825)
-    assert device._solid(47.5, 60.0, 0.825)
-    # The channel streams over both the cavity and the trap layer.
-    assert not device._solid(47.5, 0.0, 5.0)
-    assert not device._solid(-10.0, 0.0, 5.0)
-    # Poiseuille across the channel height; still water in the cavity.
-    mid = (device.trap_height + device.channel_height) * 0.5
-    assert device._channel_speed(47.5, mid) == 30.0
+    assert device._solid(47.5, 0.0, 2.475)
+    # The channel beside the trap keeps its full height.
+    assert not device._solid(-50.0, 0.0, 9.075)
+    assert device._channel_speed(-50.0, 5.0) == 30.0
     assert device._channel_speed(47.5, 0.825) == 0.0
 
 
@@ -111,10 +110,7 @@ def test_biopixel_example_confines_a_monolayer_under_flow() -> None:
 
     cells = model.simulation.cells()
     assert len(cells) >= 2
-    in_cavity = [cell for cell in cells if cell.position.z < 1.65]
-    assert len(in_cavity) >= len(cells) - 2
-    for cell in in_cavity:
-        assert -50.0 < cell.position.y < 50.0
-        assert 0.0 < cell.position.x < 95.0
     for cell in cells:
-        assert 0.0 < cell.position.z < 10.0
+        assert 0.0 < cell.position.z < 1.65
+        assert -50.0 < cell.position.y < 50.0
+        assert cell.position.x < 105.0

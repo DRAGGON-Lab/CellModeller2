@@ -89,14 +89,14 @@ The photomask CAD for a real sensing-array device is in
 identical traps along media channels. `BiopixelTrapDevice` models one trap with
 the fabricated dimensions:
 
-- a cavity 100 x 95 micrometers, recessed only **1.65 micrometers** into the
-  trap layer, so the colony grows as a monolayer on the device floor;
-- the 10-micrometer flow layer on top: the mask's supply channels are about one
-  millimeter wide, so over any single trap the stream is uniform, with a
-  Poiseuille profile across the channel height and still water in the cavity;
-- floor and ceiling planes plus the trap-layer slab boxes around the cavity,
-  whose open top is the diffusive interface that feeds the colony — and the
-  shear plane that sweeps away any cell protruding into the stream.
+- a cavity 100 x 95 micrometers, only **1.65 micrometers tall**, squeezing the
+  colony into a monolayer — the imaging geometry the device is fabricated for;
+- the flow layer's 10-micrometer-tall channel along the cavity's open face,
+  carrying the media stream past the trap mouth;
+- trap dimensions read from the mask at build time:
+  `BiopixelTrapDevice.from_mask` takes the drawn 110 x 100 outer wall outline
+  and removes the 5-micrometer walls (two sides, one back; the fourth side is
+  the open face), recovering the 100 x 95 cavity.
 
 ```python
 from cellmodeller2.microfluidics import BiopixelTrapDevice
@@ -141,10 +141,9 @@ array's gas-phase synchronization) is not part of this model. Run it live:
 uv run cm view --model examples/tutorials/biopixel_trap.py --seed 5 --dt 0.02 --backend metal --open
 ```
 
-The viewer shows the cavity recessed in the trap-layer slab with the channel
-streaming over it; the monolayer spreads at mid-cavity height and the nutrient
-field stays uniform because the stream replenishes the cavity through its open
-top faster than the colony depletes it.
+The viewer shows the shallow cavity as a thin glass slab beside the taller
+channel of the flow layer, with the monolayer spreading at mid-cavity height
+and fed through the open trap mouth.
 
 ## Numerical guidance
 

@@ -10,6 +10,8 @@ runtime receives only materialized data; every predicate here is authoring-time.
 
 from __future__ import annotations
 
+import os
+from collections import Counter
 from dataclasses import dataclass
 
 from ._core import (  # pyright: ignore[reportMissingModuleSource]
@@ -22,6 +24,7 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     Simulation,
     Vec3,
 )
+from .masks import MaskError, extract_rectangles, load_mask_polylines
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,31 +138,62 @@ class TrapChannelDevice:
 
 @dataclass(frozen=True, slots=True)
 class BiopixelTrapDevice:
-    """One trap of a biopixel array: a shallow cavity under a wide flow channel.
+    """One trap of a biopixel array: a shallow monolayer cavity beside a tall channel.
 
-    The mask CAD lays the flow layer's supply channels out about one millimeter
-    wide, an order of magnitude wider than one trap, so from a single trap's
-    point of view the channel above is unbounded: a uniform stream over the
-    whole cavity. The cavity spans ``0`` to ``trap_depth`` in x and
-    ``trap_width`` in y, recessed ``trap_height`` into the trap layer with the
-    device floor at ``z = 0``, and opens upward into the channel, which fills
-    ``trap_height`` to ``channel_height`` across the entire domain. Media flows
-    along y with a Poiseuille profile across the channel's height; the cavity
-    below is still fluid but carries no flow, so it exchanges with the stream
-    by diffusion through its open top. Cells sit in the cavity out of the
-    stream; a cell that protrudes into the channel is swept downstream. Every
-    trap in the array sees the same stream, so one simulated trap is
-    representative of each biopixel when inter-trap coupling is not modeled.
+    The cavity spans ``0`` to ``trap_depth`` in x with its open face at ``x = 0``
+    toward the channel, ``trap_width`` in y, and only ``trap_height`` in z, so
+    the colony grows as a monolayer under the cavity ceiling. The flow channel
+    runs along y between ``-channel_width`` and ``0`` at the full
+    ``channel_height``. The device floor is ``z = 0``. An array device repeats
+    this trap along its channels; every trap sees the same fresh-media flow, so
+    one simulated trap is representative of each biopixel in the array when
+    inter-trap coupling is not modeled.
     """
 
     trap_depth: float = 95.0
     trap_width: float = 100.0
     trap_height: float = 1.65
+    channel_width: float = 100.0
     channel_height: float = 10.0
     channel_half_length: float = 150.0
-    margin: float = 30.0
     wall_thickness: float = 10.0
     mean_flow_speed: float = 0.0
+
+    @classmethod
+    def from_mask(
+        cls,
+        path: str | os.PathLike[str],
+        *,
+        layer: str = "Layer-2",
+        wall_inset: float = 5.0,
+        unit_scale: float = 1000.0,
+        mean_flow_speed: float = 0.0,
+    ) -> BiopixelTrapDevice:
+        """Derive the trap footprint from a photomask drawing.
+
+        The mask draws each trap's outer wall outline. The cavity is the
+        outline minus ``wall_inset`` per wall: two side walls across the long
+        dimension and one back wall across the short dimension, whose remaining
+        side is the open face toward the channel. The drawing must contain one
+        uniform trap population on the layer.
+        """
+
+        polylines = load_mask_polylines(path)
+        rectangles = extract_rectangles(polylines, layer=layer, unit_scale=unit_scale)
+        if not rectangles:
+            raise MaskError(f"mask layer {layer!r} contains no rectangles")
+        sizes = Counter(
+            (round(max(r.width, r.height), 3), round(min(r.width, r.height), 3))
+            for r in rectangles
+        )
+        (long_side, short_side), count = sizes.most_common(1)[0]
+        if count < 2:
+            raise MaskError(f"mask layer {layer!r} has no repeated trap outline")
+        width = long_side - 2.0 * wall_inset
+        depth = short_side - wall_inset
+        if width <= 0.0 or depth <= 0.0:
+            raise MaskError("wall inset leaves no cavity")
+        return cls(trap_width=width, trap_depth=depth, mean_flow_speed=mean_flow_speed)
 
     def add_constraints(self, simulation: Simulation) -> None:
         """Add the device's wall constraints to a simulation."""
@@ -177,31 +211,41 @@ class BiopixelTrapDevice:
         ceiling.inward_normal = Vec3(0.0, 0.0, -1.0)
         simulation.add_plane_constraint(ceiling)
 
-        # The trap layer is a solid slab whose only recess is the cavity; four
-        # boxes bound the cavity laterally and stop at the cavity's open top.
-        slab = (
+        boxes = (
             (
-                (-self.margin - thickness, -self.channel_half_length, -thickness),
-                (0.0, self.channel_half_length, self.trap_height),
+                (0.0, -half_y - thickness, self.trap_height),
+                (
+                    self.trap_depth + thickness,
+                    half_y + thickness,
+                    self.channel_height + thickness,
+                ),
             ),
             (
-                (self.trap_depth, -self.channel_half_length, -thickness),
+                (0.0, half_y, -thickness),
                 (
-                    self.trap_depth + self.margin + thickness,
+                    self.trap_depth + thickness,
                     self.channel_half_length,
-                    self.trap_height,
+                    self.channel_height + thickness,
                 ),
             ),
             (
                 (0.0, -self.channel_half_length, -thickness),
-                (self.trap_depth, -half_y, self.trap_height),
+                (
+                    self.trap_depth + thickness,
+                    -half_y,
+                    self.channel_height + thickness,
+                ),
             ),
             (
-                (0.0, half_y, -thickness),
-                (self.trap_depth, self.channel_half_length, self.trap_height),
+                (self.trap_depth, -half_y - thickness, -thickness),
+                (
+                    self.trap_depth + thickness,
+                    half_y + thickness,
+                    self.channel_height + thickness,
+                ),
             ),
         )
-        for low, high in slab:
+        for low, high in boxes:
             box = BoxConstraintInit()
             box.center = Vec3(
                 *((left + right) * 0.5 for left, right in zip(low, high, strict=True))
@@ -214,9 +258,13 @@ class BiopixelTrapDevice:
             simulation.add_box_constraint(box)
 
         chamber = BoxConstraintInit()
-        chamber.center = Vec3(self.trap_depth * 0.5, 0.0, self.channel_height * 0.5)
+        chamber.center = Vec3(
+            (self.trap_depth + self.wall_thickness - self.channel_width) * 0.5,
+            0.0,
+            self.channel_height * 0.5,
+        )
         chamber.half_extents = Vec3(
-            self.trap_depth * 0.5 + self.margin,
+            (self.channel_width + self.trap_depth + self.wall_thickness) * 0.5,
             self.channel_half_length,
             self.channel_height * 0.5,
         )
@@ -225,23 +273,22 @@ class BiopixelTrapDevice:
         simulation.add_box_constraint(chamber)
 
     def _solid(self, px: float, py: float, pz: float) -> bool:
+        if px <= -self.channel_width or px >= self.trap_depth + self.wall_thickness:
+            return True
         if pz <= 0.0 or pz >= self.channel_height:
             return True
-        if px <= -self.margin or px >= self.trap_depth + self.margin:
+        if px >= 0.0 and abs(py) >= self.trap_width * 0.5:
             return True
-        if pz >= self.trap_height:
-            return False
-        in_cavity = 0.0 < px < self.trap_depth and abs(py) < self.trap_width * 0.5
-        return not in_cavity
+        if px >= self.trap_depth:
+            return True
+        return px >= 0.0 and pz >= self.trap_height
 
     def _channel_speed(self, px: float, pz: float) -> float:
-        if not (-self.margin < px < self.trap_depth + self.margin):
+        if not (-self.channel_width < px < 0.0) or not (0.0 < pz < self.channel_height):
             return 0.0
-        if not (self.trap_height < pz < self.channel_height):
-            return 0.0
-        center = (self.trap_height + self.channel_height) * 0.5
-        half_height = (self.channel_height - self.trap_height) * 0.5
-        offset = (pz - center) / half_height
+        center = -self.channel_width * 0.5
+        half_width = self.channel_width * 0.5
+        offset = (px - center) / half_width
         return 1.5 * self.mean_flow_speed * (1.0 - offset * offset)
 
     def apply_to_grid(

@@ -2,18 +2,20 @@
 
 The device photomasks in ``docs/tutorials/devices/prindle.dwg`` and
 ``prindle.dxf`` lay out 496 identical cell traps in a 16 x 31 grid beside media
-channels; ``cellmodeller2.masks`` extracts that array directly from the DXF's
-trap layer, and the flow layer's supply channels measure about one millimeter
-wide there. This model simulates a single trap with the fabricated dimensions:
-a 100 x 95 micrometer cavity recessed 1.65 micrometers into the trap layer,
-open upward into the 10-micrometer flow layer whose millimeter-wide channel
-streams uniformly over the whole cavity. Cells grow in the cavity out of the
-stream; anything that protrudes into the channel is swept downstream and
-washed out. Every trap in the array sees the same stream, so one simulated
-trap stands for each biopixel when inter-trap coupling is not modeled.
+channels. This model reads its trap footprint from that DXF at build time:
+``BiopixelTrapDevice.from_mask`` extracts the drawn 110 x 100 micrometer outer
+wall outline and removes the 5-micrometer walls, giving the 100 x 95 cavity.
+The cavity is 1.65 micrometers tall, squeezing the colony into a monolayer,
+and opens on one side to the 10-micrometer-tall channel of the flow layer on
+top, where media streams past with a Poiseuille profile. Cells that crowd out
+of the trap mouth are carried downstream and washed out. Every trap in the
+array sees the same flow, so one simulated trap stands for each biopixel when
+inter-trap coupling is not modeled.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from cellmodeller2 import (
     CellInit,
@@ -35,10 +37,11 @@ from cellmodeller2.checkpoint import CheckpointBundle, JSONValue
 from cellmodeller2.microfluidics import BiopixelTrapDevice
 
 MODEL_ID = "tutorials.biopixel-trap"
-MODEL_VERSION = 2
-DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=True)
+MODEL_VERSION = 3
+DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 
-DEVICE = BiopixelTrapDevice(mean_flow_speed=20.0)
+_MASK = Path(__file__).resolve().parents[2] / "docs" / "tutorials" / "devices" / "prindle.dxf"
+DEVICE = BiopixelTrapDevice.from_mask(_MASK, mean_flow_speed=20.0)
 CELL_RADIUS = 0.5
 WASHOUT_Y = DEVICE.channel_half_length - 10.0
 
@@ -49,13 +52,11 @@ NUTRIENT_K = 5.0
 
 def _grid() -> SignalGridSpec:
     shape = GridShape()
-    # One solid guard layer below the floor and above the ceiling keeps every
-    # capsule endpoint inside the lattice when tilted cells sample the field.
-    shape.x, shape.y, shape.z = 31, 60, 8
+    shape.x, shape.y, shape.z = 41, 60, 6
     grid = SignalGridSpec()
     grid.signal_count = 1
     grid.shape = shape
-    grid.origin = Vec3(-27.5, -147.5, -0.825)
+    grid.origin = Vec3(-97.5, -147.5, 0.825)
     grid.spacing = Vec3(5.0, 5.0, 1.65)
     grid.diffusion = [40.0]
     grid.advection = [Vec3()]
