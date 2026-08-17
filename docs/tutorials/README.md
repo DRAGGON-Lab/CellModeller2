@@ -11,6 +11,7 @@ These tutorials introduce the CellModeller2 modeling interface through runnable 
 5. [Plasmid segregation, contacts, and conjugation](discrete-state-and-contacts.md)
 6. [Checkpoints, contact graphs, and quantitative analysis](analysis.md)
 7. [SimBOL circuit examples](simbol.md)
+8. [Microfluidic devices: walls, flow, and washout](microfluidics.md)
 
 The examples use `uv`, the `cm` command, data-only checkpoints, and the standalone viewer. Each model selects its backend explicitly and can be run headlessly for batch experiments.
 

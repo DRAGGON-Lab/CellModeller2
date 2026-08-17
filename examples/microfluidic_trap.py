@@ -37,6 +37,7 @@ CELL_RADIUS = 0.5
 NUTRIENT_INLET = 10.0
 BASE_GROWTH_RATE = 1.0
 NUTRIENT_K = 5.0
+WASHOUT_Y = DEVICE.channel_half_length - 10.0
 
 
 def _grid() -> SignalGridSpec:
@@ -56,21 +57,11 @@ def _grid() -> SignalGridSpec:
 
 
 def _primed_levels(grid: SignalGridSpec) -> list[float]:
-    # The channel starts filled with fresh media; the trap starts empty and is
-    # fed by diffusion through its open face.
-    shape = grid.shape
-    obstacles = list(grid.obstacles)
-    levels = [0.0] * (shape.x * shape.y * shape.z)
-    for x in range(shape.x):
-        px = grid.origin.x + grid.spacing.x * x
-        if not (DEVICE.channel_far_x < px < DEVICE.trap_open_x):
-            continue
-        for y in range(shape.y):
-            for z in range(shape.z):
-                site = x * shape.y * shape.z + y * shape.z + z
-                if obstacles[site] == 0:
-                    levels[site] = NUTRIENT_INLET
-    return levels
+    # The device is loaded flooded with fresh media before flow starts.
+    return [
+        NUTRIENT_INLET if solid == 0 else 0.0
+        for solid in grid.obstacles
+    ]
 
 
 def _nutrient_growth(simulation: Simulation, position: Vec3) -> float:
@@ -79,12 +70,19 @@ def _nutrient_growth(simulation: Simulation, position: Vec3) -> float:
 
 
 def _regulate(step: ControllerStep) -> StepPlan:
+    divisions = DIVISION.requests(step)
+    washed = tuple(cell.id for cell in step.cells if abs(cell.position.y) > WASHOUT_Y)
+    if washed:
+        DIVISION.forget(step, washed)
+        divisions = tuple(request for request in divisions if request.parent_id not in washed)
     return StepPlan(
         updates=tuple(
             CellUpdate(cell.id, growth_rate=_nutrient_growth(step.simulation, cell.position))
             for cell in step.cells
+            if cell.id not in washed
         ),
-        divisions=DIVISION.requests(step),
+        divisions=divisions,
+        removals=washed,
     )
 
 
@@ -113,7 +111,7 @@ def build(context: ModelContext) -> NativeController:
         rng=context.rng,
         regulate=_regulate,
         on_division=_divided,
-        mechanics=MechanicsConfig(),
+        mechanics=MechanicsConfig(flow_drift=True),
         state=state,
     )
 

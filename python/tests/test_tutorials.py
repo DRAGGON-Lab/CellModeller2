@@ -116,7 +116,7 @@ def test_conjugation_tutorial_uses_current_contact_graph() -> None:
     assert model.simulation.cell(acceptor.id).cell_type == 2
 
 
-def test_danino_tutorial_declares_spatial_ahl_and_nutrient_reactions() -> None:
+def test_danino_tutorial_uses_device_flow_obstacles_and_washout() -> None:
     model, _ = build_model(
         _TUTORIALS / "danino_clock.py",
         ModelContext(BackendKind.CPU, 0, seed=31),
@@ -127,20 +127,14 @@ def test_danino_tutorial_declares_spatial_ahl_and_nutrient_reactions() -> None:
     checkpoint = model.simulation._checkpoint()
     assert checkpoint.signal_grid is not None
     spec = checkpoint.signal_grid.spec
-    assert spec.reaction is not None
-    sites = spec.site_count
-    outside = 0
-    inside = 20 * spec.shape.y * spec.shape.z
-    assert spec.origin.x + 19 * spec.spacing.x < -60.0
-    assert spec.origin.x + 20 * spec.spacing.x == -60.0
-    assert spec.reaction.source_rates[outside] == 0.0
-    assert spec.reaction.loss_rates[outside] == 5.0
-    assert spec.reaction.source_rates[sites + outside] == 0.0
-    assert spec.reaction.loss_rates[sites + outside] == 0.5
-    assert spec.reaction.source_rates[inside] == 0.0
-    assert spec.reaction.loss_rates[inside] == 0.0
-    assert spec.reaction.source_rates[sites + inside] == 20.0
-    assert spec.reaction.loss_rates[sites + inside] == 2.0
+    assert spec.reaction is None
+    assert spec.velocity_field is not None
+    assert any(value != 0.0 for value in spec.velocity_field.y_faces)
+    assert all(value == 0.0 for value in spec.velocity_field.x_faces)
+    solid = sum(spec.obstacles)
+    assert 0 < solid < len(spec.obstacles)
+    assert spec.y_lower.values == [0.0, 10.0]
+    assert len(checkpoint.constraints.boxes) == 4
 
 
 def test_plasmid_tutorial_resume_is_exact(tmp_path: Path) -> None:

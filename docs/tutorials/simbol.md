@@ -126,39 +126,36 @@ The example includes:
 - shared extracellular AHL and nutrient fields;
 - AHL-activated production with a third-order Hill response;
 - LuxI-dependent AHL production and AiiA-dependent AHL removal;
-- an AHL sink in the channel, nutrient replenishment in the trap, nutrient decay in the channel, and nutrient-limited growth;
+- a flow-fed channel that delivers nutrient, carries secreted AHL downstream, and washes out escaped cells;
+- nutrient-limited growth from the sampled local field;
 - stochastic daughter perturbations; and
-- the finite trap/channel obstacle geometry, expressed with typed plane and axis-aligned box constraints: two solid blocks flank the open trap face, a box seals the back wall, and planes bound the channel end and the z extent.
+- the device geometry, flow field, obstacle mask, and inlet/outlet built from one `TrapChannelDevice` description in `cellmodeller2.microfluidics`.
 
 The biological motif is based on Danino et al., “A synchronized quorum of genetic clocks,” Nature 463, 326–330 (2010), as cited by the SimBOL model. The example equations and constants are a tutorial realization, not a reproduction of the paper’s experimental parameter inference.
 
-### Spatial field reactions
+### Device flow and washout
 
-`CM_Danino.py` subclasses the legacy grid to apply an x-dependent AHL sink and an x-dependent nutrient source/decay field. It then reads nutrient to regulate growth. CellModeller2 represents those terms with the optional affine reaction field on `SignalGridSpec`:
+`CM_Danino.py` subclasses the legacy grid to fake the channel with an x-dependent AHL sink and
+nutrient source field. The CellModeller2 model expresses the channel physically: a
+`TrapChannelDevice` projects one geometry description into box wall constraints, a signal-grid
+obstacle mask, a divergence-free Poiseuille flow profile along the channel, and fixed inlet
+and outlet boundaries. Nutrient enters at the inlet at concentration 10 and is carried past
+the trap mouth; AHL secreted by the colony diffuses out of the trap and is advected
+downstream; walls block both diffusion and advection.
 
-```text
-dc[channel, x, y, z] / dt += source_rate[channel, x, y, z]
-                              - loss_rate[channel, x, y, z] * c[channel, x, y, z].
-```
+Cells feel the same flow: the controller enables `flow_drift`, so a cell that escapes the
+trap is carried along the channel, and the regulation step removes any cell past the washout
+boundary with a `StepPlan` removal, forgetting its division target first.
 
-The coefficient arrays use the same signal-major, then x/y/z-major order as the concentration field. The model builds them once from the physical lattice coordinate `origin.x + x * spacing.x`; no Python callback runs during signal integration. With `outside = x < -60`, the declared coefficients are:
-
-| Field and region             | source rate | loss rate |
-| ---------------------------- | ----------: | --------: |
-| AHL, inside trap             |           0 |         0 |
-| AHL, outside in channel      |           0 |         5 |
-| nutrient, inside trap        |          20 |         2 |
-| nutrient, outside in channel |           0 |       0.5 |
-
-Thus the inside nutrient equation is `dN/dt += 2(10 - N)`. The outside reaction is `dN/dt += -0.5 N`, and the outside AHL reaction is `dA/dt += -5 A`. Both fields begin at zero, so the nutrient reservoir develops dynamically rather than being installed as an initial condition.
-
-Before each biological step, the controller samples nutrient channel 1 at each cell center and applies the saturating growth law:
+Before each biological step, the controller samples nutrient channel 1 at each cell center
+and applies the saturating growth law:
 
 ```text
 growth = nutrient / (5 + nutrient).
 ```
 
-The affine coefficients are immutable grid configuration and exact checkpoint state. CPU, Metal, and CUDA evaluate the same focused native operator; the model does not inject or compile an arbitrary voxel function at runtime.
+The device starts flooded with media, matching how a physical device is loaded before flow
+begins.
 
 ### Numerical interpretation
 
@@ -166,6 +163,7 @@ Forward Euler evaluates transport, affine field reaction, and cell scatter from 
 
 ## Exercises
 
+- Vary `mean_flow_speed` and measure how the trap's AHL retention, and therefore the clock's synchronization, responds.
 - Run an inducer sweep with a data-only run manifest and compare reporter concentration at a fixed physical time and cell count.
 - Compare BBa_0004 with a self-repressed LacI equation derived directly from the summarized SBOL topology. Treat it as a different model, not a bug-free rerun of the generated script.
 - Restore the larger BBa_0003 grid and perform a grid-extent convergence check.

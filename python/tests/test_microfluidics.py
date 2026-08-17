@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from cellmodeller2 import (
     BackendKind,
     GridShape,
@@ -70,9 +71,10 @@ def test_trap_example_builds_steps_and_transports_nutrient() -> None:
     device = TrapChannelDevice()
     channel_x = (device.channel_far_x + device.trap_open_x) * 0.5
     upstream = simulation.sample_signals(Vec3(channel_x, -100.0, 0.0))[0]
-    trap_mouth = simulation.sample_signals(Vec3(-55.0, 0.0, 0.0))[0]
     trap_interior = simulation.sample_signals(Vec3(0.0, 0.0, 0.0))[0]
     assert upstream > 5.0
-    assert trap_mouth > trap_interior
-    assert upstream > trap_interior
+    assert trap_interior > 5.0
+    assert upstream >= trap_interior - 1.0e-3
+    with pytest.raises(ValueError, match="inside a grid obstacle"):
+        simulation.sample_signals(Vec3(0.0, 100.0, 0.0))
     assert len(simulation.cells()) >= 1
