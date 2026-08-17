@@ -6,6 +6,8 @@ signal grid, and a divergence-free face-staggered flow field for advection. The
 runtime receives only materialized data; every predicate here is authoring-time.
 """
 
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 from dataclasses import dataclass
