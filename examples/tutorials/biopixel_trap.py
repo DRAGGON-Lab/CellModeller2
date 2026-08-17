@@ -35,8 +35,8 @@ from cellmodeller2.checkpoint import CheckpointBundle, JSONValue
 from cellmodeller2.microfluidics import BiopixelTrapDevice
 
 MODEL_ID = "tutorials.biopixel-trap"
-MODEL_VERSION = 1
-DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
+MODEL_VERSION = 2
+DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=True)
 
 DEVICE = BiopixelTrapDevice(mean_flow_speed=20.0)
 CELL_RADIUS = 0.5
@@ -115,7 +115,7 @@ def build(context: ModelContext) -> NativeController:
         rng=context.rng,
         regulate=_regulate,
         on_division=_divided,
-        mechanics=MechanicsConfig(flow_drift=True),
+        mechanics=MechanicsConfig(flow_drift=True, passes=2),
         state=state,
     )
 
