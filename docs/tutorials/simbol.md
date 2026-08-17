@@ -128,7 +128,7 @@ The example includes:
 - LuxI-dependent AHL production and AiiA-dependent AHL removal;
 - an AHL sink in the channel, nutrient replenishment in the trap, nutrient decay in the channel, and nutrient-limited growth;
 - stochastic daughter perturbations; and
-- the finite trap/channel obstacle geometry, expressed with typed plane and outside-sphere constraints.
+- the finite trap/channel obstacle geometry, expressed with typed plane and axis-aligned box constraints: two solid blocks flank the open trap face, a box seals the back wall, and planes bound the channel end and the z extent.
 
 The biological motif is based on Danino et al., “A synchronized quorum of genetic clocks,” Nature 463, 326–330 (2010), as cited by the SimBOL model. The example equations and constants are a tutorial realization, not a reproduction of the paper’s experimental parameter inference.
 

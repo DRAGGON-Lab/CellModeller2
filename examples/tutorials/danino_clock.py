@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import math
-
 from cellmodeller2 import (
+    BoxConstraintInit,
     CellInit,
     CellUpdate,
     ControllerStep,
@@ -20,8 +19,6 @@ from cellmodeller2 import (
     SignalGridSpec,
     SignalIntegrationKind,
     Simulation,
-    SphereConstraintInit,
-    SphereRegion,
     StepPlan,
     UniformLengthDivision,
     Vec3,
@@ -29,7 +26,7 @@ from cellmodeller2 import (
 from cellmodeller2.checkpoint import CheckpointBundle, JSONValue
 
 MODEL_ID = "tutorials.danino-clock"
-MODEL_VERSION = 2
+MODEL_VERSION = 3
 DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 
 TRAP_OPEN_X = -60.0
@@ -39,6 +36,7 @@ TRAP_HALF_Z = 3.0
 CHANNEL_FAR_X = -100.0
 CHANNEL_HALF_LENGTH = 120.0
 CELL_RADIUS = 0.5
+WALL_THICKNESS = 2.0
 
 AHL_SINK_RATE = 5.0
 NUTRIENT_TARGET = 10.0
@@ -115,74 +113,38 @@ def _add_plane(
     simulation.add_plane_constraint(plane)
 
 
-def _add_sphere(simulation: Simulation, center: tuple[float, float, float]) -> None:
-    sphere = SphereConstraintInit()
-    sphere.center = Vec3(*center)
-    sphere.radius = CELL_RADIUS
-    sphere.coefficient = 1.0
-    sphere.allowed_region = SphereRegion.OUTSIDE
-    simulation.add_sphere_constraint(sphere)
-
-
-def _wall(
+def _add_box(
     simulation: Simulation,
-    start: tuple[float, float, float],
-    end: tuple[float, float, float],
+    low: tuple[float, float, float],
+    high: tuple[float, float, float],
 ) -> None:
-    delta = tuple(right - left for left, right in zip(start, end, strict=True))
-    length = math.sqrt(sum(value * value for value in delta))
-    count = max(2, math.ceil(length / CELL_RADIUS) + 1)
-    for index in range(count):
-        fraction = index / (count - 1)
-        center = (
-            start[0] + fraction * delta[0],
-            start[1] + fraction * delta[1],
-            start[2] + fraction * delta[2],
-        )
-        _add_sphere(simulation, center)
+    box = BoxConstraintInit()
+    box.center = Vec3(*((left + right) * 0.5 for left, right in zip(low, high, strict=True)))
+    box.half_extents = Vec3(*((right - left) * 0.5 for left, right in zip(low, high, strict=True)))
+    box.coefficient = 1.0
+    simulation.add_box_constraint(box)
 
 
 def _add_trap(simulation: Simulation) -> None:
-    setback = 3.0
-    radius = CELL_RADIUS
-    _wall(
+    # The solid material around the trap cavity: one block on each side of the
+    # opening, and a back wall sealing the trap away from the far side. The trap
+    # face at TRAP_OPEN_X stays open toward the flow channel.
+    _add_box(
         simulation,
-        (TRAP_OPEN_X + setback, -TRAP_HALF_Y - radius, 0.0),
-        (TRAP_BACK_X, -TRAP_HALF_Y - radius, 0.0),
+        (TRAP_OPEN_X, TRAP_HALF_Y, -TRAP_HALF_Z),
+        (TRAP_BACK_X + WALL_THICKNESS, CHANNEL_HALF_LENGTH, TRAP_HALF_Z),
     )
-    _wall(
+    _add_box(
         simulation,
-        (TRAP_OPEN_X + setback, TRAP_HALF_Y + radius, 0.0),
-        (TRAP_BACK_X, TRAP_HALF_Y + radius, 0.0),
+        (TRAP_OPEN_X, -CHANNEL_HALF_LENGTH, -TRAP_HALF_Z),
+        (TRAP_BACK_X + WALL_THICKNESS, -TRAP_HALF_Y, TRAP_HALF_Z),
     )
-    _wall(
+    _add_box(
         simulation,
-        (TRAP_BACK_X + radius, -TRAP_HALF_Y, 0.0),
-        (TRAP_BACK_X + radius, TRAP_HALF_Y, 0.0),
+        (TRAP_BACK_X, -TRAP_HALF_Y - WALL_THICKNESS, -TRAP_HALF_Z),
+        (TRAP_BACK_X + WALL_THICKNESS, TRAP_HALF_Y + WALL_THICKNESS, TRAP_HALF_Z),
     )
     _add_plane(simulation, (CHANNEL_FAR_X, 0.0, 0.0), (1.0, 0.0, 0.0))
-    _wall(
-        simulation,
-        (TRAP_OPEN_X, -CHANNEL_HALF_LENGTH + 3.0, 0.0),
-        (TRAP_OPEN_X, -TRAP_HALF_Y, 0.0),
-    )
-    _wall(
-        simulation,
-        (TRAP_OPEN_X, TRAP_HALF_Y, 0.0),
-        (TRAP_OPEN_X, CHANNEL_HALF_LENGTH - 3.0, 0.0),
-    )
-    for y in (-TRAP_HALF_Y, TRAP_HALF_Y):
-        outer_y = y - radius if y < 0.0 else y + radius
-        _wall(
-            simulation,
-            (TRAP_OPEN_X + setback, outer_y, 0.0),
-            (TRAP_OPEN_X, outer_y, 0.0),
-        )
-        _wall(
-            simulation,
-            (TRAP_OPEN_X, outer_y, 0.0),
-            (TRAP_OPEN_X, y, 0.0),
-        )
     _add_plane(simulation, (0.0, 0.0, TRAP_HALF_Z), (0.0, 0.0, -1.0))
     _add_plane(simulation, (0.0, 0.0, -TRAP_HALF_Z), (0.0, 0.0, 1.0))
 
