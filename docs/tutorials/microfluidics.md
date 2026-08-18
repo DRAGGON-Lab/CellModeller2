@@ -81,6 +81,48 @@ def _regulate(step):
 Removal keeps stable identifiers and lineage history, so analysis can count washout events
 and trace removed cells' ancestry from checkpoints.
 
+## Numerical flow: arbitrary geometry and colony feedback
+
+The analytic Poiseuille profile is exact only for a straight channel. For any other
+geometry — junctions, bends, pillars, a CAD-derived layout — `cellmodeller2.flow` solves the
+steady Hele-Shaw–Brinkman problem over the grid's fluid voxels and returns the same
+face-staggered field the engine already consumes:
+
+```python
+from cellmodeller2.flow import colony_mobility, solve_flow_field
+
+DEVICE.apply_to_grid(grid, inlet_values=[10.0], outlet_values=[0.0])
+field, report = solve_flow_field(grid, mean_inlet_speed=20.0)   # Stokes limit
+grid.velocity_field = field
+```
+
+The solve is a variable-coefficient pressure problem (`div(m grad p) = 0`), so the returned
+fluxes conserve mass per voxel and vanish on wall faces by construction; the flow-axis
+boundaries must be `FIXED` to act as inlet and outlet, and the linear solution is rescaled to
+the requested mean inlet speed. With uniform mobility this is the Stokes limit of the
+depth-averaged closure — correct routing through any mask, plug profile across the channel
+width (side-wall boundary layers, of order the gap height, are outside the closure).
+
+The mobility field is where Brinkman feedback enters: `colony_mobility` rasterizes the
+colony's volume fraction and adds Kozeny–Carman style drag, so media diverts around a packed
+trap and seeps through its edges. Because the field is data, regulation code can re-solve as
+the colony grows and swap it into the running simulation:
+
+```python
+def _regulate(step: ControllerStep) -> StepPlan:
+    if step.completed_steps % 200 == 0:
+        mobility = colony_mobility(GRID, step.cells, drag_coefficient=100.0)
+        field, _ = solve_flow_field(GRID, mean_inlet_speed=20.0, mobility=mobility)
+        step.simulation.set_velocity_field(field)
+    ...
+```
+
+`Simulation.set_velocity_field` validates the replacement against the full grid
+specification before swapping it; transport, drift, and checkpoints all use whichever field
+is current. The re-solve cadence is a model choice — colony growth is slow, so hundreds of
+steps between solves is typical. The drag coefficient is a modeling parameter (how strongly
+a packed colony resists through-flow relative to the open channel), not a measured constant.
+
 ## A fabricated device: the Prindle biopixel array
 
 The photomask CAD for a real sensing-array device is in
