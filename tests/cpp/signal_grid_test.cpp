@@ -433,4 +433,55 @@ int main() {
     assert(drifted.direction.x > 0.04F);
     assert_close(cm::norm(drifted.direction), 1.0F);
   }
+
+  {
+    auto spec = line_spec(3);
+    spec.diffusion = {0.0F};
+    spec.x_lower.kind = cm::GridBoundaryKind::fixed;
+    spec.x_lower.values = {0.0F};
+    spec.x_upper.kind = cm::GridBoundaryKind::fixed;
+    spec.x_upper.values = {0.0F};
+
+    cm::SignalGrid grid(spec);
+    assert_throws<std::logic_error>(
+        [&grid] { (void)grid.sample_velocity({1.5F, 0.0F, 0.0F}); });
+    grid.set_velocity_field(cm::SignalGridVelocityField{
+        .x_faces = std::vector<float>(4, 2.0F),
+        .y_faces = std::vector<float>(6, 0.0F),
+        .z_faces = std::vector<float>(6, 0.0F),
+    });
+    assert_close(grid.sample_velocity({1.5F, 0.0F, 0.0F}).x, 2.0F);
+    assert_throws<std::invalid_argument>([&grid] {
+      grid.set_velocity_field(cm::SignalGridVelocityField{
+          .x_faces = std::vector<float>(5, 0.0F),
+          .y_faces = std::vector<float>(6, 0.0F),
+          .z_faces = std::vector<float>(6, 0.0F),
+      });
+    });
+    assert_close(grid.sample_velocity({1.5F, 0.0F, 0.0F}).x, 2.0F);
+    grid.set_velocity_field(std::nullopt);
+    assert_throws<std::logic_error>(
+        [&grid] { (void)grid.sample_velocity({1.5F, 0.0F, 0.0F}); });
+
+    cm::Simulation simulation;
+    simulation.configure_signal_grid(spec);
+    cm::CellInit drifter;
+    drifter.position = {1.5F, 0.0F, 0.0F};
+    drifter.direction = {1.0F, 0.0F, 0.0F};
+    drifter.length = 1.0F;
+    drifter.radius = 0.3F;
+    const auto drifter_id = simulation.add_cell(drifter);
+    assert_throws<std::logic_error>([&simulation] { simulation.apply_flow_drift(0.1F); });
+    assert_close(simulation.cell(drifter_id).position.x, 1.5F);
+    simulation.set_velocity_field(cm::SignalGridVelocityField{
+        .x_faces = std::vector<float>(4, 2.0F),
+        .y_faces = std::vector<float>(6, 0.0F),
+        .z_faces = std::vector<float>(6, 0.0F),
+    });
+    simulation.apply_flow_drift(0.1F);
+    assert_close(simulation.cell(drifter_id).position.x, 1.7F);
+
+    cm::Simulation bare;
+    assert_throws<std::logic_error>([&bare] { bare.set_velocity_field(std::nullopt); });
+  }
 }
