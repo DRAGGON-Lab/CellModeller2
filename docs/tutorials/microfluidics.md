@@ -124,6 +124,34 @@ is current. The re-solve cadence is a model choice — colony growth is slow, so
 steps between solves is typical. The drag coefficient is a modeling parameter (how strongly
 a packed colony resists through-flow relative to the open channel), not a measured constant.
 
+### Resolved flow: the MAC Stokes–Brinkman solver
+
+When a study needs the flow the closure cannot express — viscous boundary layers on side
+walls, the true cross-channel profile, resolved wall shear — `cellmodeller2.stokes` solves
+the full staggered-grid Stokes–Brinkman problem with the same call shape and returns the
+same engine-ready field:
+
+```python
+from cellmodeller2.stokes import colony_drag, solve_stokes_field
+
+field, report = solve_stokes_field(grid, mean_inlet_speed=20.0)
+field, report = solve_stokes_field(
+    grid, mean_inlet_speed=20.0, drag=colony_drag(grid, cells, drag_coefficient=0.4)
+)
+```
+
+It costs far more than the Hele-Shaw solve, so devices keep the closure for authoring and
+in-loop feedback; the MAC solver anchors it. Both solvers run against literature and exact
+references in `scripts/run_flow_benchmarks.py` — exact plane Poiseuille with second-order
+convergence, the Shah–London square-duct peak-to-mean ratio, the exact two-layer Brinkman
+channel, and a thin-gap cross-check in which the depth-averaged MAC solution reproduces the
+Hele-Shaw flux split around a pillar:
+
+```console
+uv run python scripts/run_flow_benchmarks.py          # CI-gating benchmark table
+uv run python scripts/run_flow_benchmarks.py --fine   # doubled resolutions
+```
+
 ## A fabricated device: the Prindle biopixel array
 
 The photomask CAD for a real sensing-array device is in
