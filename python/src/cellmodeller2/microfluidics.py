@@ -2,8 +2,10 @@
 
 A device is described once in physical coordinates and then projected into the
 engine's typed inputs: box wall constraints for mechanics, a solid mask for the
-signal grid, and a divergence-free face-staggered flow field for advection. The
-runtime receives only materialized data; every predicate here is authoring-time.
+signal grid, and a numerically solved face-staggered flow field for advection
+(the steady Hele-Shaw solve of `cellmodeller2.flow`, so mass is conserved per
+voxel through any mask geometry). The runtime receives only materialized data;
+every predicate here is authoring-time.
 """
 
 # pyright: reportPrivateUsage=false
@@ -20,10 +22,10 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
     GridBoundaryKind,
     PlaneConstraintInit,
     SignalGridSpec,
-    SignalGridVelocityField,
     Simulation,
     Vec3,
 )
+from .flow import gap_mobility, solve_flow_field
 from .masks import MaskError, extract_rectangles, load_mask_polylines
 
 
@@ -35,8 +37,9 @@ class TrapChannelDevice:
     ``trap_open_x``. The trap cavity spans ``trap_open_x`` to ``trap_back_x``
     in x and ``-trap_half_y`` to ``trap_half_y`` in y, open toward the channel
     and sealed on its other three sides by solid blocks. Media flows along +y
-    with a Poiseuille profile across the channel width; the trap interior
-    exchanges with the channel by diffusion through the open face.
+    through the channel with the solved steady device flow; the dead-end trap
+    interior carries only the weak circulation at its mouth and exchanges with
+    the channel by diffusion through the open face.
     """
 
     trap_open_x: float = -60.0
@@ -117,21 +120,13 @@ class TrapChannelDevice:
             return True
         return px >= self.trap_back_x
 
-    def _channel_speed(self, px: float, pz: float) -> float:
-        if not (self.channel_far_x < px < self.trap_open_x) or abs(pz) >= self.trap_half_z:
-            return 0.0
-        center = (self.channel_far_x + self.trap_open_x) * 0.5
-        half_width = (self.trap_open_x - self.channel_far_x) * 0.5
-        offset = (px - center) / half_width
-        return 1.5 * self.mean_flow_speed * (1.0 - offset * offset)
-
     def apply_to_grid(
         self,
         spec: SignalGridSpec,
         inlet_values: list[float],
         outlet_values: list[float],
     ) -> None:
-        """Materialize the device's solid mask, flow field, and y-axis inlet and outlet."""
+        """Materialize the device's solid mask, solved flow field, and y inlet and outlet."""
 
         _project_channel_device(self, spec, inlet_values, outlet_values)
 
@@ -283,21 +278,13 @@ class BiopixelTrapDevice:
             return True
         return px >= 0.0 and pz >= self.trap_height
 
-    def _channel_speed(self, px: float, pz: float) -> float:
-        if not (-self.channel_width < px < 0.0) or not (0.0 < pz < self.channel_height):
-            return 0.0
-        center = -self.channel_width * 0.5
-        half_width = self.channel_width * 0.5
-        offset = (px - center) / half_width
-        return 1.5 * self.mean_flow_speed * (1.0 - offset * offset)
-
     def apply_to_grid(
         self,
         spec: SignalGridSpec,
         inlet_values: list[float],
         outlet_values: list[float],
     ) -> None:
-        """Materialize the device's solid mask, flow field, and y-axis inlet and outlet."""
+        """Materialize the device's solid mask, solved flow field, and y inlet and outlet."""
 
         _project_channel_device(self, spec, inlet_values, outlet_values)
 
@@ -326,30 +313,17 @@ def _project_channel_device(
                     obstacles[x * shape.y * shape.z + y * shape.z + z] = 1
     spec.obstacles = obstacles
 
-    def fluid(x: int, y: int, z: int) -> bool:
-        return obstacles[x * shape.y * shape.z + y * shape.z + z] == 0
-
-    y_faces = [0.0] * (shape.x * (shape.y + 1) * shape.z)
-    for x in range(shape.x):
-        px = center(origin.x, spacing.x, x)
-        for z in range(shape.z):
-            pz = center(origin.z, spacing.z, z)
-            speed = device._channel_speed(px, pz)
-            if speed == 0.0:
-                continue
-            for fy in range(shape.y + 1):
-                lower_open = fy == 0 or fluid(x, fy - 1, z)
-                upper_open = fy == shape.y or fluid(x, fy, z)
-                if lower_open and upper_open:
-                    y_faces[x * (shape.y + 1) * shape.z + fy * shape.z + z] = speed
-    field = SignalGridVelocityField()
-    field.x_faces = [0.0] * ((shape.x + 1) * shape.y * shape.z)
-    field.y_faces = y_faces
-    field.z_faces = [0.0] * (shape.x * shape.y * (shape.z + 1))
-    spec.velocity_field = field
-
     spec.advection = [Vec3() for _ in range(spec.signal_count)]
     spec.y_lower.kind = GridBoundaryKind.FIXED
     spec.y_lower.values = list(inlet_values)
     spec.y_upper.kind = GridBoundaryKind.FIXED
     spec.y_upper.values = list(outlet_values)
+
+    if device.mean_flow_speed != 0.0:
+        field, _ = solve_flow_field(
+            spec,
+            mean_inlet_speed=device.mean_flow_speed,
+            axis="y",
+            mobility=gap_mobility(spec),
+        )
+        spec.velocity_field = field

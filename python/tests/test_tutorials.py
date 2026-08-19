@@ -131,7 +131,11 @@ def test_danino_tutorial_uses_device_flow_obstacles_and_washout() -> None:
     assert spec.reaction is None
     assert spec.velocity_field is not None
     assert any(value != 0.0 for value in spec.velocity_field.y_faces)
-    assert all(value == 0.0 for value in spec.velocity_field.x_faces)
+    # The solved field is dominated by the axial channel flow; transverse
+    # components exist only as weak circulation at the trap mouth.
+    assert max(abs(value) for value in spec.velocity_field.x_faces) < max(
+        abs(value) for value in spec.velocity_field.y_faces
+    )
     solid = sum(spec.obstacles)
     assert 0 < solid < len(spec.obstacles)
     assert spec.y_lower.values == [0.0, 10.0]

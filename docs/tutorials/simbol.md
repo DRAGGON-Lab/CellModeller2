@@ -138,10 +138,12 @@ The biological motif is based on Danino et al., “A synchronized quorum of gene
 `CM_Danino.py` subclasses the legacy grid to fake the channel with an x-dependent AHL sink and
 nutrient source field. The CellModeller2 model expresses the channel physically: a
 `TrapChannelDevice` projects one geometry description into box wall constraints, a signal-grid
-obstacle mask, a divergence-free Poiseuille flow profile along the channel, and fixed inlet
-and outlet boundaries. Nutrient enters at the inlet at concentration 10 and is carried past
-the trap mouth; AHL secreted by the colony diffuses out of the trap and is advected
-downstream; walls block both diffusion and advection.
+obstacle mask, a numerically solved steady flow field along the channel, and fixed inlet
+and outlet boundaries; as the colony packs the trap, the model re-solves the flow with the
+colony's Brinkman drag and swaps the field into the running simulation. Nutrient enters at
+the inlet at concentration 10 and is carried past the trap mouth; AHL secreted by the colony
+diffuses out of the trap and is advected downstream; walls block both diffusion and
+advection.
 
 Cells feel the same flow: the controller enables `flow_drift`, so a cell that escapes the
 trap is carried along the channel, and the regulation step removes any cell past the washout

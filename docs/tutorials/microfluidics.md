@@ -49,11 +49,11 @@ DEVICE.add_constraints(simulation)                     # box walls for mechanics
 DEVICE.apply_to_grid(grid, inlet_values=[10.0], outlet_values=[0.0])
 ```
 
-`apply_to_grid` materializes the solid mask, a divergence-free Poiseuille profile along the
-channel on the grid's face-staggered velocity field, and fixed inlet and outlet boundaries on
-the y axis. Because the profile varies only across the channel width, it is exactly
-divergence-free; flow slides past the open trap face and the trap exchanges with the channel
-by diffusion, as in the physical device.
+`apply_to_grid` materializes the solid mask, fixed inlet and outlet boundaries on the y
+axis, and the numerically solved steady device flow on the grid's face-staggered velocity
+field (see the next section). Flow runs through the channel, circulates weakly at the open
+trap face, and the dead-end trap exchanges with the channel chiefly by diffusion, as in the
+physical device.
 
 ## Flow on signals and on cells
 
@@ -83,15 +83,15 @@ and trace removed cells' ancestry from checkpoints.
 
 ## Numerical flow: arbitrary geometry and colony feedback
 
-The analytic Poiseuille profile is exact only for a straight channel. For any other
-geometry — junctions, bends, pillars, a CAD-derived layout — `cellmodeller2.flow` solves the
-steady Hele-Shaw–Brinkman problem over the grid's fluid voxels and returns the same
-face-staggered field the engine already consumes:
+Device flow fields are solved, not authored: `cellmodeller2.flow` computes the steady
+Hele-Shaw–Brinkman problem over the grid's fluid voxels and returns the same face-staggered
+field the engine consumes. `apply_to_grid` runs this solve for every device, and it works
+for any mask geometry — junctions, bends, pillars, a CAD-derived layout — not just straight
+channels. The solver is also available directly for grids built without a device helper:
 
 ```python
 from cellmodeller2.flow import colony_mobility, solve_flow_field
 
-DEVICE.apply_to_grid(grid, inlet_values=[10.0], outlet_values=[0.0])
 field, report = solve_flow_field(grid, mean_inlet_speed=20.0)   # Stokes limit
 grid.velocity_field = field
 ```
@@ -105,14 +105,15 @@ width (side-wall boundary layers, of order the gap height, are outside the closu
 
 The mobility field is where Brinkman feedback enters: `colony_mobility` rasterizes the
 colony's volume fraction and adds Kozeny–Carman style drag, so media diverts around a packed
-trap and seeps through its edges. Because the field is data, regulation code can re-solve as
-the colony grows and swap it into the running simulation:
+trap and seeps through its edges. Because the field is data, regulation code re-solves as
+the colony grows and swaps it into the running simulation — the trap models do this every
+`RESOLVE_INTERVAL` steps:
 
 ```python
 def _regulate(step: ControllerStep) -> StepPlan:
-    if step.completed_steps % 200 == 0:
-        mobility = colony_mobility(GRID, step.cells, drag_coefficient=100.0)
-        field, _ = solve_flow_field(GRID, mean_inlet_speed=20.0, mobility=mobility)
+    if step.completed_steps and step.completed_steps % RESOLVE_INTERVAL == 0:
+        mobility = colony_mobility(GRID, step.cells, drag_coefficient=DRAG_COEFFICIENT)
+        field, _ = solve_flow_field(GRID, mean_inlet_speed=FLOW_SPEED, mobility=mobility)
         step.simulation.set_velocity_field(field)
     ...
 ```
@@ -190,7 +191,8 @@ and fed through the open trap mouth.
 ## Numerical guidance
 
 - Choose `dt` so the largest per-step drift, `max_velocity * dt`, stays below a cell radius;
-  the trap examples use `dt = 0.02` with peak channel speed 30.
+  `solve_flow_field` reports `max_speed`, and the trap examples use `dt = 0.02` with a mean
+  channel speed of 20.
 - Forward Euler enforces its stability bound from the per-site advective outflow; the trap
   models select Crank-Nicolson.
 - Prime the device with media in its initial levels when growth should start immediately; an

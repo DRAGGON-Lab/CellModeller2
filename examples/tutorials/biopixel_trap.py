@@ -7,10 +7,13 @@ channels. This model reads its trap footprint from that DXF at build time:
 wall outline and removes the 5-micrometer walls, giving the 100 x 95 cavity.
 The cavity is 1.65 micrometers tall, squeezing the colony into a monolayer,
 and opens on one side to the 10-micrometer-tall channel of the flow layer on
-top, where media streams past with a Poiseuille profile. Cells that crowd out
-of the trap mouth are carried downstream and washed out. Every trap in the
-array sees the same flow, so one simulated trap stands for each biopixel when
-inter-trap coupling is not modeled.
+top, where media streams past with the numerically solved steady device flow.
+The colony feeds back on that flow: at a fixed cadence the model rasterizes
+the packed cells into a Brinkman drag field, re-solves the flow, and swaps the
+field into the running simulation, so media diverts around a full trap mouth.
+Cells that crowd out of the trap mouth are carried downstream and washed out.
+Every trap in the array sees the same flow, so one simulated trap stands for
+each biopixel when inter-trap coupling is not modeled.
 """
 
 from __future__ import annotations
@@ -34,20 +37,27 @@ from cellmodeller2 import (
     Vec3,
 )
 from cellmodeller2.checkpoint import CheckpointBundle, JSONValue
+from cellmodeller2.flow import colony_mobility, gap_mobility, solve_flow_field
 from cellmodeller2.microfluidics import BiopixelTrapDevice
 
 MODEL_ID = "tutorials.biopixel-trap"
-MODEL_VERSION = 3
+MODEL_VERSION = 4
 DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 
 _MASK = Path(__file__).resolve().parents[2] / "docs" / "tutorials" / "devices" / "prindle.dxf"
-DEVICE = BiopixelTrapDevice.from_mask(_MASK, mean_flow_speed=20.0)
+FLOW_SPEED = 20.0
+DEVICE = BiopixelTrapDevice.from_mask(_MASK, mean_flow_speed=FLOW_SPEED)
 CELL_RADIUS = 0.5
 WASHOUT_Y = DEVICE.channel_half_length - 10.0
 
 NUTRIENT_INLET = 10.0
 BASE_GROWTH_RATE = 1.0
 NUTRIENT_K = 5.0
+
+# Brinkman feedback: how often the colony's drag re-solves the device flow,
+# and how strongly a packed voxel resists through-flow.
+RESOLVE_INTERVAL = 100
+DRAG_COEFFICIENT = 100.0
 
 
 def _grid() -> SignalGridSpec:
@@ -66,6 +76,10 @@ def _grid() -> SignalGridSpec:
     return grid
 
 
+GRID = _grid()
+GAP_MOBILITY = gap_mobility(GRID)
+
+
 def _primed_levels(grid: SignalGridSpec) -> list[float]:
     # The device is loaded flooded with fresh media before flow starts.
     return [NUTRIENT_INLET if solid == 0 else 0.0 for solid in grid.obstacles]
@@ -77,6 +91,12 @@ def _nutrient_growth(simulation: Simulation, position: Vec3) -> float:
 
 
 def _regulate(step: ControllerStep) -> StepPlan:
+    if step.completed_steps and step.completed_steps % RESOLVE_INTERVAL == 0:
+        mobility = colony_mobility(
+            GRID, step.cells, base=GAP_MOBILITY, drag_coefficient=DRAG_COEFFICIENT
+        )
+        field, _ = solve_flow_field(GRID, mean_inlet_speed=FLOW_SPEED, mobility=mobility)
+        step.simulation.set_velocity_field(field)
     divisions = DIVISION.requests(step)
     washed = tuple(cell.id for cell in step.cells if abs(cell.position.y) > WASHOUT_Y)
     if washed:
@@ -99,8 +119,7 @@ def _divided(step: ControllerStep, event: DivisionEvent) -> None:
 
 def build(context: ModelContext) -> NativeController:
     simulation = context.simulation(reserved_capacity=20_000)
-    grid = _grid()
-    simulation.configure_signal_grid(grid, _primed_levels(grid))
+    simulation.configure_signal_grid(GRID, _primed_levels(GRID))
     DEVICE.add_constraints(simulation)
 
     founder = CellInit()
