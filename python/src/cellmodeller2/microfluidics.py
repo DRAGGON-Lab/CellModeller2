@@ -6,6 +6,12 @@ signal grid, and a numerically solved face-staggered flow field for advection
 (the steady Hele-Shaw solve of `cellmodeller2.flow`, so mass is conserved per
 voxel through any mask geometry). The runtime receives only materialized data;
 every predicate here is authoring-time.
+
+Voxelization is conservative: a lattice site is solid only when its entire
+voxel lies inside a wall, so the mechanics walls enclose the solid mask and a
+cell pressed against a wall always has a fluid site to sample. The mask's
+fluid region therefore reaches up to half a voxel into each wall, which is the
+staircase accuracy of any mask at the grid resolution.
 """
 
 # pyright: reportPrivateUsage=false
@@ -27,6 +33,23 @@ from ._core import (  # pyright: ignore[reportMissingModuleSource]
 )
 from .flow import gap_mobility, solve_flow_field
 from .masks import MaskError, extract_rectangles, load_mask_polylines
+
+# A voxel edge that lands on a wall plane belongs to the wall, so the voxel
+# tests admit a rounding margin: without it a wall drawn exactly on a lattice
+# face resolves as solid or fluid according to float rounding.
+_EDGE_TOLERANCE = 1.0e-6
+
+
+def _reaches(edge: float, wall: float, half: float) -> bool:
+    """Whether a voxel's lower edge has reached a wall lying above it."""
+
+    return edge >= wall - _EDGE_TOLERANCE * half
+
+
+def _recedes(edge: float, wall: float, half: float) -> bool:
+    """Whether a voxel's upper edge has reached a wall lying below it."""
+
+    return edge <= wall + _EDGE_TOLERANCE * half
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,14 +134,19 @@ class TrapChannelDevice:
         chamber.allowed_region = ConstraintRegion.INSIDE
         simulation.add_box_constraint(chamber)
 
-    def _solid(self, px: float, py: float, pz: float) -> bool:
-        if px <= self.channel_far_x or px >= self.trap_back_x + self.wall_thickness:
+    def _solid(self, px: float, py: float, pz: float, half: tuple[float, float, float]) -> bool:
+        hx, hy, hz = half
+        if _recedes(px + hx, self.channel_far_x, hx):
             return True
-        if abs(pz) >= self.trap_half_z:
+        if _reaches(px - hx, self.trap_back_x + self.wall_thickness, hx):
             return True
-        if px >= self.trap_open_x and abs(py) >= self.trap_half_y:
+        if _reaches(abs(pz) - hz, self.trap_half_z, hz):
             return True
-        return px >= self.trap_back_x
+        if _reaches(px - hx, self.trap_open_x, hx) and _reaches(
+            abs(py) - hy, self.trap_half_y, hy
+        ):
+            return True
+        return _reaches(px - hx, self.trap_back_x, hx)
 
     def apply_to_grid(
         self,
@@ -267,16 +295,19 @@ class BiopixelTrapDevice:
         chamber.allowed_region = ConstraintRegion.INSIDE
         simulation.add_box_constraint(chamber)
 
-    def _solid(self, px: float, py: float, pz: float) -> bool:
-        if px <= -self.channel_width or px >= self.trap_depth + self.wall_thickness:
+    def _solid(self, px: float, py: float, pz: float, half: tuple[float, float, float]) -> bool:
+        hx, hy, hz = half
+        if _recedes(px + hx, -self.channel_width, hx):
             return True
-        if pz <= 0.0 or pz >= self.channel_height:
+        if _reaches(px - hx, self.trap_depth + self.wall_thickness, hx):
             return True
-        if px >= 0.0 and abs(py) >= self.trap_width * 0.5:
+        if _recedes(pz + hz, 0.0, hz) or _reaches(pz - hz, self.channel_height, hz):
             return True
-        if px >= self.trap_depth:
+        if _reaches(px - hx, 0.0, hx) and _reaches(abs(py) - hy, self.trap_width * 0.5, hy):
             return True
-        return px >= 0.0 and pz >= self.trap_height
+        if _reaches(px - hx, self.trap_depth, hx):
+            return True
+        return _reaches(px - hx, 0.0, hx) and _reaches(pz - hz, self.trap_height, hz)
 
     def apply_to_grid(
         self,
@@ -302,6 +333,11 @@ def _project_channel_device(
     def center(axis_origin: float, axis_spacing: float, index: int) -> float:
         return axis_origin + axis_spacing * index
 
+    # A site is solid only when its whole voxel lies inside a wall, so the
+    # mask's solid region is enclosed by the mechanics walls. The voxel holding
+    # any position a cell can reach is then fluid, which guarantees every
+    # sampling stencil has at least one fluid corner.
+    half = (spacing.x * 0.5, spacing.y * 0.5, spacing.z * 0.5)
     obstacles = [0] * (shape.x * shape.y * shape.z)
     for x in range(shape.x):
         px = center(origin.x, spacing.x, x)
@@ -309,7 +345,7 @@ def _project_channel_device(
             py = center(origin.y, spacing.y, y)
             for z in range(shape.z):
                 pz = center(origin.z, spacing.z, z)
-                if device._solid(px, py, pz):
+                if device._solid(px, py, pz, half):
                     obstacles[x * shape.y * shape.z + y * shape.z + z] = 1
     spec.obstacles = obstacles
 

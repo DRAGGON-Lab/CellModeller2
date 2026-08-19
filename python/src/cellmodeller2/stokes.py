@@ -57,6 +57,16 @@ class StokesSolveReport:
     divergence_rms: float
     mean_inlet_speed: float
     max_speed: float
+    min_gap_voxels: int
+    """Fluid voxels across the narrowest channel, transverse to the flow.
+
+    A no-slip profile needs several voxels to resolve, so this number bounds
+    the solve's accuracy: a channel one voxel across carries roughly two and a
+    half times the flux its true parabolic profile would, four voxels bring
+    that within about ten percent, and eight within a few percent. Below four,
+    the depth-averaged Hele-Shaw closure of `cellmodeller2.flow` is the more
+    accurate model of a shallow channel.
+    """
 
 
 def colony_drag(
@@ -84,6 +94,27 @@ def colony_drag(
         solid = np.asarray(obstacles, dtype=np.uint8).reshape(dims) != 0
         drag[solid] = 0.0
     return [float(value) for value in drag.ravel()]
+
+
+def _minimum_gap_voxels(fluid: _BoolGrid, dims: tuple[int, int, int], flow_axis: int) -> int:
+    """The shortest run of fluid voxels across any axis transverse to the flow."""
+
+    shortest = 0
+    for axis in range(3):
+        if axis == flow_axis or dims[axis] <= 1:
+            continue
+        lines = np.moveaxis(fluid, axis, -1)
+        padded = np.zeros((*lines.shape[:-1], lines.shape[-1] + 2), dtype=np.int8)
+        padded[..., 1:-1] = lines
+        edges = np.diff(padded, axis=-1)
+        starts = np.argwhere(edges == 1)
+        ends = np.argwhere(edges == -1)
+        if starts.size == 0:
+            continue
+        runs = ends[:, -1] - starts[:, -1]
+        axis_shortest = int(runs.min())
+        shortest = axis_shortest if shortest == 0 else min(shortest, axis_shortest)
+    return shortest
 
 
 class _StokesOperator:
@@ -427,5 +458,6 @@ def solve_stokes_field(
         divergence_rms=divergence_rms * abs(factor),
         mean_inlet_speed=mean_inlet_speed,
         max_speed=max_speed,
+        min_gap_voxels=_minimum_gap_voxels(fluid, dims, flow_axis),
     )
     return field, report

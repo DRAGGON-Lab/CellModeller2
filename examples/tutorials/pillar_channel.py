@@ -21,6 +21,7 @@ from cellmodeller2 import (
     CellUpdate,
     ConstraintRegion,
     ControllerStep,
+    CoupledRatePlan,
     CylinderConstraintInit,
     DivisionEvent,
     GridBoundaryKind,
@@ -28,6 +29,7 @@ from cellmodeller2 import (
     MechanicsConfig,
     ModelContext,
     NativeController,
+    RatePlanBuilder,
     SignalGridSpec,
     SignalIntegrationKind,
     Simulation,
@@ -39,7 +41,7 @@ from cellmodeller2.checkpoint import CheckpointBundle, JSONValue
 from cellmodeller2.flow import colony_mobility, gap_mobility, solve_flow_field
 
 MODEL_ID = "tutorials.pillar-channel"
-MODEL_VERSION = 1
+MODEL_VERSION = 2
 DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 
 CHANNEL_HALF_WIDTH = 40.0
@@ -58,6 +60,14 @@ FOUNDER_SITES = ((-20.0, -46.0), (20.0, -46.0), (0.0, 14.0))
 NUTRIENT_INLET = 10.0
 BASE_GROWTH_RATE = 1.0
 NUTRIENT_K = 5.0
+# Nutrient is one limiting substrate in arbitrary concentration units, fed at
+# NUTRIENT_INLET. Uptake is tied to realized growth: a cell consumes
+# growth_rate * volume / NUTRIENT_YIELD per unit time, so Monod-limited growth
+# and consumption stay consistent. The yield sets the coupling strength, and
+# this value makes a packed trap's uptake comparable to the diffusive supply
+# through its mouth, so nutrient penetrates a few tens of micrometers and the
+# colony behind that front grows more slowly.
+NUTRIENT_YIELD = 0.5
 
 # Brinkman feedback: how often the colony's drag re-solves the device flow,
 # and how strongly a packed voxel resists through-flow.
@@ -91,7 +101,13 @@ def _grid() -> SignalGridSpec:
     grid.diffusion = [40.0]
     grid.advection = [Vec3()]
     grid.integration = SignalIntegrationKind.CRANK_NICOLSON
-    grid.solver.absolute_tolerance = 1.0e-12
+    # Cell sources are small next to the background level, so convergence is
+    # judged on the absolute residual: a relative tolerance scaled by the
+    # background would declare a step converged before uptake reaches the
+    # field. The absolute bound sits above the float32 residual floor of a
+    # grid at this concentration and well below one step of cell uptake.
+    grid.solver.absolute_tolerance = 1.0e-6
+    grid.solver.relative_tolerance = 0.0
     margin = 0.5 * math.hypot(grid.spacing.x, grid.spacing.y)
     obstacles = [0] * grid.site_count
     for x in range(shape.x):
@@ -141,6 +157,12 @@ def _add_walls(simulation: Simulation) -> None:
         pillar.coefficient = 1.0
         pillar.allowed_region = ConstraintRegion.OUTSIDE
         simulation.add_cylinder_constraint(pillar)
+
+
+def _rate_plan() -> CoupledRatePlan:
+    rates = RatePlanBuilder()
+    uptake = -(rates.growth_rate() * rates.cell_volume()) / NUTRIENT_YIELD
+    return rates.coupled_plan(0, 1, (), (uptake,))
 
 
 def _primed_levels(grid: SignalGridSpec) -> list[float]:
@@ -199,6 +221,7 @@ def _divided(step: ControllerStep, event: DivisionEvent) -> None:
 def build(context: ModelContext) -> NativeController:
     simulation = context.simulation(reserved_capacity=10_000)
     simulation.configure_signal_grid(GRID, _primed_levels(GRID))
+    simulation.set_coupled_rate_plan(_rate_plan())
     _add_walls(simulation)
 
     founder_ids = []

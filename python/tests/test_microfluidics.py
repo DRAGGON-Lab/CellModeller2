@@ -70,8 +70,12 @@ def test_device_flow_runs_through_the_channel_and_rests_in_the_trap() -> None:
     assert channel_speed > 15.0
     assert trap_speed < channel_speed * 0.05
 
-    assert device._solid(device.trap_back_x + 0.5, 0.0, 0.0)
-    assert not device._solid(center_x, 0.0, 0.0)
+    half = (grid.spacing.x * 0.5, grid.spacing.y * 0.5, grid.spacing.z * 0.5)
+    # A voxel entirely behind the trap's back wall is solid; a voxel straddling
+    # that wall is fluid, so a cell touching the wall still samples the grid.
+    assert device._solid(device.trap_back_x + grid.spacing.x, 0.0, 0.0, half)
+    assert not device._solid(device.trap_back_x, 0.0, 0.0, half)
+    assert not device._solid(center_x, 0.0, 0.0, half)
 
 
 def test_trap_example_builds_steps_and_transports_nutrient() -> None:
@@ -107,10 +111,11 @@ def test_biopixel_trap_dimensions_come_from_the_mask() -> None:
     assert device.channel_height == 10.0
 
     # Monolayer cavity: fluid below the trap ceiling, solid above it.
-    assert not device._solid(47.5, 0.0, 0.825)
-    assert device._solid(47.5, 0.0, 2.475)
+    half = (2.5, 2.5, 0.825)
+    assert not device._solid(47.5, 0.0, 0.825, half)
+    assert device._solid(47.5, 0.0, 2.475, half)
     # The channel beside the trap keeps its full height.
-    assert not device._solid(-50.0, 0.0, 9.075)
+    assert not device._solid(-50.0, 0.0, 9.075, half)
 
 
 def test_biopixel_example_confines_a_monolayer_under_flow() -> None:
@@ -133,3 +138,49 @@ def test_biopixel_example_confines_a_monolayer_under_flow() -> None:
     checkpoint = model.simulation._checkpoint()
     assert checkpoint.signal_grid is not None
     assert checkpoint.signal_grid.spec.velocity_field is not None
+
+
+@pytest.mark.parametrize(
+    ("device", "spacing", "surfaces"),
+    [
+        (
+            TrapChannelDevice(),
+            (4.0, 4.0, 4.0),
+            (
+                (60.0, 0.0, 0.0),
+                (-60.0, 15.0, 0.0),
+                (0.0, -15.0, 0.0),
+                (-100.0, 0.0, 0.0),
+                (0.0, 0.0, 3.0),
+                (0.0, 0.0, -3.0),
+            ),
+        ),
+        (
+            BiopixelTrapDevice(),
+            (5.0, 5.0, 1.65),
+            (
+                (95.0, 0.0, 0.8),
+                (0.0, 50.0, 0.8),
+                (0.0, -50.0, 0.8),
+                (-100.0, 0.0, 5.0),
+                (50.0, 0.0, 1.65),
+                (-50.0, 0.0, 10.0),
+            ),
+        ),
+    ],
+)
+def test_wall_surfaces_stay_inside_the_fluid_mask(
+    device: TrapChannelDevice | BiopixelTrapDevice,
+    spacing: tuple[float, float, float],
+    surfaces: tuple[tuple[float, float, float], ...],
+) -> None:
+    """Every wall a cell can touch keeps a fluid site in reach.
+
+    Mechanics stops a cell at the wall surface, and the voxel holding that
+    surface is a corner of the cell's sampling stencil, so the mask must leave
+    it fluid or sampling there is an error.
+    """
+
+    half = (spacing[0] * 0.5, spacing[1] * 0.5, spacing[2] * 0.5)
+    for surface in surfaces:
+        assert not device._solid(surface[0], surface[1], surface[2], half)

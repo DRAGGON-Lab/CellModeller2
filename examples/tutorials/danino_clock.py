@@ -32,7 +32,7 @@ from cellmodeller2.flow import colony_mobility, gap_mobility, solve_flow_field
 from cellmodeller2.microfluidics import TrapChannelDevice
 
 MODEL_ID = "tutorials.danino-clock"
-MODEL_VERSION = 5
+MODEL_VERSION = 6
 DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 
 FLOW_SPEED = 20.0
@@ -43,6 +43,14 @@ WASHOUT_Y = DEVICE.channel_half_length - 10.0
 NUTRIENT_INLET = 10.0
 BASE_GROWTH_RATE = 1.0
 NUTRIENT_K = 5.0
+# Nutrient is one limiting substrate in arbitrary concentration units, fed at
+# NUTRIENT_INLET. Uptake is tied to realized growth: a cell consumes
+# growth_rate * volume / NUTRIENT_YIELD per unit time, so Monod-limited growth
+# and consumption stay consistent. The yield sets the coupling strength, and
+# this value makes a packed trap's uptake comparable to the diffusive supply
+# through its mouth, so nutrient penetrates a few tens of micrometers and the
+# colony behind that front grows more slowly.
+NUTRIENT_YIELD = 0.5
 
 # Brinkman feedback: how often the colony's drag re-solves the device flow,
 # and how strongly a packed voxel resists through-flow.
@@ -61,7 +69,13 @@ def _grid() -> SignalGridSpec:
     grid.diffusion = [40.0, 20.0]
     grid.advection = [Vec3(), Vec3()]
     grid.integration = SignalIntegrationKind.CRANK_NICOLSON
-    grid.solver.absolute_tolerance = 1.0e-12
+    # Cell sources are small next to the background level, so convergence is
+    # judged on the absolute residual: a relative tolerance scaled by the
+    # background would declare a step converged before uptake reaches the
+    # field. The absolute bound sits above the float32 residual floor of a
+    # grid at this concentration and well below one step of cell uptake.
+    grid.solver.absolute_tolerance = 1.0e-6
+    grid.solver.relative_tolerance = 0.0
     DEVICE.apply_to_grid(
         grid,
         inlet_values=[0.0, NUTRIENT_INLET],
@@ -102,7 +116,10 @@ def _rate_plan() -> CoupledRatePlan:
             activated - 0.3 * aiia,
             activated - 0.5 * gfp,
         ),
-        (8.0 * luxi - 4.0 * aiia * ahl, rates.constant(0.0)),
+        (
+            8.0 * luxi - 4.0 * aiia * ahl,
+            -(rates.growth_rate() * rates.cell_volume()) / NUTRIENT_YIELD,
+        ),
     )
 
 
