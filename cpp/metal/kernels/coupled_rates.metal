@@ -114,10 +114,16 @@ float sample_signal(device const float* levels, GridShape shape, float4 origin, 
 
 float cell_scatter_weight(float4 center, GridShape shape, float4 origin, float4 spacing,
                           device const uchar* obstacles, uint x, uint y, uint z) {
+  // A cell only scatters into the eight sites of its own stencil, and the
+  // weight is pure arithmetic, so testing it first keeps the obstacle mask out
+  // of the sites a cell cannot reach - which is nearly all of them.
+  float raw = cell_site_weight(center, shape, origin, spacing, x, y, z);
+  if (raw == 0.0f) {
+    return 0.0f;
+  }
   if (obstacles[site_index(shape, x, y, z)] != 0u) {
     return 0.0f;
   }
-  float raw = cell_site_weight(center, shape, origin, spacing, x, y, z);
   float coordinate_x = axis_coordinate(center.x, origin.x, spacing.x, shape.x);
   float coordinate_y = axis_coordinate(center.y, origin.y, spacing.y, shape.y);
   float coordinate_z = axis_coordinate(center.z, origin.z, spacing.z, shape.z);

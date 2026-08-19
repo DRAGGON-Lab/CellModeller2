@@ -109,10 +109,16 @@ __device__ float sample_signal(const float* levels, SignalGridShapeGpu shape, fl
 __device__ float cell_scatter_weight(float4 center, SignalGridShapeGpu shape, float4 origin,
                                      float4 spacing, const std::uint8_t* obstacles, std::uint32_t x,
                                      std::uint32_t y, std::uint32_t z) {
+  // A cell only scatters into the eight sites of its own stencil, and the
+  // weight is pure arithmetic, so testing it first keeps the obstacle mask out
+  // of the sites a cell cannot reach - which is nearly all of them.
+  const auto raw = cell_site_weight(center, shape, origin, spacing, x, y, z);
+  if (raw == 0.0F) {
+    return 0.0F;
+  }
   if (obstacles[site_index(shape, x, y, z)] != 0) {
     return 0.0F;
   }
-  const auto raw = cell_site_weight(center, shape, origin, spacing, x, y, z);
   const auto coordinate_x = axis_coordinate(center.x, origin.x, spacing.x, shape.x);
   const auto coordinate_y = axis_coordinate(center.y, origin.y, spacing.y, shape.y);
   const auto coordinate_z = axis_coordinate(center.z, origin.z, spacing.z, shape.z);
