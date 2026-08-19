@@ -275,3 +275,85 @@ def test_trap_channel_device_supports_a_numerical_field() -> None:
     assert channel_speed > 15.0
     assert trap_speed < channel_speed * 0.05
     assert report.max_speed >= channel_speed
+
+
+def test_anisotropic_spacing_scales_the_solved_speeds() -> None:
+    """A duct's mean speed is set by the request, not by the lattice shape.
+
+    The conductances divide by the squared spacing and the face fluxes
+    multiply it back, so a grid whose voxels are not cubes must still carry
+    exactly the requested speed, and a stretched cross-section must split
+    flux evenly across it.
+    """
+
+    shape = GridShape()
+    shape.x, shape.y, shape.z = 4, 6, 3
+    spec = SignalGridSpec()
+    spec.signal_count = 1
+    spec.shape = shape
+    spec.spacing = Vec3(5.0, 0.4, 1.65)
+    spec.diffusion = [1.0]
+    spec.advection = [Vec3()]
+    for name in ("y_lower", "y_upper"):
+        boundary = getattr(spec, name)
+        boundary.kind = GridBoundaryKind.FIXED
+        boundary.values = [0.0]
+        setattr(spec, name, boundary)
+    field, _ = solve_flow_field(spec, mean_inlet_speed=7.0)
+    spec.velocity_field = field
+    spec.validate()
+    assert all(math.isclose(value, 7.0, rel_tol=1.0e-8) for value in field.y_faces)
+
+
+def test_reversed_and_transverse_flow_axes_solve() -> None:
+    spec = _duct()
+    field, _ = solve_flow_field(spec, mean_inlet_speed=-3.0)
+    spec.velocity_field = field
+    spec.validate()
+    assert all(math.isclose(value, -3.0, abs_tol=1.0e-8) for value in field.y_faces)
+
+    across = _duct()
+    for name in ("y_lower", "y_upper"):
+        boundary = getattr(across, name)
+        boundary.kind = GridBoundaryKind.NO_FLUX
+        boundary.values = []
+        setattr(across, name, boundary)
+    for name in ("x_lower", "x_upper"):
+        boundary = getattr(across, name)
+        boundary.kind = GridBoundaryKind.FIXED
+        boundary.values = [0.0]
+        setattr(across, name, boundary)
+    sideways, _ = solve_flow_field(across, mean_inlet_speed=2.0, axis="x")
+    across.velocity_field = sideways
+    across.validate()
+    assert all(math.isclose(value, 2.0, abs_tol=1.0e-8) for value in sideways.x_faces)
+
+
+def test_partly_blocked_inlets_and_walled_off_pockets_solve() -> None:
+    spec = _duct(nx=4, ny=6, nz=1)
+    obstacles = [0] * 24
+    for y in range(6):
+        obstacles[_site(spec, 0, y, 0)] = 1
+    spec.obstacles = obstacles
+    field, _ = solve_flow_field(spec, mean_inlet_speed=2.0)
+    spec.velocity_field = field
+    spec.validate()
+    inlet = [field.y_faces[_y_face(spec, x, 0, 0)] for x in range(4)]
+    assert inlet[0] == 0.0
+    assert all(math.isclose(value, 2.0, rel_tol=1.0e-8) for value in inlet[1:])
+    fluxes = _cross_section_fluxes(spec, field)
+    assert all(math.isclose(flux, fluxes[0], rel_tol=1.0e-8) for flux in fluxes)
+
+    pocket = _duct(nx=5, ny=6, nz=1)
+    sealed = [0] * 30
+    for y in (2, 4):
+        for x in (3, 4):
+            sealed[_site(pocket, x, y, 0)] = 1
+    sealed[_site(pocket, 2, 3, 0)] = 1
+    pocket.obstacles = sealed
+    sealed_field, _ = solve_flow_field(pocket, mean_inlet_speed=1.0)
+    pocket.velocity_field = sealed_field
+    pocket.validate()
+    # The pocket is cut off from the flow, so it carries none.
+    assert sealed_field.y_faces[_y_face(pocket, 3, 3, 0)] == 0.0
+    assert sealed_field.y_faces[_y_face(pocket, 4, 3, 0)] == 0.0
