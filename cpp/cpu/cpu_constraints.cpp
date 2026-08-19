@@ -30,63 +30,39 @@ std::array<EndpointGeometry, 2> endpoints(const CellGeometryView& geometry, std:
   };
 }
 
-void append_plane_contacts(std::vector<ExternalContact>& contacts, const CellGeometryView& geometry,
-                           std::size_t slot, const PlaneConstraint& plane,
-                           const ConstraintContactParameters& parameters) {
-  const auto cell_endpoints = endpoints(geometry, slot);
-  std::array<float, 2> separations{};
-  std::array<bool, 2> active{};
-  for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    separations[index] =
-        dot(cell_endpoints[index].centerline_point - plane.point, plane.inward_normal) -
-        geometry.radii[slot];
-    active[index] = separations[index] < parameters.activation_margin;
-  }
-  const auto active_count = static_cast<unsigned>(active[0]) + static_cast<unsigned>(active[1]);
-  const auto weight = plane.coefficient * (active_count == 2 ? inverse_sqrt_two : 1.0F);
-  const auto normal = plane.inward_normal * -1.0F;
-  for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    if (!active[index]) {
-      continue;
-    }
-    contacts.push_back({
-        .cell_id = geometry.ids[slot],
-        .cell_slot = static_cast<Slot>(slot),
-        .constraint_id = plane.id,
-        .constraint_kind = ExternalConstraintKind::plane,
-        .endpoint = cell_endpoints[index].endpoint,
-        .point_on_cell = cell_endpoints[index].centerline_point + normal * geometry.radii[slot],
-        .normal = normal,
-        .signed_separation = separations[index],
-        .weight = weight,
-    });
-  }
-}
+struct SurfacePoint {
+  float signed_distance;
+  Vec3 outward;
+};
 
-void append_sphere_contacts(std::vector<ExternalContact>& contacts,
-                            const CellGeometryView& geometry, std::size_t slot,
-                            const SphereConstraint& sphere,
-                            const ConstraintContactParameters& parameters) {
+// One contact pass for every constraint kind. The kind supplies the surface a
+// point sees - its signed distance and outward direction - and the permitted
+// region orients the contact: the normal always points from the permitted
+// region toward the boundary, and negative separation means penetration.
+template <typename Surface>
+void append_surface_contacts(std::vector<ExternalContact>& contacts,
+                             const CellGeometryView& geometry, std::size_t slot, ConstraintId id,
+                             ExternalConstraintKind kind, float coefficient,
+                             ConstraintRegion region,
+                             const ConstraintContactParameters& parameters,
+                             const Surface& surface_at) {
   const auto cell_endpoints = endpoints(geometry, slot);
   std::array<float, 2> separations{};
   std::array<Vec3, 2> normals{};
   std::array<bool, 2> active{};
   for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    const auto center_delta = cell_endpoints[index].centerline_point - sphere.center;
-    const auto distance = norm(center_delta);
-    const auto radial = distance > parameters.degeneracy_epsilon ? center_delta * (1.0F / distance)
-                                                                 : Vec3{1.0F, 0.0F, 0.0F};
-    if (sphere.allowed_region == SphereRegion::outside) {
-      separations[index] = distance - sphere.radius - geometry.radii[slot];
-      normals[index] = radial * -1.0F;
+    const auto surface = surface_at(cell_endpoints[index].centerline_point);
+    if (region == ConstraintRegion::outside) {
+      separations[index] = surface.signed_distance - geometry.radii[slot];
+      normals[index] = surface.outward * -1.0F;
     } else {
-      separations[index] = sphere.radius - distance - geometry.radii[slot];
-      normals[index] = radial;
+      separations[index] = -surface.signed_distance - geometry.radii[slot];
+      normals[index] = surface.outward;
     }
     active[index] = separations[index] < parameters.activation_margin;
   }
   const auto active_count = static_cast<unsigned>(active[0]) + static_cast<unsigned>(active[1]);
-  const auto weight = sphere.coefficient * (active_count == 2 ? inverse_sqrt_two : 1.0F);
+  const auto weight = coefficient * (active_count == 2 ? inverse_sqrt_two : 1.0F);
   for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
     if (!active[index]) {
       continue;
@@ -94,8 +70,8 @@ void append_sphere_contacts(std::vector<ExternalContact>& contacts,
     contacts.push_back({
         .cell_id = geometry.ids[slot],
         .cell_slot = static_cast<Slot>(slot),
-        .constraint_id = sphere.id,
-        .constraint_kind = ExternalConstraintKind::sphere,
+        .constraint_id = id,
+        .constraint_kind = kind,
         .endpoint = cell_endpoints[index].endpoint,
         .point_on_cell =
             cell_endpoints[index].centerline_point + normals[index] * geometry.radii[slot],
@@ -106,12 +82,22 @@ void append_sphere_contacts(std::vector<ExternalContact>& contacts,
   }
 }
 
-struct BoxSurface {
-  float signed_distance;
-  Vec3 outward;
-};
+// A plane's permitted region is the half-space its inward normal points into,
+// which is the outside of the surface it defines.
+SurfacePoint plane_surface(const Vec3& point, const PlaneConstraint& plane) {
+  return {dot(point - plane.point, plane.inward_normal), plane.inward_normal};
+}
 
-BoxSurface box_surface(const Vec3& point, const BoxConstraint& box, float degeneracy_epsilon) {
+SurfacePoint sphere_surface(const Vec3& point, const SphereConstraint& sphere,
+                            float degeneracy_epsilon) {
+  const auto center_delta = point - sphere.center;
+  const auto distance = norm(center_delta);
+  const auto radial =
+      distance > degeneracy_epsilon ? center_delta * (1.0F / distance) : Vec3{1.0F, 0.0F, 0.0F};
+  return {distance - sphere.radius, radial};
+}
+
+SurfacePoint box_surface(const Vec3& point, const BoxConstraint& box, float degeneracy_epsilon) {
   const auto delta = point - box.center;
   const Vec3 clamped{
       std::clamp(delta.x, -box.half_extents.x, box.half_extents.x),
@@ -147,52 +133,7 @@ BoxSurface box_surface(const Vec3& point, const BoxConstraint& box, float degene
   return {-clearances[nearest_axis], outward};
 }
 
-void append_box_contacts(std::vector<ExternalContact>& contacts, const CellGeometryView& geometry,
-                         std::size_t slot, const BoxConstraint& box,
-                         const ConstraintContactParameters& parameters) {
-  const auto cell_endpoints = endpoints(geometry, slot);
-  std::array<float, 2> separations{};
-  std::array<Vec3, 2> normals{};
-  std::array<bool, 2> active{};
-  for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    const auto surface = box_surface(cell_endpoints[index].centerline_point, box,
-                                     parameters.degeneracy_epsilon);
-    if (box.allowed_region == ConstraintRegion::outside) {
-      separations[index] = surface.signed_distance - geometry.radii[slot];
-      normals[index] = surface.outward * -1.0F;
-    } else {
-      separations[index] = -surface.signed_distance - geometry.radii[slot];
-      normals[index] = surface.outward;
-    }
-    active[index] = separations[index] < parameters.activation_margin;
-  }
-  const auto active_count = static_cast<unsigned>(active[0]) + static_cast<unsigned>(active[1]);
-  const auto weight = box.coefficient * (active_count == 2 ? inverse_sqrt_two : 1.0F);
-  for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    if (!active[index]) {
-      continue;
-    }
-    contacts.push_back({
-        .cell_id = geometry.ids[slot],
-        .cell_slot = static_cast<Slot>(slot),
-        .constraint_id = box.id,
-        .constraint_kind = ExternalConstraintKind::box,
-        .endpoint = cell_endpoints[index].endpoint,
-        .point_on_cell =
-            cell_endpoints[index].centerline_point + normals[index] * geometry.radii[slot],
-        .normal = normals[index],
-        .signed_separation = separations[index],
-        .weight = weight,
-    });
-  }
-}
-
-struct CylinderSurface {
-  float signed_distance;
-  Vec3 outward;
-};
-
-CylinderSurface cylinder_surface(const Vec3& point, const CylinderConstraint& cylinder,
+SurfacePoint cylinder_surface(const Vec3& point, const CylinderConstraint& cylinder,
                                  float degeneracy_epsilon) {
   const Vec3 delta{point.x - cylinder.center.x, point.y - cylinder.center.y, 0.0F};
   const auto radial_distance = norm(delta);
@@ -219,47 +160,6 @@ CylinderSurface cylinder_surface(const Vec3& point, const CylinderConstraint& cy
   return {axial_excess, axial};
 }
 
-void append_cylinder_contacts(std::vector<ExternalContact>& contacts,
-                              const CellGeometryView& geometry, std::size_t slot,
-                              const CylinderConstraint& cylinder,
-                              const ConstraintContactParameters& parameters) {
-  const auto cell_endpoints = endpoints(geometry, slot);
-  std::array<float, 2> separations{};
-  std::array<Vec3, 2> normals{};
-  std::array<bool, 2> active{};
-  for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    const auto surface = cylinder_surface(cell_endpoints[index].centerline_point, cylinder,
-                                          parameters.degeneracy_epsilon);
-    if (cylinder.allowed_region == ConstraintRegion::outside) {
-      separations[index] = surface.signed_distance - geometry.radii[slot];
-      normals[index] = surface.outward * -1.0F;
-    } else {
-      separations[index] = -surface.signed_distance - geometry.radii[slot];
-      normals[index] = surface.outward;
-    }
-    active[index] = separations[index] < parameters.activation_margin;
-  }
-  const auto active_count = static_cast<unsigned>(active[0]) + static_cast<unsigned>(active[1]);
-  const auto weight = cylinder.coefficient * (active_count == 2 ? inverse_sqrt_two : 1.0F);
-  for (std::size_t index = 0; index < cell_endpoints.size(); ++index) {
-    if (!active[index]) {
-      continue;
-    }
-    contacts.push_back({
-        .cell_id = geometry.ids[slot],
-        .cell_slot = static_cast<Slot>(slot),
-        .constraint_id = cylinder.id,
-        .constraint_kind = ExternalConstraintKind::cylinder,
-        .endpoint = cell_endpoints[index].endpoint,
-        .point_on_cell =
-            cell_endpoints[index].centerline_point + normals[index] * geometry.radii[slot],
-        .normal = normals[index],
-        .signed_separation = separations[index],
-        .weight = weight,
-    });
-  }
-}
-
 }  // namespace
 
 ExternalContactGraph find_external_contacts_cpu(const WorldState& state,
@@ -271,16 +171,32 @@ ExternalContactGraph find_external_contacts_cpu(const WorldState& state,
   std::vector<ExternalContact> contacts;
   for (std::size_t slot = 0; slot < geometry.size(); ++slot) {
     for (const auto& plane : constraints.planes()) {
-      append_plane_contacts(contacts, geometry, slot, plane, parameters);
+      append_surface_contacts(
+          contacts, geometry, slot, plane.id, ExternalConstraintKind::plane, plane.coefficient,
+          ConstraintRegion::outside, parameters,
+          [&plane](const Vec3& point) { return plane_surface(point, plane); });
     }
     for (const auto& sphere : constraints.spheres()) {
-      append_sphere_contacts(contacts, geometry, slot, sphere, parameters);
+      append_surface_contacts(
+          contacts, geometry, slot, sphere.id, ExternalConstraintKind::sphere, sphere.coefficient,
+          sphere.allowed_region, parameters, [&sphere, &parameters](const Vec3& point) {
+            return sphere_surface(point, sphere, parameters.degeneracy_epsilon);
+          });
     }
     for (const auto& box : constraints.boxes()) {
-      append_box_contacts(contacts, geometry, slot, box, parameters);
+      append_surface_contacts(contacts, geometry, slot, box.id, ExternalConstraintKind::box,
+                              box.coefficient, box.allowed_region, parameters,
+                              [&box, &parameters](const Vec3& point) {
+                                return box_surface(point, box, parameters.degeneracy_epsilon);
+                              });
     }
     for (const auto& cylinder : constraints.cylinders()) {
-      append_cylinder_contacts(contacts, geometry, slot, cylinder, parameters);
+      append_surface_contacts(
+          contacts, geometry, slot, cylinder.id, ExternalConstraintKind::cylinder,
+          cylinder.coefficient, cylinder.allowed_region, parameters,
+          [&cylinder, &parameters](const Vec3& point) {
+            return cylinder_surface(point, cylinder, parameters.degeneracy_epsilon);
+          });
     }
   }
   std::ranges::sort(contacts, {}, [](const ExternalContact& contact) {
