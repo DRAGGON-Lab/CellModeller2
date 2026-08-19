@@ -104,6 +104,8 @@ float sample_signal(device const float* levels, GridShape shape, float4 origin, 
       }
     }
   }
+  // A stencil with no fluid corner is rejected by the host's coupled-step
+  // validation before any kernel runs, so the fluid weight is positive here.
   if (dropped) {
     result /= fluid_weight;
   }
@@ -147,6 +149,8 @@ float cell_scatter_weight(float4 center, GridShape shape, float4 origin, float4 
       }
     }
   }
+  // A stencil with no fluid corner is rejected by the host's coupled-step
+  // validation before any kernel runs, so the fluid weight is positive here.
   return dropped ? raw / fluid_weight : raw;
 }
 
