@@ -31,8 +31,11 @@ and axis `a`:
   the same axis-angle helper mechanical integration uses.
 
 Every update is validated before any world-state mutation, matching mechanical integration.
-The operation requires a signal grid with a velocity field and cells inside the lattice; a
-cell whose sampling stencil is entirely solid is a model error. Fixed cells do not move.
+The operation requires a signal grid with a velocity field. A cell whose sampling stencil
+holds no fluid samples zero rather than erroring: the field is validated zero on every face
+of a solid site, so that is the field's own value there, and a cell that contact relaxation
+has pressed into a wall simply does not drift. Concentration has no such value, so sampling
+it inside an obstacle remains a model error. Fixed cells do not move.
 
 Drift composes with contact relaxation by operator splitting: drift first, then the ordinary
 relaxation resolves any overlap the drift produced against walls or neighbors. The controller

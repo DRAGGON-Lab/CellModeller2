@@ -298,7 +298,8 @@ SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position,
     }
     if (dropped) {
       if (fluid_weight <= 0.0F) {
-        throw std::invalid_argument("signal sample position is inside a grid obstacle");
+        result.entirely_solid = true;
+        return result;
       }
       for (std::size_t entry = 0; entry < result.count; ++entry) {
         result.weights[entry] /= fluid_weight;
@@ -587,6 +588,9 @@ std::span<const float> SignalGrid::levels() const& noexcept { return levels_; }
 
 std::vector<float> SignalGrid::sample(Vec3 position) const {
   const auto stencil = signal_grid_stencil(spec_, position);
+  if (stencil.entirely_solid) {
+    throw std::invalid_argument("signal sample position is inside a grid obstacle");
+  }
   const auto sites = spec_.site_count();
   std::vector<float> result(spec_.signal_count, 0.0F);
   for (std::size_t entry = 0; entry < stencil.count; ++entry) {
@@ -602,6 +606,9 @@ Vec3 SignalGrid::sample_velocity(Vec3 position, GridSampleBound bound) const {
     throw std::logic_error("signal grid does not declare a velocity field");
   }
   const auto stencil = signal_grid_stencil(spec_, position, bound);
+  // The field is zero on every face of a solid site, so a stencil with no
+  // fluid in it samples zero: a cell that mechanics has pressed into a wall
+  // does not drift.
   const auto& field = *spec_.velocity_field;
   Vec3 result{};
   for (std::size_t entry = 0; entry < stencil.count; ++entry) {

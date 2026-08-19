@@ -109,6 +109,10 @@ struct SignalGridStencil {
   std::array<std::uint32_t, 8> sites{};
   std::array<float, 8> weights{};
   std::uint32_t count{0};
+  // Every site of the stencil is solid, so it carries no fluid to interpolate
+  // and every weight is zero. Concentration there is undefined and sampling it
+  // is a model error; velocity there is zero by the field's own validation.
+  bool entirely_solid{false};
 };
 
 // Whether a sample position outside the lattice of site centers is an error or

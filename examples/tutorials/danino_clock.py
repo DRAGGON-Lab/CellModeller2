@@ -32,13 +32,28 @@ from cellmodeller2.flow import colony_mobility, gap_mobility, solve_flow_field
 from cellmodeller2.microfluidics import TrapChannelDevice
 
 MODEL_ID = "tutorials.danino-clock"
-MODEL_VERSION = 6
+MODEL_VERSION = 7
 DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 
 FLOW_SPEED = 20.0
 DEVICE = TrapChannelDevice(mean_flow_speed=FLOW_SPEED)
 CELL_RADIUS = 0.5
 WASHOUT_Y = DEVICE.channel_half_length - 10.0
+
+# The clock's rate constants share one scale. Growth sets the model's unit of
+# time, so the scale is what places the clock's period relative to a doubling:
+# this value gives about two doubling times, the order Danino et al. report.
+CLOCK_RATE = 17.0
+# The AHL concentration at which the Hill response is half activated. LuxI and
+# AiiA respond to the same activation, so their ratio - and with it the AHL the
+# circuit settles at - is fixed by their decay constants at twice 0.3 / 1.2. A
+# threshold above that half is unreachable at any cell density, for any run
+# length, and the clock cannot start.
+AHL_THRESHOLD = 1.0
+# AHL crosses the trap in about the square of its width over this coefficient.
+# Below roughly ten thousand that exchange is slower than the clock's period
+# and the trap oscillates in independent patches instead of as one quorum.
+AHL_DIFFUSION = 10_000.0
 
 NUTRIENT_INLET = 10.0
 BASE_GROWTH_RATE = 1.0
@@ -54,7 +69,7 @@ NUTRIENT_YIELD = 0.5
 
 # Brinkman feedback: how often the colony's drag re-solves the device flow,
 # and how strongly a packed voxel resists through-flow.
-RESOLVE_INTERVAL = 100
+RESOLVE_INTERVAL = 400
 DRAG_COEFFICIENT = 100.0
 
 
@@ -66,7 +81,7 @@ def _grid() -> SignalGridSpec:
     grid.shape = shape
     grid.origin = Vec3(-140.0, -144.0, -8.0)
     grid.spacing = Vec3(4.0, 4.0, 4.0)
-    grid.diffusion = [40.0, 20.0]
+    grid.diffusion = [AHL_DIFFUSION, 20.0]
     grid.advection = [Vec3(), Vec3()]
     grid.integration = SignalIntegrationKind.CRANK_NICOLSON
     DEVICE.apply_to_grid(
@@ -99,18 +114,18 @@ def _rate_plan() -> CoupledRatePlan:
     gfp = rates.maximum(rates.species(2), 0.0)
     ahl = rates.maximum(rates.signal(0), 0.0)
     ahl_cubed = ahl**3.0
-    hill = ahl_cubed / (8.0 + ahl_cubed)
-    activated = 0.02 + 8.0 * hill
+    hill = ahl_cubed / (AHL_THRESHOLD**3.0 + ahl_cubed)
+    activated = CLOCK_RATE * (0.02 + 8.0 * hill)
     return rates.coupled_plan(
         3,
         2,
         (
-            activated - 1.2 * luxi,
-            activated - 0.3 * aiia,
-            activated - 0.5 * gfp,
+            activated - CLOCK_RATE * 1.2 * luxi,
+            activated - CLOCK_RATE * 0.3 * aiia,
+            activated - CLOCK_RATE * 0.5 * gfp,
         ),
         (
-            8.0 * luxi - 4.0 * aiia * ahl,
+            CLOCK_RATE * (8.0 * luxi - 4.0 * aiia * ahl),
             -(rates.growth_rate() * rates.cell_volume()) / NUTRIENT_YIELD,
         ),
     )

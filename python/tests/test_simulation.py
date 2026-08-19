@@ -523,3 +523,37 @@ def test_flow_drift_honors_the_mechanics_rotation_limit() -> None:
     frozen.apply_flow_drift(1.0, integration)
     assert math.isclose(frozen.cell(frozen_id).direction.x, 0.0, abs_tol=1.0e-6)
     assert math.isclose(frozen.cell(frozen_id).direction.y, 1.0, abs_tol=1.0e-6)
+
+
+def test_a_cell_inside_a_wall_samples_no_flow_and_does_not_drift() -> None:
+    """Mechanics can press a crowded cell into a wall; drift must survive it.
+
+    The velocity field is zero on every face of a solid site, so a stencil with
+    no fluid in it samples exactly zero and the cell stays put. Concentration
+    there has no such value, so sampling it is still an error.
+    """
+
+    sites = 5
+    grid = uniform_flow_grid(origin=0.0, spacing=1.0, sites=sites, speed=2.0)
+    # A solid block in the middle of the line, with the flow stopping at it.
+    grid.obstacles = [0, 0, 1, 0, 0]
+    field = SignalGridVelocityField()
+    field.x_faces = [2.0, 2.0, 0.0, 0.0, 2.0, 2.0]
+    field.y_faces = [0.0] * (2 * sites)
+    field.z_faces = [0.0] * (2 * sites)
+    grid.velocity_field = field
+
+    simulation = Simulation()
+    simulation.configure_signal_grid(grid, [1.0, 1.0, 0.0, 1.0, 1.0])
+    buried = CellInit()
+    buried.position = Vec3(2.0, 0.0, 0.0)
+    buried.direction = Vec3(1.0, 0.0, 0.0)
+    buried.length = 0.0
+    buried.radius = 0.3
+    buried_id = simulation.add_cell(buried)
+
+    simulation.apply_flow_drift(0.5)
+
+    assert simulation.cell(buried_id).position.x == 2.0
+    with pytest.raises(ValueError, match="inside a grid obstacle"):
+        simulation.sample_signals(Vec3(2.0, 0.0, 0.0))
