@@ -12,20 +12,23 @@ cell translates with the flow and a rod in shear rotates.
 
 ## Decision
 
-`Simulation.apply_flow_drift(dt)` advects every non-fixed cell through the grid's velocity
+`Simulation.apply_flow_drift(dt, integration)` advects every non-fixed cell through the grid's velocity
 field by one explicit step, as an operation between growth and contact relaxation. The fluid
 velocity is sampled at both capsule centerline endpoints: each stencil site's cell-centered
 velocity is the mean of its two face velocities per axis, and the trilinear weights are the
 signal-sampling weights, including the obstacle renormalization near walls. Endpoints are
 clamped to the lattice of site centers before sampling: mechanics walls, not the lattice
 edge, bound cells, so a rod whose tip pokes past the outermost site samples the nearest
-in-grid point rather than erroring. From endpoint velocities `v1` and `v2` with cylinder
-length `l` and axis `a`:
+in-grid point rather than erroring. Clamping happens in the lattice coordinate the bound is
+tested in rather than in position space, so a clamped endpoint lies inside the lattice for
+every origin and spacing. From endpoint velocities `v1` and `v2` with cylinder length `l`
+and axis `a`:
 
 - translation is `dt * (v1 + v2) / 2`;
 - the rotation vector is `dt * (a x (v2 - v1)) / l`, the least-squares rigid rotation for the
   endpoint velocity difference, taken as zero when `l` is degenerate, applied as an
-  axis-angle rotation capped at the same five-degree limit as mechanical integration.
+  axis-angle rotation capped by the caller's mechanics integration rotation limit, through
+  the same axis-angle helper mechanical integration uses.
 
 Every update is validated before any world-state mutation, matching mechanical integration.
 The operation requires a signal grid with a velocity field and cells inside the lattice; a
