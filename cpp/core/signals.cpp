@@ -656,6 +656,13 @@ void SignalGrid::set_velocity_field(std::optional<SignalGridVelocityField> field
   spec_ = std::move(candidate.spec);
 }
 
+void SignalGrid::set_reaction(std::optional<SignalGridAffineReaction> reaction) {
+  SignalGridCheckpoint candidate{.spec = spec_, .levels = levels_};
+  candidate.spec.reaction = std::move(reaction);
+  candidate.validate();
+  spec_ = std::move(candidate.spec);
+}
+
 void SignalGrid::validate_step(float dt) const {
   if (!std::isfinite(dt) || dt < 0.0F) {
     throw std::invalid_argument("time step must be finite and non-negative");

@@ -9,8 +9,11 @@ the flow, and swaps the field into the running simulation.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from cellmodeller2 import (
     CellInit,
+    CellSnapshot,
     CellUpdate,
     ControllerStep,
     CoupledRatePlan,
@@ -20,6 +23,7 @@ from cellmodeller2 import (
     ModelContext,
     NativeController,
     RatePlanBuilder,
+    SignalGridAffineReaction,
     SignalGridSpec,
     SignalIntegrationKind,
     Simulation,
@@ -28,7 +32,12 @@ from cellmodeller2 import (
     Vec3,
 )
 from cellmodeller2.checkpoint import CheckpointBundle, JSONValue
-from cellmodeller2.flow import colony_mobility, gap_mobility, solve_flow_field
+from cellmodeller2.flow import (
+    colony_mobility,
+    colony_species_density,
+    gap_mobility,
+    solve_flow_field,
+)
 from cellmodeller2.microfluidics import TrapChannelDevice
 
 MODEL_ID = "tutorials.danino-clock"
@@ -38,18 +47,31 @@ DIVISION = UniformLengthDivision(3.2, 3.8, jitter_z=False)
 FLOW_SPEED = 20.0
 DEVICE = TrapChannelDevice(mean_flow_speed=FLOW_SPEED)
 CELL_RADIUS = 0.5
-WASHOUT_Y = DEVICE.channel_half_length - 10.0
+# Cells leave the analysis region well before the channel's end. Flow here is
+# compressed relative to growth, so a cell swept the full channel length would
+# divide several times on the way out and the downstream population would grow
+# without bound; the trap itself spans only the first fifteen micrometers.
+WASHOUT_Y = 40.0
 
 # The clock's rate constants share one scale. Growth sets the model's unit of
 # time, so the scale is what places the clock's period relative to a doubling:
 # this value gives about two doubling times, the order Danino et al. report.
-CLOCK_RATE = 17.0
+CLOCK_RATE = 25.0
+# AiiA's removal of AHL, per unit of each. This is a loss proportional to the
+# AHL already there, so the model hands it to the grid as an affine reaction
+# rather than scattering it from the cells: transport takes a loss field into
+# its implicit diagonal, which stays positive while the loss times the step is
+# under two, where an explicit cell source of the same strength needs half
+# that step. The loss a synchronized pulse reaches in a packed trap is what
+# sets the time step this model runs at.
+AHL_REMOVAL = 1.0
 # The AHL concentration at which the Hill response is half activated. LuxI and
-# AiiA respond to the same activation, so their ratio - and with it the AHL the
-# circuit settles at - is fixed by their decay constants at twice 0.3 / 1.2. A
-# threshold above that half is unreachable at any cell density, for any run
-# length, and the clock cannot start.
-AHL_THRESHOLD = 1.0
+# AiiA respond to the same activation, so their ratio - and with it the AHL
+# where production balances removal - is fixed by their decay constants at
+# 8 / AHL_REMOVAL times 0.3 / 1.2. A threshold above that is unreachable at any
+# cell density, for any run length, and the clock never starts; this one sits
+# where the response is steep enough to oscillate.
+AHL_THRESHOLD = 4.0
 # AHL crosses the trap in about the square of its width over this coefficient.
 # Below roughly ten thousand that exchange is slower than the clock's period
 # and the trap oscillates in independent patches instead of as one quorum.
@@ -75,12 +97,17 @@ DRAG_COEFFICIENT = 100.0
 
 def _grid() -> SignalGridSpec:
     shape = GridShape()
-    shape.x, shape.y, shape.z = 64, 72, 4
+    shape.x, shape.y, shape.z = 64, 72, 6
     grid = SignalGridSpec()
     grid.signal_count = 2
     grid.shape = shape
-    grid.origin = Vec3(-140.0, -144.0, -8.0)
-    grid.spacing = Vec3(4.0, 4.0, 4.0)
+    # Two z layers span the trap's six-micrometer depth exactly, so its fluid
+    # volume is the device's rather than the half voxel of slack a coarser
+    # lattice would leave on each side, and the lattice still reaches a voxel
+    # past the walls: contact relaxation can press a crowded cell into a wall
+    # and briefly out through it, and sampling outside the lattice is an error.
+    grid.origin = Vec3(-140.0, -144.0, -7.5)
+    grid.spacing = Vec3(4.0, 4.0, 3.0)
     grid.diffusion = [AHL_DIFFUSION, 20.0]
     grid.advection = [Vec3(), Vec3()]
     grid.integration = SignalIntegrationKind.CRANK_NICOLSON
@@ -125,10 +152,32 @@ def _rate_plan() -> CoupledRatePlan:
             activated - CLOCK_RATE * 0.5 * gfp,
         ),
         (
-            CLOCK_RATE * (8.0 * luxi - 4.0 * aiia * ahl),
+            CLOCK_RATE * 8.0 * luxi,
             -(rates.growth_rate() * rates.cell_volume()) / NUTRIENT_YIELD,
         ),
     )
+
+
+def _ahl_removal_field(cells: Sequence[CellSnapshot]) -> SignalGridAffineReaction:
+    """Rasterize AiiA into the grid's first-order AHL loss.
+
+    Every cell removes AHL in proportion to its AiiA and to the AHL around it.
+    Summed over the cells of a voxel and divided by its volume, that is a loss
+    rate per unit time on the AHL field, which is what an affine reaction
+    carries. Nutrient takes no field reaction; its uptake follows growth and
+    stays a cell source.
+    """
+
+    sites = GRID.site_count
+    aiia = colony_species_density(GRID, cells, species=1)
+    loss = [0.0] * (2 * sites)
+    for site, solid in enumerate(GRID.obstacles):
+        if solid == 0:
+            loss[site] = CLOCK_RATE * AHL_REMOVAL * aiia[site]
+    reaction = SignalGridAffineReaction()
+    reaction.source_rates = [0.0] * (2 * sites)
+    reaction.loss_rates = loss
+    return reaction
 
 
 def _nutrient_growth(simulation: Simulation, position: Vec3) -> float:
@@ -137,6 +186,7 @@ def _nutrient_growth(simulation: Simulation, position: Vec3) -> float:
 
 
 def _regulate(step: ControllerStep) -> StepPlan:
+    step.simulation.set_signal_reaction(_ahl_removal_field(step.cells))
     if step.completed_steps and step.completed_steps % RESOLVE_INTERVAL == 0:
         mobility = colony_mobility(
             GRID, step.cells, base=GAP_MOBILITY, drag_coefficient=DRAG_COEFFICIENT

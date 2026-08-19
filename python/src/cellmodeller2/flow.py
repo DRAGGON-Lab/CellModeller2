@@ -334,6 +334,54 @@ def colony_volume_fraction(
     return np.minimum(volume / spec.voxel_volume, max_volume_fraction)
 
 
+
+class _SpeciesRodLike(Protocol):
+    @property
+    def position(self) -> Vec3: ...
+    @property
+    def species(self) -> list[float]: ...
+
+
+def colony_species_density(
+    spec: SignalGridSpec,
+    cells: Iterable[_SpeciesRodLike],
+    *,
+    species: int,
+) -> list[float]:
+    """Rasterize one intracellular species into a per-voxel density.
+
+    Each cell's level accumulates into the voxel holding its center, on the
+    same nearest-voxel convention as `colony_volume_fraction`, and the total is
+    divided by the voxel volume. A rate written per cell and per unit of that
+    species becomes a rate per unit volume of field, which is what an affine
+    grid reaction carries.
+    """
+
+    if species < 0:
+        raise FlowError("species index must be non-negative")
+    dims = (spec.shape.x, spec.shape.y, spec.shape.z)
+    origin = (spec.origin.x, spec.origin.y, spec.origin.z)
+    spacing = (spec.spacing.x, spec.spacing.y, spec.spacing.z)
+    totals = np.zeros(dims, dtype=np.float64)
+    for cell in cells:
+        levels = cell.species
+        if species >= len(levels):
+            raise FlowError("species index is outside the cell's species")
+        position = (cell.position.x, cell.position.y, cell.position.z)
+        indices: list[int] = []
+        for component in range(3):
+            index = math.floor(
+                (position[component] - origin[component]) / spacing[component] + 0.5
+            )
+            if not 0 <= index < dims[component]:
+                break
+            indices.append(index)
+        if len(indices) != 3:
+            continue
+        totals[indices[0], indices[1], indices[2]] += max(0.0, levels[species])
+    return [float(value) for value in (totals / spec.voxel_volume).ravel()]
+
+
 def colony_mobility(
     spec: SignalGridSpec,
     cells: Iterable[_RodLike],

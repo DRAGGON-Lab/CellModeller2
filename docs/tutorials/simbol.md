@@ -116,7 +116,7 @@ These choices change trajectories relative to the generated callback scripts. A 
 uv run cm view \
   --model examples/tutorials/danino_clock.py \
   --seed 42 \
-  --dt 0.01 \
+  --dt 0.005 \
   --open
 ```
 
@@ -132,6 +132,20 @@ The example includes:
 - the device geometry, flow field, obstacle mask, and inlet/outlet built from one `TrapChannelDevice` description in `cellmodeller2.microfluidics`.
 
 The biological motif is based on Danino et al., “A synchronized quorum of genetic clocks,” Nature 463, 326–330 (2010), as cited by the SimBOL model. The example equations and constants are a tutorial realization, not a reproduction of the paper’s experimental parameter inference.
+
+### What the clock needs to run
+
+Three of the model's constants exist to make the clock a clock, and each is set against something measurable rather than by taste.
+
+The Hill threshold must sit below the AHL the circuit can reach. LuxI and AiiA are driven by the same activation term, so their ratio, and with it the AHL where production balances enzymatic removal, is pinned by their decay constants at `2 * 0.3 / 1.2`. A threshold above that half is unreachable at any cell density and for any run length: the circuit sits at its basal state forever. `AHL_THRESHOLD` is set inside the window where the response is steep enough to oscillate.
+
+The rate scale sets the period. Growth defines the model's unit of time, so what matters is the clock's period relative to a doubling; `CLOCK_RATE` scales every rate constant together, which leaves the circuit's fixed points untouched and divides its period.
+
+AHL's diffusivity sets whether the trap oscillates as one. A patch of colony stays in phase with its neighbours only within about `sqrt(D * period)` of them, so with a period near one time unit and a trap 120 micrometers deep, `AHL_DIFFUSION` has to reach the order of ten thousand. Below that the trap breaks into independent patches.
+
+AiiA's removal of AHL is a loss proportional to the AHL already present, which is a property of the field rather than of the cell, so the model rasterizes AiiA into an affine grid reaction each step and hands it to transport with `set_signal_reaction`. Transport takes a loss into its implicit diagonal and stays positive while the loss times the step is under two; the same removal scattered from the cells is explicit and needs half that step. What a synchronized pulse reaches in a packed trap is what sets `--dt` here.
+
+A run at seed 42 measures the result: the trap is quiet through the colony's growth, first pulses once it holds about four thousand cells, and then pulses every 1.03 time units - 1.5 doubling times, the fast end of the 1.5 to 3 the paper reports - for as long as the run continues. The front and back halves of the trap rise and fall together, correlated 0.87 at zero lag. That is the quorum the circuit is named for: not a clock that each cell keeps, but one the population only starts once it is dense enough to talk to itself.
 
 ### Device flow and washout
 

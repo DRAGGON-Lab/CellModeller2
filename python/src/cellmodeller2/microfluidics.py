@@ -155,33 +155,40 @@ class TrapChannelDevice(_ChannelDevice):
     def add_constraints(self, simulation: Simulation) -> None:
         """Add the device's wall constraints to a simulation."""
 
+        # The walls reach past the chamber in z. A box pushes a cell that has
+        # entered it toward its nearest face, so a wall ending level with the
+        # ceiling offers a cell pressed against that ceiling an escape of zero
+        # length in z, which the chamber then blocks: the cell never leaves in
+        # y and a crowded trap drives it further in. Standing the walls proud
+        # keeps the way out of a wall the way the cell came in.
+        wall_top = self.trap_half_z + self.wall_thickness
         blocks = (
             (
-                (self.trap_open_x, self.trap_half_y, -self.trap_half_z),
+                (self.trap_open_x, self.trap_half_y, -wall_top),
                 (
                     self.trap_back_x + self.wall_thickness,
                     self.channel_half_length,
-                    self.trap_half_z,
+                    wall_top,
                 ),
             ),
             (
-                (self.trap_open_x, -self.channel_half_length, -self.trap_half_z),
+                (self.trap_open_x, -self.channel_half_length, -wall_top),
                 (
                     self.trap_back_x + self.wall_thickness,
                     -self.trap_half_y,
-                    self.trap_half_z,
+                    wall_top,
                 ),
             ),
             (
                 (
                     self.trap_back_x,
                     -self.trap_half_y - self.wall_thickness,
-                    -self.trap_half_z,
+                    -wall_top,
                 ),
                 (
                     self.trap_back_x + self.wall_thickness,
                     self.trap_half_y + self.wall_thickness,
-                    self.trap_half_z,
+                    wall_top,
                 ),
             ),
         )

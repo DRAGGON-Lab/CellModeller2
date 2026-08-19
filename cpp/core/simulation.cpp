@@ -236,6 +236,13 @@ void Simulation::set_velocity_field(std::optional<SignalGridVelocityField> field
   signal_grid_->set_velocity_field(std::move(field));
 }
 
+void Simulation::set_signal_reaction(std::optional<SignalGridAffineReaction> reaction) {
+  if (!signal_grid_.has_value()) {
+    throw std::logic_error("simulation does not have a signal grid");
+  }
+  signal_grid_->set_reaction(std::move(reaction));
+}
+
 std::pair<CellId, CellId> Simulation::divide(CellId parent_id, float first_fraction) {
   return state_.divide(parent_id, first_fraction);
 }

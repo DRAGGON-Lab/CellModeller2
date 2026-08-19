@@ -63,12 +63,17 @@ DRAG_COEFFICIENT = 100.0
 
 def _grid() -> SignalGridSpec:
     shape = GridShape()
-    shape.x, shape.y, shape.z = 64, 72, 4
+    shape.x, shape.y, shape.z = 64, 72, 6
     grid = SignalGridSpec()
     grid.signal_count = 1
     grid.shape = shape
-    grid.origin = Vec3(-140.0, -144.0, -8.0)
-    grid.spacing = Vec3(4.0, 4.0, 4.0)
+    # Two z layers span the trap's six-micrometer depth exactly, so its fluid
+    # volume is the device's rather than the half voxel of slack a coarser
+    # lattice would leave on each side, and the lattice still reaches a voxel
+    # past the walls: contact relaxation can press a crowded cell into a wall
+    # and briefly out through it, and sampling outside the lattice is an error.
+    grid.origin = Vec3(-140.0, -144.0, -7.5)
+    grid.spacing = Vec3(4.0, 4.0, 3.0)
     grid.diffusion = [40.0]
     grid.advection = [Vec3()]
     grid.integration = SignalIntegrationKind.CRANK_NICOLSON
