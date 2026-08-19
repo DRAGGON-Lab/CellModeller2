@@ -44,7 +44,10 @@ periodic boundaries, is an error.
 accumulates into its center voxel, the resulting volume fraction sets a Kozeny-Carman style
 drag `phi^2 / (1 - phi)^3` scaled by a model-chosen coefficient, and resistances add to the
 base mobility. The closure coefficient is a modeling choice, not a measured constant, and is
-documented as such.
+documented as such. Binning a whole capsule into its center voxel is a nearest-voxel
+rasterization: a cell longer than a voxel contributes entirely to one of the voxels it
+spans, so the volume fraction, and the drag field with it, is noisier than the colony at
+spacings comparable to a cell.
 
 For colony feedback the field must change mid-run, so the engine adds one mutation:
 `Simulation.set_velocity_field` validates a replacement field against the full grid
@@ -68,3 +71,8 @@ uses whichever field is current. Model code chooses the re-solve cadence.
 - Colony blockage feeds back on flow at a model-chosen cadence without any native fluid
   solver.
 - In-plane boundary layers are the stated accuracy limit of the closure.
+- The solved field is a depth-averaged velocity: every voxel in a column carries the
+  column's mean. Advection of signals stays conservative, but a cell drifting near a floor
+  or ceiling moves at the mean rather than at the slower speed its true profile would give
+  it, and a rod sees no shear across the gap. A study that needs the profile within a
+  resolved gap belongs on the staggered MAC solve.

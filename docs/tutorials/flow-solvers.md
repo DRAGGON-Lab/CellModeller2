@@ -7,7 +7,7 @@ staggered array of cylindrical pillars, with colonies adhered in the pillar wake
 daughters into the stream. Everything lives in one model:
 
 ```console
-uv run cm view --model examples/tutorials/pillar_channel.py --seed 7 --dt 0.02 --backend metal --open
+uv run cm view --model examples/tutorials/pillar_channel.py --seed 7 --dt 0.01 --backend metal --open
 ```
 
 [`examples/tutorials/pillar_channel.py`](../../examples/tutorials/pillar_channel.py)
@@ -56,10 +56,15 @@ grid.velocity_field = field
 ```
 
 The solved field is conservative per voxel and routes around every pillar. At a mean inlet
-speed of 20 µm/min the plug away from the array runs at ≈22 (the side walls' solid columns
-cost some cross-section) and the gaps beside the center pillar carry ≈31 — flow speeds up
-exactly where the physical device would, and `report.max_speed` gives the number the `dt`
-bound needs (keep `max_speed * dt` below a cell radius).
+speed of 20 the plug away from the array runs at 20 as requested — the solve normalizes over
+the open inlet faces, so blocked columns cannot inflate it — and the gaps beside the center
+pillar carry ≈31, because the pillars take cross-section and the same flux has to fit
+through what is left. Flow speeds up exactly where the physical device would.
+
+`report.max_speed` gives the number the `dt` bound needs. Drift is an explicit step, so a
+cell must not cross more than about its own radius per step: keep `max_speed * dt` below
+`CELL_RADIUS`. Here `max_speed` is 37.7, so `--dt 0.01` leaves a comfortable margin and
+`--dt 0.02` would exceed it.
 
 ## Adhesion: anchored mothers, shed daughters
 
@@ -84,9 +89,9 @@ indefinitely.
 
 Released cells drift with the local fluid velocity (`MechanicsConfig(flow_drift=True)`),
 slowly in the wake, then fast in the gaps, and leave through plan removals at the channel
-end — the same washout pattern as the trap models. Run at seed 7 for 800 steps and the
-population reaches a steady state: three anchored cells, on the order of 150 in transit,
-and over a thousand washed out, with lineage recording every one.
+end — the same washout pattern as the trap models. Run at seed 7 for 1600 steps at
+`dt = 0.01` and the population reaches a steady state: three anchored cells, on the order
+of 140 in transit, and about 1200 washed out, with lineage recording every one.
 
 ## The colony pushes back on the flow
 
@@ -117,20 +122,40 @@ resolved, report = solve_stokes_field(GRID, mean_inlet_speed=FLOW_SPEED)
 ```
 
 Depth-averaging the resolved field reproduces the closure's flux split around obstacles to
-well under a percent in the thin-gap regime — that agreement is enforced continuously by
-the benchmark suite, which validates both solvers against literature and exact references
-(exact plane Poiseuille with second-order convergence, the Shah–London square-duct
-peak-to-mean ratio 2.0962, the exact two-layer Brinkman channel, and the cross-solver
-thin-gap check):
+under a percent in the thin-gap regime — that agreement is enforced continuously by the
+benchmark suite, which validates both solvers against literature and exact references
+(plane Poiseuille and the two-layer Brinkman channel against their exact solutions with
+measured second-order convergence, the Shah–London square-duct peak-to-mean ratio 2.0962,
+and the cross-solver thin-gap check):
 
 ```console
 uv run python scripts/run_flow_benchmarks.py          # CI-gating benchmark table
 uv run python scripts/run_flow_benchmarks.py --fine   # doubled resolutions
 ```
 
-Reach for `solve_stokes_field` when a study needs resolved wall shear or true
-cross-channel profiles; it costs far more than the closure, so models keep the Hele-Shaw
-solve in their re-solve cadence and use MAC as the anchor.
+### Which solver a grid deserves
+
+The two solvers are accurate in opposite regimes, and the grid decides which.
+
+The MAC solve resolves a no-slip profile only where it has voxels to resolve it in. Every
+solve reports `min_gap_voxels`, the fluid voxels across its narrowest channel. One voxel
+carries roughly two and a half times the flux the true parabolic profile would; four
+voxels bring that within about ten percent and eight within a few percent. The pillar grid
+here is one voxel deep in z, so its `min_gap_voxels` is 1 and the *depth-averaged* MAC
+answer is the meaningful one — a comparison of in-plane flux splits, not of absolute
+speeds.
+
+The Hele-Shaw closure has the mirror-image property. It carries the gap-height physics
+analytically in its mobility, so it is accurate for shallow channels at any z resolution,
+but it solves for the depth-averaged velocity: every z layer of a column gets the column's
+mean. In a channel resolved across its depth, the cells near the floor drift at the mean
+rather than at the slower speed the true profile gives them, and a rod sees no shear
+across the gap.
+
+So: use the closure for device authoring and the in-model re-solve cadence, and reach for
+`solve_stokes_field` when a study needs resolved wall shear or true cross-channel profiles
+*and* the grid resolves the gap with at least four voxels. Refining z to reach that costs
+grid sites in every other subsystem too.
 
 ## What to watch in the viewer
 

@@ -1,7 +1,7 @@
 # Microfluidic devices: walls, flow, and washout
 
 This tutorial builds models that live inside devices: geometry that confines cells, blocks
-chemistry, and carries media. Three examples cover the range:
+chemistry, and carries media. Four examples cover the range:
 
 | Model | Device | Demonstrates |
 | --- | --- | --- |
@@ -120,9 +120,12 @@ def _regulate(step: ControllerStep) -> StepPlan:
 
 `Simulation.set_velocity_field` validates the replacement against the full grid
 specification before swapping it; transport, drift, and checkpoints all use whichever field
-is current. The re-solve cadence is a model choice — colony growth is slow, so hundreds of
-steps between solves is typical. The drag coefficient is a modeling parameter (how strongly
-a packed colony resists through-flow relative to the open channel), not a measured constant.
+is current. The re-solve cadence is a model choice, and the trade is cost against staleness:
+the trap models re-solve every hundred steps, which at `dt = 0.02` is a couple of doublings
+of colony growth, so the field the drift and transport see lags the colony by that much.
+Shorten the interval where the blockage matters quantitatively. The drag coefficient is a
+modeling parameter (how strongly a packed colony resists through-flow relative to the open
+channel), not a measured constant.
 
 ### Resolved flow: the MAC Stokes–Brinkman solver
 
@@ -141,11 +144,15 @@ field, report = solve_stokes_field(
 ```
 
 It costs far more than the Hele-Shaw solve, so devices keep the closure for authoring and
-in-loop feedback; the MAC solver anchors it. Both solvers run against literature and exact
-references in `scripts/run_flow_benchmarks.py` — exact plane Poiseuille with second-order
-convergence, the Shah–London square-duct peak-to-mean ratio, the exact two-layer Brinkman
-channel, and a thin-gap cross-check in which the depth-averaged MAC solution reproduces the
-Hele-Shaw flux split around a pillar:
+in-loop feedback; the MAC solver anchors it where the grid resolves the gap. Each solve
+reports `min_gap_voxels`, the fluid voxels across its narrowest channel: below about four
+the MAC solve over-predicts that channel's flux and the depth-averaged closure is the more
+accurate model, which is why the shallow device grids here stay on the closure. Both
+solvers run against literature and exact references in `scripts/run_flow_benchmarks.py` —
+plane Poiseuille and the two-layer Brinkman channel against their exact solutions with
+measured second-order convergence, the Shah–London square-duct peak-to-mean ratio, and a
+thin-gap cross-check in which the depth-averaged MAC solution reproduces the Hele-Shaw flux
+split around a pillar:
 
 ```console
 uv run python scripts/run_flow_benchmarks.py          # CI-gating benchmark table
@@ -163,14 +170,26 @@ The photomask CAD for a real sensing-array device is in
 identical traps along media channels. `BiopixelTrapDevice` models one trap with
 the fabricated dimensions:
 
-- a cavity 100 x 95 micrometers, only **1.65 micrometers tall**, squeezing the
-  colony into a monolayer — the imaging geometry the device is fabricated for;
-- the flow layer's 10-micrometer-tall channel along the cavity's open face,
-  carrying the media stream past the trap mouth;
-- trap dimensions read from the mask at build time:
+- a cavity 100 x 95 micrometers **read from the mask at build time**:
   `BiopixelTrapDevice.from_mask` takes the drawn 110 x 100 outer wall outline
   and removes the 5-micrometer walls (two sides, one back; the fourth side is
-  the open face), recovering the 100 x 95 cavity.
+  the open face), recovering the 100 x 95 cavity;
+- a cavity height of 1.65 micrometers, squeezing the colony into a monolayer —
+  the imaging geometry the device is fabricated for;
+- the flow layer's 10-micrometer-tall channel along the cavity's open face,
+  carrying the media stream past the trap mouth.
+
+The two heights are model defaults, not mask-derived: a photomask draws a
+layout, not a layer thickness, which is set by the spin-coat and etch of the
+process. Substitute the values from the process the study is comparing
+against; the in-plane footprint is the part the drawing fixes.
+
+The mask's long trap side becomes the model's y extent and its short side the
+depth from the open face. Which of the drawn sides actually faces the media
+channel is not recoverable from the drawing — the flow layer is on a separate
+plate, registered lithographically rather than in the file — so a study that
+depends on the trap's orientation relative to the die should confirm it
+against the process, not against this model.
 
 ```python
 from cellmodeller2.microfluidics import BiopixelTrapDevice
@@ -195,7 +214,9 @@ traps = match_rectangles(rectangles, 110.0, 100.0, tolerance=1.0)
 ```
 
 On this mask that yields the full biopixel array: **496 traps in a 16 x 31
-grid** at a 172.5 x 125 micrometer pitch, spanning 2.4 x 3.75 millimeters. The
+grid** spanning 2.4 x 3.75 millimeters. Rows sit on a uniform 125-micrometer
+pitch; columns are drawn in pairs, 172.5 micrometers within a pair and 135 or
+160 between pairs, averaging 160 across the die. The
 drawn outline is the 110 x 100 micrometer outer wall of the 100 x 95 cavity.
 With ``include_blocks=True`` the reader also traverses block definitions,
 where this mask keeps its flow layer: `Layer-5` carries supply channels about
@@ -219,14 +240,61 @@ The viewer shows the shallow cavity as a thin glass slab beside the taller
 channel of the flow layer, with the monolayer spreading at mid-cavity height
 and fed through the open trap mouth.
 
+## Units and timescales
+
+Lengths are micrometers throughout, matching the fabricated dimensions. Time is
+the growth timescale: `growth_rate` is the exponential rate of a cell's length,
+so the models' `BASE_GROWTH_RATE = 1.0` makes one doubling take `ln 2 ≈ 0.69`
+time units. Reading a doubling as half an hour of *E. coli* makes one time unit
+about 43 minutes. Nutrient and AHL are in arbitrary concentration units; the
+inlet sets the scale and `NUTRIENT_YIELD` sets how strongly a colony draws the
+field down.
+
+Transport in these models is **compressed relative to growth**, and it is worth
+being explicit about by how much and why. A channel speed of 20 micrometers per
+time unit is around 0.008 micrometers per second, where a real trap device runs
+at tens to hundreds of micrometers per second; the signal diffusivities are
+compressed by a similar factor. Two limits force this:
+
+- Drift is an explicit operator split, so a step may not carry a cell more than
+  about its own radius. Steps per doubling scale as `speed / (radius * growth
+  rate)`, so a physical channel speed would need on the order of a million
+  steps per doubling.
+- The Crank-Nicolson transport solve is matrix-free Jacobi, whose iteration
+  count grows with `D * dt / spacing^2`. On the trap grids a diffusivity of 400
+  converges in about sixteen iterations and 4000 does not converge at all, so
+  the physical small-molecule diffusivity is out of reach at these spacings.
+
+What survives the compression is the *ratio* of advection to diffusion: the
+trap models run at a Péclet number of order ten across the trap, the same order
+as the device they model, so the competition between flow delivery and
+diffusive exchange is faithful. What does not survive is the separation between
+transport and growth: a real trap equilibrates chemically many times per
+doubling, while here the diffusive time across a trap, `L^2 / D`, is many
+doublings. Priming the device with media at its initial levels stands in for
+the equilibration a run is too short to reach. Treat trends and geometry
+dependence as meaningful and absolute timescales as scaled.
+
 ## Numerical guidance
 
-- Choose `dt` so the largest per-step drift, `max_velocity * dt`, stays below a cell radius;
+- Choose `dt` so the largest per-step drift, `max_speed * dt`, stays below a cell radius;
   `solve_flow_field` reports `max_speed`, and the trap examples use `dt = 0.02` with a mean
   channel speed of 20.
 - Forward Euler enforces its stability bound from the per-site advective outflow; the trap
   models select Crank-Nicolson.
-- Prime the device with media in its initial levels when growth should start immediately; an
-  unprimed trap fills by diffusion on the timescale `L^2 / D`.
-- A sampling position inside a wall raises an error rather than returning zero; regulation
-  code samples at cell centers, which mechanics keeps out of walls.
+- Set the grid's solver tolerances for the sources the model cares about. Convergence is
+  tested against `absolute_tolerance + relative_tolerance * ||rhs||`, and the right-hand
+  side carries the background concentration, so a relative tolerance can declare a step
+  converged before a cell's uptake or secretion has reached the field. The trap models
+  zero the relative tolerance and set an absolute one above the float32 residual floor and
+  below one step of uptake.
+- Let the lattice of site centers cover every position a cell can reach, with about a voxel
+  of margin past each wall: contact relaxation lets a crowded cell press slightly into a
+  wall, and sampling outside the lattice is an error.
+- Keep the mechanics walls enclosing the solid mask. The device helpers voxelize
+  conservatively — a site is solid only when its whole voxel lies inside a wall — so the
+  voxel holding any reachable position stays fluid and a cell against a wall always has a
+  fluid site to sample. A hand-built mask needs the same rule; the
+  [pillar channel](flow-solvers.md) shows it for curved walls.
+- A sampling position whose whole stencil is solid raises an error rather than returning
+  zero.

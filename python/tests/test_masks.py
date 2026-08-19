@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -26,10 +27,14 @@ def test_prindle_mask_yields_the_biopixel_trap_array() -> None:
     ys = sorted({round(trap.center[1], 1) for trap in traps})
     assert len(xs) == 16
     assert len(ys) == 31
-    assert math.isclose(xs[1] - xs[0], 172.5, abs_tol=0.1)
+    # Rows sit on a uniform pitch. Columns come in pairs: 172.5 within a pair
+    # and 135 or 160 between pairs, averaging 160 across the die.
     assert math.isclose(ys[1] - ys[0], 125.0, abs_tol=0.1)
-    assert math.isclose(xs[-1] - xs[0], 2400.0, abs_tol=1.0)
     assert math.isclose(ys[-1] - ys[0], 3750.0, abs_tol=1.0)
+    column_pitches = sorted({round(right - left, 1) for left, right in pairwise(xs)})
+    assert column_pitches == [135.0, 160.0, 172.5]
+    assert math.isclose(xs[-1] - xs[0], 2400.0, abs_tol=1.0)
+    assert math.isclose((xs[-1] - xs[0]) / (len(xs) - 1), 160.0, abs_tol=0.1)
 
 
 def test_rectangle_extraction_is_selective() -> None:

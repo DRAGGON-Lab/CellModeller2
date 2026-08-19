@@ -156,12 +156,20 @@ and applies the saturating growth law:
 growth = nutrient / (5 + nutrient).
 ```
 
+Growth and consumption are one loop: the coupled rate plan returns a nutrient sink of
+`growth_rate * cell_volume / NUTRIENT_YIELD` per cell, so a cell consumes in proportion to
+the growth the sampled field allows, and a packed trap draws down the field that feeds it.
+The yield sets the coupling strength; nutrient is an abstract limiting substrate in the
+inlet's concentration units.
+
 The device starts flooded with media, matching how a physical device is loaded before flow
 begins.
 
 ### Numerical interpretation
 
 Forward Euler evaluates transport, affine field reaction, and cell scatter from the old field and commits them together. Its preflight stability bound includes the largest local loss rate for each signal. This model selects Crank–Nicolson: spatial losses enter the implicit diagonal, fixed sources enter both trapezoidal halves, and cell-scattered AHL exchange remains an old-field explicit source. A converged negative result is still rejected because Crank–Nicolson is not positivity preserving for arbitrarily stiff steps.
+
+Crank–Nicolson tests convergence against `absolute_tolerance + relative_tolerance * ||rhs||`, and the right-hand side carries the background nutrient concentration. A cell's AHL secretion or nutrient uptake is small next to that background, so a relative tolerance can declare a step converged before either reaches the field. This model zeroes the relative tolerance and sets an absolute one above the float32 residual floor of a grid at these concentrations and below one step of cell exchange.
 
 ## Exercises
 

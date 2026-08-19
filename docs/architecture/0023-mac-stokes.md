@@ -48,14 +48,22 @@ for anchoring the closure.
 exact references and fails nonzero on any tolerance miss; `test_stokes.py`
 enforces the same physics at test sizes.
 
-- Plane Poiseuille: exact parabola, observed convergence order 2.
+- Plane Poiseuille: exact parabola, observed convergence order 2. The duct
+  peak is interpolated to the centerline, since cell centers straddle the axis
+  of an evenly divided duct.
 - Square duct: peak-to-mean velocity ratio 2.0962 (Shah & London 1978;
   White, Viscous Fluid Flow), within 0.5% at 32 voxels per side.
 - Two-layer Brinkman channel: exact ODE solution (Brinkman 1949) matched in
-  value and slope across the fluid-porous interface, second-order convergence.
+  value and slope across the fluid-porous interface, with observed
+  second-order convergence. Both profiles are compared at unit mean, since the
+  solve rescales to the requested speed and amplitude carries no information.
 - Cross-solver consistency: in a thin gap the depth-averaged MAC solution
   reproduces the Hele-Shaw flux split around a pillar to under one percent -
   each solver validates the other in the regime where both apply.
+- Gap resolution: a channel one voxel across carries about two and a half
+  times the flux its parabolic profile would, converging toward the
+  lubrication limit as the gap resolves - within about ten percent at four
+  voxels and a few percent at eight.
 - The zero-drag path is bit-identical to omitting the drag field, and solved
   fields pass engine validation and discrete conservation checks unchanged.
 
@@ -64,5 +72,10 @@ enforces the same physics at test sizes.
 - Resolved wall shear and cross-channel profiles are available where a study
   needs them, at build-time cost.
 - The Hele-Shaw closure's domain of validity is now measured, not asserted.
+- Resolution bounds the MAC solve as the closure bounds the depth-averaged
+  one. Every solve reports `min_gap_voxels`, the fluid voxels across its
+  narrowest transverse channel, so a caller can tell which of the two solvers
+  is the better model of a given grid: below four voxels across a gap the
+  closure is, because it carries the gap-height physics analytically.
 - Inlet and outlet impose fully developed flow; strongly developing flow at a
   device inlet needs upstream padding voxels.
