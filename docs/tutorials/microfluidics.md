@@ -152,6 +152,9 @@ uv run python scripts/run_flow_benchmarks.py          # CI-gating benchmark tabl
 uv run python scripts/run_flow_benchmarks.py --fine   # doubled resolutions
 ```
 
+The next tutorial, [Solved flow](flow-solvers.md), exercises all of this machinery on a
+pillar-array channel built without any device helper.
+
 ## A fabricated device: the Prindle biopixel array
 
 The photomask CAD for a real sensing-array device is in

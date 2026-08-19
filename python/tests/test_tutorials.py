@@ -51,6 +51,7 @@ _MODELS: tuple[tuple[str, dict[str, JSONValue], float], ...] = (
     ("conjugation.py", {"transfer_probability": 0.1}, 0.001),
     ("danino_clock.py", {}, 0.001),
     ("biopixel_trap.py", {}, 0.001),
+    ("pillar_channel.py", {}, 0.001),
 )
 
 
@@ -140,6 +141,36 @@ def test_danino_tutorial_uses_device_flow_obstacles_and_washout() -> None:
     assert 0 < solid < len(spec.obstacles)
     assert spec.y_lower.values == [0.0, 10.0]
     assert len(checkpoint.constraints.boxes) == 4
+
+
+def test_pillar_channel_anchors_sheds_and_washes_out() -> None:
+    model, _ = build_model(
+        _TUTORIALS / "pillar_channel.py",
+        ModelContext(BackendKind.CPU, 0, seed=7),
+    )
+    assert isinstance(model, SimulationController)
+    # 250 steps crosses the Brinkman re-solve cadence at step 100 and sheds
+    # daughters from every anchored lineage into the stream.
+    for _ in range(250):
+        model.step(0.02)
+
+    adhesion_sites = ((-20.0, -46.0), (20.0, -46.0), (0.0, 14.0))
+    cells = model.simulation.cells()
+    anchored = [cell for cell in cells if cell.fixed]
+    released = [cell for cell in cells if not cell.fixed]
+    assert len(anchored) == 3
+    assert len(released) > 3
+    for cell in anchored:
+        nearest = min(
+            math.hypot(cell.position.x - x, cell.position.y - y) for x, y in adhesion_sites
+        )
+        assert nearest < 4.0
+    # Released cells drift downstream of the anchors; the flow is doing work.
+    assert any(cell.position.y > 30.0 for cell in released)
+    for cell in cells:
+        assert cell.position.z == 0.0
+        assert abs(cell.position.x) < 40.0
+        assert abs(cell.position.y) < 120.0
 
 
 def test_plasmid_tutorial_resume_is_exact(tmp_path: Path) -> None:

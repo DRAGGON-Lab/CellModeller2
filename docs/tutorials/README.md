@@ -12,6 +12,7 @@ These tutorials introduce the CellModeller2 modeling interface through runnable 
 6. [Checkpoints, contact graphs, and quantitative analysis](analysis.md)
 7. [SimBOL circuit examples](simbol.md)
 8. [Microfluidic devices: walls, flow, and washout](microfluidics.md)
+9. [Solved flow: a pillar channel, Brinkman feedback, and the benchmarks](flow-solvers.md)
 
 The examples use `uv`, the `cm` command, data-only checkpoints, and the standalone viewer. Each model selects its backend explicitly and can be run headlessly for batch experiments.
 
