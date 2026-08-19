@@ -94,6 +94,7 @@ struct SignalGridSpec {
   [[nodiscard]] std::size_t x_face_count() const;
   [[nodiscard]] std::size_t y_face_count() const;
   [[nodiscard]] std::size_t z_face_count() const;
+  void validate_lattice() const;
   void validate() const;
 };
 
@@ -110,7 +111,12 @@ struct SignalGridStencil {
   std::uint32_t count{0};
 };
 
-[[nodiscard]] SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position);
+// Whether a sample position outside the lattice of site centers is an error or
+// is drawn in to the nearest in-lattice point.
+enum class GridSampleBound : std::uint8_t { inside, clamped };
+
+[[nodiscard]] SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position,
+                                                    GridSampleBound bound = GridSampleBound::inside);
 
 class SignalGrid {
  public:
@@ -121,7 +127,8 @@ class SignalGrid {
   [[nodiscard]] std::span<const float> levels() const& noexcept;
   [[nodiscard]] std::span<const float> levels() && = delete;
   [[nodiscard]] std::vector<float> sample(Vec3 position) const;
-  [[nodiscard]] Vec3 sample_velocity(Vec3 position) const;
+  [[nodiscard]] Vec3 sample_velocity(Vec3 position,
+                                     GridSampleBound bound = GridSampleBound::inside) const;
   [[nodiscard]] SignalGridCheckpoint checkpoint() const;
   void set_levels(std::span<const float> levels);
   void replace_levels(std::vector<float> levels);

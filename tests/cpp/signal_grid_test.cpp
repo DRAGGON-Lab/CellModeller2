@@ -495,4 +495,79 @@ int main() {
     simulation.apply_flow_drift(0.1F);
     assert_close(simulation.cell(poking_id).position.x, 2.7F);
   }
+
+  {
+    // Endpoint clamping works in lattice coordinates, so an origin and spacing
+    // with no exact float representation still admits a rod poking past the
+    // outermost site center.
+    auto spec = line_spec(33);
+    spec.origin = {0.1F, 0.0F, 0.0F};
+    spec.spacing = {0.3F, 1.0F, 1.0F};
+    spec.diffusion = {0.0F};
+    spec.x_lower.kind = cm::GridBoundaryKind::fixed;
+    spec.x_lower.values = {0.0F};
+    spec.x_upper.kind = cm::GridBoundaryKind::fixed;
+    spec.x_upper.values = {0.0F};
+    spec.velocity_field = cm::SignalGridVelocityField{
+        .x_faces = std::vector<float>(34, 2.0F),
+        .y_faces = std::vector<float>(66, 0.0F),
+        .z_faces = std::vector<float>(66, 0.0F),
+    };
+    cm::Simulation simulation;
+    simulation.configure_signal_grid(spec);
+    cm::CellInit poking;
+    poking.position = {9.7F, 0.0F, 0.0F};
+    poking.direction = {1.0F, 0.0F, 0.0F};
+    poking.length = 2.0F;
+    poking.radius = 0.3F;
+    const auto poking_id = simulation.add_cell(poking);
+    simulation.apply_flow_drift(0.1F);
+    assert_close(simulation.cell(poking_id).position.x, 9.9F);
+  }
+
+  {
+    // A rod spanning a shear gradient rotates toward the flow, capped by the
+    // caller's mechanics rotation limit.
+    cm::SignalGridSpec spec;
+    spec.signal_count = 1;
+    spec.shape = {.x = 3, .y = 3, .z = 1};
+    spec.diffusion = {0.0F};
+    spec.advection = {{0.0F, 0.0F, 0.0F}};
+    spec.x_lower.kind = cm::GridBoundaryKind::fixed;
+    spec.x_lower.values = {0.0F};
+    spec.x_upper.kind = cm::GridBoundaryKind::fixed;
+    spec.x_upper.values = {0.0F};
+    std::vector<float> x_faces(12, 0.0F);
+    for (std::uint32_t fx = 0; fx < 4; ++fx) {
+      for (std::uint32_t y = 0; y < 3; ++y) {
+        x_faces[(fx * 3) + y] = static_cast<float>(y);
+      }
+    }
+    spec.velocity_field = cm::SignalGridVelocityField{
+        .x_faces = x_faces,
+        .y_faces = std::vector<float>(12, 0.0F),
+        .z_faces = std::vector<float>(18, 0.0F),
+    };
+
+    cm::CellInit rod;
+    rod.position = {1.0F, 1.0F, 0.0F};
+    rod.direction = {0.0F, 1.0F, 0.0F};
+    rod.length = 2.0F;
+    rod.radius = 0.3F;
+
+    cm::Simulation capped;
+    capped.configure_signal_grid(spec);
+    const auto capped_id = capped.add_cell(rod);
+    capped.apply_flow_drift(1.0F);
+    const auto limit = cm::MechanicsIntegrationParameters{}.max_rotation_radians;
+    assert_close(capped.cell(capped_id).direction.x, std::sin(limit));
+    assert_close(capped.cell(capped_id).direction.y, std::cos(limit));
+
+    cm::Simulation frozen;
+    frozen.configure_signal_grid(spec);
+    const auto frozen_id = frozen.add_cell(rod);
+    frozen.apply_flow_drift(1.0F, cm::MechanicsIntegrationParameters{.max_rotation_radians = 0.0F});
+    assert_close(frozen.cell(frozen_id).direction.x, 0.0F);
+    assert_close(frozen.cell(frozen_id).direction.y, 1.0F);
+  }
 }

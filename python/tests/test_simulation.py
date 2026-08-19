@@ -12,12 +12,16 @@ from cellmodeller2 import (
     ConstraintRegion,
     ContactParameters,
     ExternalConstraintKind,
+    GridBoundaryKind,
+    GridShape,
     MechanicsIntegrationParameters,
     MechanicsParameters,
     PlaneConstraintInit,
     RateInstruction,
     RateOp,
     RodEndpoint,
+    SignalGridSpec,
+    SignalGridVelocityField,
     Simulation,
     SolverBreakdown,
     SolverStatus,
@@ -425,3 +429,97 @@ def test_native_growth_matches_cpu(backend: BackendKind) -> None:
 
     for cpu_cell, native_cell in zip(cpu.cells(), native.cells(), strict=True):
         assert math.isclose(cpu_cell.length, native_cell.length, abs_tol=1.0e-6)
+
+
+def uniform_flow_grid(
+    *, origin: float, spacing: float, sites: int, speed: float
+) -> SignalGridSpec:
+    """A collapsed y/z lattice carrying a uniform x flow between fixed ends."""
+
+    shape = GridShape()
+    shape.x, shape.y, shape.z = sites, 1, 1
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.origin = Vec3(origin, 0.0, 0.0)
+    grid.spacing = Vec3(spacing, 1.0, 1.0)
+    grid.diffusion = [0.0]
+    grid.advection = [Vec3()]
+    grid.x_lower.kind = GridBoundaryKind.FIXED
+    grid.x_lower.values = [0.0]
+    grid.x_upper.kind = GridBoundaryKind.FIXED
+    grid.x_upper.values = [0.0]
+    field = SignalGridVelocityField()
+    field.x_faces = [speed] * (sites + 1)
+    field.y_faces = [0.0] * (2 * sites)
+    field.z_faces = [0.0] * (2 * sites)
+    grid.velocity_field = field
+    return grid
+
+
+@pytest.mark.parametrize(
+    ("origin", "spacing"), [(0.0, 1.0), (0.1, 0.3), (-97.5, 1.65), (0.7, 5.0)]
+)
+def test_flow_drift_clamps_endpoints_on_any_lattice(origin: float, spacing: float) -> None:
+    sites = 33
+    simulation = Simulation()
+    simulation.configure_signal_grid(uniform_flow_grid(
+        origin=origin, spacing=spacing, sites=sites, speed=2.0
+    ))
+    cell = CellInit()
+    cell.position = Vec3(origin + spacing * (sites - 1), 0.0, 0.0)
+    cell.direction = Vec3(1.0, 0.0, 0.0)
+    cell.length = 2.0 * spacing
+    cell.radius = 0.3
+    cell_id = simulation.add_cell(cell)
+
+    simulation.apply_flow_drift(0.1)
+
+    assert math.isclose(
+        simulation.cell(cell_id).position.x,
+        origin + spacing * (sites - 1) + 0.2,
+        rel_tol=1.0e-5,
+        abs_tol=1.0e-5,
+    )
+
+
+def test_flow_drift_honors_the_mechanics_rotation_limit() -> None:
+    shape = GridShape()
+    shape.x, shape.y, shape.z = 3, 3, 1
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.spacing = Vec3(1.0, 1.0, 1.0)
+    grid.diffusion = [0.0]
+    grid.advection = [Vec3()]
+    grid.x_lower.kind = GridBoundaryKind.FIXED
+    grid.x_lower.values = [0.0]
+    grid.x_upper.kind = GridBoundaryKind.FIXED
+    grid.x_upper.values = [0.0]
+    field = SignalGridVelocityField()
+    field.x_faces = [float(y) for _ in range(4) for y in range(3)]
+    field.y_faces = [0.0] * 12
+    field.z_faces = [0.0] * 18
+    grid.velocity_field = field
+
+    cell = CellInit()
+    cell.position = Vec3(1.0, 1.0, 0.0)
+    cell.direction = Vec3(0.0, 1.0, 0.0)
+    cell.length = 2.0
+    cell.radius = 0.3
+
+    capped = Simulation()
+    capped.configure_signal_grid(grid)
+    capped_id = capped.add_cell(cell)
+    capped.apply_flow_drift(1.0)
+    limit = MechanicsIntegrationParameters().max_rotation_radians
+    assert math.isclose(capped.cell(capped_id).direction.x, math.sin(limit), abs_tol=1.0e-6)
+
+    frozen = Simulation()
+    frozen.configure_signal_grid(grid)
+    frozen_id = frozen.add_cell(cell)
+    integration = MechanicsIntegrationParameters()
+    integration.max_rotation_radians = 0.0
+    frozen.apply_flow_drift(1.0, integration)
+    assert math.isclose(frozen.cell(frozen_id).direction.x, 0.0, abs_tol=1.0e-6)
+    assert math.isclose(frozen.cell(frozen_id).direction.y, 1.0, abs_tol=1.0e-6)

@@ -39,7 +39,7 @@ struct AxisWeights {
 };
 
 AxisWeights interpolation_axis(float position, float origin, float spacing, std::uint32_t dimension,
-                               const char* axis) {
+                               const char* axis, GridSampleBound bound) {
   if (!std::isfinite(position)) {
     throw std::invalid_argument("signal sample position must be finite");
   }
@@ -47,10 +47,14 @@ AxisWeights interpolation_axis(float position, float origin, float spacing, std:
     return {};
   }
 
-  const auto coordinate =
+  auto coordinate =
       (static_cast<double>(position) - static_cast<double>(origin)) / static_cast<double>(spacing);
   const auto upper_bound = static_cast<double>(dimension - 1);
-  if (coordinate < 0.0 || coordinate > upper_bound) {
+  if (bound == GridSampleBound::clamped) {
+    // Clamping happens in lattice coordinates, the same space the bound is
+    // tested in, so a clamped position always lands inside the lattice.
+    coordinate = std::clamp(coordinate, 0.0, upper_bound);
+  } else if (coordinate < 0.0 || coordinate > upper_bound) {
     throw std::out_of_range(std::string("signal sample is outside the ") + axis + " grid bound");
   }
   const auto lower = static_cast<std::uint32_t>(std::floor(coordinate));
@@ -261,11 +265,15 @@ float rms(std::span<const float> values) {
 
 }  // namespace
 
-SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position) {
-  spec.validate();
-  const auto x = interpolation_axis(position.x, spec.origin.x, spec.spacing.x, spec.shape.x, "x");
-  const auto y = interpolation_axis(position.y, spec.origin.y, spec.spacing.y, spec.shape.y, "y");
-  const auto z = interpolation_axis(position.z, spec.origin.z, spec.spacing.z, spec.shape.z, "z");
+SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position,
+                                      GridSampleBound bound) {
+  spec.validate_lattice();
+  const auto x =
+      interpolation_axis(position.x, spec.origin.x, spec.spacing.x, spec.shape.x, "x", bound);
+  const auto y =
+      interpolation_axis(position.y, spec.origin.y, spec.spacing.y, spec.shape.y, "y", bound);
+  const auto z =
+      interpolation_axis(position.z, spec.origin.z, spec.spacing.z, spec.shape.z, "z", bound);
   SignalGridStencil result;
   for (std::size_t xi = 0; xi < x.count; ++xi) {
     for (std::size_t yi = 0; yi < y.count; ++yi) {
@@ -384,7 +392,7 @@ bool SignalGridSpec::solid_site(std::size_t site) const noexcept {
   return !obstacles.empty() && obstacles[site] != 0;
 }
 
-void SignalGridSpec::validate() const {
+void SignalGridSpec::validate_lattice() const {
   if (signal_count == 0) {
     throw std::invalid_argument("signal grid must contain at least one signal");
   }
@@ -397,6 +405,20 @@ void SignalGridSpec::validate() const {
   if (!finite(spacing) || spacing.x <= 0.0F || spacing.y <= 0.0F || spacing.z <= 0.0F) {
     throw std::invalid_argument("signal grid spacing must be finite and positive");
   }
+  if (!obstacles.empty() && obstacles.size() != site_count()) {
+    throw std::invalid_argument("signal grid obstacle mask must cover every site");
+  }
+  if (velocity_field.has_value()) {
+    const auto& field = *velocity_field;
+    if (field.x_faces.size() != x_face_count() || field.y_faces.size() != y_face_count() ||
+        field.z_faces.size() != z_face_count()) {
+      throw std::invalid_argument("signal grid velocity field must cover every lattice face");
+    }
+  }
+}
+
+void SignalGridSpec::validate() const {
+  validate_lattice();
   if (diffusion.size() != signal_count || advection.size() != signal_count) {
     throw std::invalid_argument("signal grid transport arrays must match signal count");
   }
@@ -414,9 +436,6 @@ void SignalGridSpec::validate() const {
     reaction->validate(level_count());
   }
   if (!obstacles.empty()) {
-    if (obstacles.size() != site_count()) {
-      throw std::invalid_argument("signal grid obstacle mask must cover every site");
-    }
     for (const auto value : obstacles) {
       if (value > 1) {
         throw std::invalid_argument("signal grid obstacle mask values must be 0 or 1");
@@ -438,10 +457,6 @@ void SignalGridSpec::validate() const {
   }
   if (velocity_field.has_value()) {
     const auto& field = *velocity_field;
-    if (field.x_faces.size() != x_face_count() || field.y_faces.size() != y_face_count() ||
-        field.z_faces.size() != z_face_count()) {
-      throw std::invalid_argument("signal grid velocity field must cover every lattice face");
-    }
     for (const auto* faces : {&field.x_faces, &field.y_faces, &field.z_faces}) {
       for (const auto value : *faces) {
         if (!std::isfinite(value)) {
@@ -582,11 +597,11 @@ std::vector<float> SignalGrid::sample(Vec3 position) const {
   return result;
 }
 
-Vec3 SignalGrid::sample_velocity(Vec3 position) const {
+Vec3 SignalGrid::sample_velocity(Vec3 position, GridSampleBound bound) const {
   if (!spec_.velocity_field.has_value()) {
     throw std::logic_error("signal grid does not declare a velocity field");
   }
-  const auto stencil = signal_grid_stencil(spec_, position);
+  const auto stencil = signal_grid_stencil(spec_, position, bound);
   const auto& field = *spec_.velocity_field;
   Vec3 result{};
   for (std::size_t entry = 0; entry < stencil.count; ++entry) {

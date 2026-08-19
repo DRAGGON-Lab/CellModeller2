@@ -469,7 +469,7 @@ class NativeController:
             and self._mechanics.flow_drift
             and self.simulation.cell_count != 0
         ):
-            self.simulation.apply_flow_drift(dt)
+            self.simulation.apply_flow_drift(dt, self._mechanics.native_parameters()[2])
         if self._mechanics is not None and self.simulation.cell_count != 0:
             parameters = self._mechanics.native_parameters()
             for _ in range(self._mechanics.passes):
