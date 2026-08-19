@@ -266,6 +266,46 @@ def gap_mobility(spec: SignalGridSpec) -> list[float]:
     return [float(value) for value in mobility.ravel()]
 
 
+def colony_volume_fraction(
+    spec: SignalGridSpec,
+    cells: Iterable[_RodLike],
+    *,
+    max_volume_fraction: float = 0.9,
+) -> _FloatGrid:
+    """Rasterize the colony into a per-voxel volume fraction grid.
+
+    Each cell's capsule volume accumulates into the voxel holding its center
+    (the grid origin is the center of site zero, so voxel ``i`` spans the
+    half-open interval centered on ``origin + i * spacing``); fractions are
+    capped at ``max_volume_fraction``.
+    """
+
+    if not 0.0 < max_volume_fraction < 1.0:
+        raise FlowError("maximum volume fraction must lie strictly between zero and one")
+    dims = (spec.shape.x, spec.shape.y, spec.shape.z)
+    origin = (spec.origin.x, spec.origin.y, spec.origin.z)
+    spacing = (spec.spacing.x, spec.spacing.y, spec.spacing.z)
+    volume = np.zeros(dims, dtype=np.float64)
+    for cell in cells:
+        position = (cell.position.x, cell.position.y, cell.position.z)
+        indices: list[int] = []
+        inside = True
+        for component in range(3):
+            index = math.floor(
+                (position[component] - origin[component]) / spacing[component] + 0.5
+            )
+            if not 0 <= index < dims[component]:
+                inside = False
+                break
+            indices.append(index)
+        if not inside:
+            continue
+        radius = cell.radius
+        capsule = math.pi * radius * radius * cell.length + (4.0 / 3.0) * math.pi * radius**3
+        volume[indices[0], indices[1], indices[2]] += capsule
+    return np.minimum(volume / spec.voxel_volume, max_volume_fraction)
+
+
 def colony_mobility(
     spec: SignalGridSpec,
     cells: Iterable[_RodLike],
@@ -298,33 +338,9 @@ def colony_mobility(
         base_grid = np.asarray(base, dtype=np.float64).reshape(dims)
         if not bool(np.all(np.isfinite(base_grid))) or bool(np.any(base_grid < 0.0)):
             raise FlowError("base mobility values must be finite and non-negative")
+    fraction = colony_volume_fraction(spec, cells, max_volume_fraction=max_volume_fraction)
     if not math.isfinite(drag_coefficient) or drag_coefficient < 0.0:
         raise FlowError("drag coefficient must be finite and non-negative")
-    if not 0.0 < max_volume_fraction < 1.0:
-        raise FlowError("maximum volume fraction must lie strictly between zero and one")
-
-    origin = (spec.origin.x, spec.origin.y, spec.origin.z)
-    spacing = (spec.spacing.x, spec.spacing.y, spec.spacing.z)
-    volume = np.zeros(dims, dtype=np.float64)
-    for cell in cells:
-        position = (cell.position.x, cell.position.y, cell.position.z)
-        indices: list[int] = []
-        inside = True
-        for component in range(3):
-            index = math.floor(
-                (position[component] - origin[component]) / spacing[component] + 0.5
-            )
-            if not 0 <= index < dims[component]:
-                inside = False
-                break
-            indices.append(index)
-        if not inside:
-            continue
-        radius = cell.radius
-        capsule = math.pi * radius * radius * cell.length + (4.0 / 3.0) * math.pi * radius**3
-        volume[indices[0], indices[1], indices[2]] += capsule
-
-    fraction = np.minimum(volume / spec.voxel_volume, max_volume_fraction)
     drag = drag_coefficient * fraction * fraction / (1.0 - fraction) ** 3
     # m = b / (1 + b * drag) is 1 / (1/b + drag) extended continuously to b = 0.
     mobility = base_grid / (1.0 + base_grid * drag)

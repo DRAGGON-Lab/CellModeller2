@@ -17,6 +17,7 @@ The [numerical contract](numerical-contract.md) is the best starting point for w
 - [Cell removal](0020-cell-removal.md)
 - [Advective flow drift on cells](0021-flow-drift.md)
 - [Steady Hele-Shaw-Brinkman flow solve](0022-brinkman-flow.md)
+- [Staggered MAC Stokes-Brinkman solve and flow benchmarks](0023-mac-stokes.md)
 
 ## Biological dynamics and signaling
 
