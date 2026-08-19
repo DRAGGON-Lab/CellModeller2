@@ -1,5 +1,6 @@
 #include "cm/simulation.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -114,6 +115,19 @@ void Simulation::apply_flow_drift(float dt) {
   }
   constexpr float degeneracy_epsilon = 1.0e-6F;
   constexpr float max_rotation_radians = 0.0872664626F;
+  const auto& grid_spec = signal_grid_->spec();
+  // Rod endpoints may poke past the lattice of site centers (the mechanics
+  // walls, not the lattice edge, bound cells), so drift samples the nearest
+  // in-grid point instead of erroring.
+  const auto clamp_to_grid = [&grid_spec](Vec3 point) {
+    const Vec3 upper{
+        grid_spec.origin.x + grid_spec.spacing.x * static_cast<float>(grid_spec.shape.x - 1),
+        grid_spec.origin.y + grid_spec.spacing.y * static_cast<float>(grid_spec.shape.y - 1),
+        grid_spec.origin.z + grid_spec.spacing.z * static_cast<float>(grid_spec.shape.z - 1)};
+    return Vec3{std::clamp(point.x, grid_spec.origin.x, upper.x),
+                std::clamp(point.y, grid_spec.origin.y, upper.y),
+                std::clamp(point.z, grid_spec.origin.z, upper.z)};
+  };
   const auto geometry = state_.geometry_state();
   const auto attributes = state_.cell_attributes();
   struct DriftUpdate {
@@ -133,8 +147,10 @@ void Simulation::apply_flow_drift(float dt) {
     const Vec3 axis{geometry.direction_x[slot], geometry.direction_y[slot],
                     geometry.direction_z[slot]};
     const auto half_length = geometry.lengths[slot] * 0.5F;
-    const auto first_velocity = signal_grid_->sample_velocity(center - axis * half_length);
-    const auto second_velocity = signal_grid_->sample_velocity(center + axis * half_length);
+    const auto first_velocity =
+        signal_grid_->sample_velocity(clamp_to_grid(center - axis * half_length));
+    const auto second_velocity =
+        signal_grid_->sample_velocity(clamp_to_grid(center + axis * half_length));
     const auto mean_velocity = (first_velocity + second_velocity) * 0.5F;
     const auto position = center + mean_velocity * dt;
     auto direction = axis;

@@ -16,8 +16,11 @@ cell translates with the flow and a rod in shear rotates.
 field by one explicit step, as an operation between growth and contact relaxation. The fluid
 velocity is sampled at both capsule centerline endpoints: each stencil site's cell-centered
 velocity is the mean of its two face velocities per axis, and the trilinear weights are the
-signal-sampling weights, including the obstacle renormalization near walls. From endpoint
-velocities `v1` and `v2` with cylinder length `l` and axis `a`:
+signal-sampling weights, including the obstacle renormalization near walls. Endpoints are
+clamped to the lattice of site centers before sampling: mechanics walls, not the lattice
+edge, bound cells, so a rod whose tip pokes past the outermost site samples the nearest
+in-grid point rather than erroring. From endpoint velocities `v1` and `v2` with cylinder
+length `l` and axis `a`:
 
 - translation is `dt * (v1 + v2) / 2`;
 - the rotation vector is `dt * (a x (v2 - v1)) / l`, the least-squares rigid rotation for the

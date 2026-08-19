@@ -483,5 +483,16 @@ int main() {
 
     cm::Simulation bare;
     assert_throws<std::logic_error>([&bare] { bare.set_velocity_field(std::nullopt); });
+
+    // A rod whose tip pokes past the outermost site center drifts by sampling
+    // the nearest in-grid point instead of erroring.
+    cm::CellInit poking;
+    poking.position = {2.5F, 0.0F, 0.0F};
+    poking.direction = {1.0F, 0.0F, 0.0F};
+    poking.length = 1.5F;
+    poking.radius = 0.3F;
+    const auto poking_id = simulation.add_cell(poking);
+    simulation.apply_flow_drift(0.1F);
+    assert_close(simulation.cell(poking_id).position.x, 2.7F);
   }
 }
