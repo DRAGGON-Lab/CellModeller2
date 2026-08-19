@@ -1330,15 +1330,7 @@ class CudaBackend final : public ComputeBackend {
     return result;
   }
 
-  [[nodiscard]] float signal_rhs_rms(const float* right_hand_side, std::uint32_t level_count) {
-    cuda::launch_signal_square_terms(right_hand_side, signal_cn_terms_.data(), level_count,
-                                     stream_);
-    check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-norm kernel");
-    return std::sqrt(reduce_signal_terms(level_count, "CUDA signal norm failed") /
-                     static_cast<float>(level_count));
-  }
-
-  [[nodiscard]] float signal_residual_rms(const float* current, const float* right_hand_side,
+    [[nodiscard]] float signal_residual_rms(const float* current, const float* right_hand_side,
                                           const float* diffusion, const float4* advection,
                                           const float* fixed_values, const float* reaction_source,
                                           const float* reaction_loss,
@@ -1358,6 +1350,14 @@ class CudaBackend final : public ComputeBackend {
                      static_cast<float>(level_count));
   }
 
+  [[nodiscard]] float signal_rhs_rms(const float* right_hand_side, std::uint32_t level_count) {
+    cuda::launch_signal_square_terms(right_hand_side, signal_cn_terms_.data(), level_count,
+                                     stream_);
+    check_cuda(cudaGetLastError(), "failed to launch the CUDA signal-norm kernel");
+    return std::sqrt(reduce_signal_terms(level_count, "CUDA signal norm failed") /
+                     static_cast<float>(level_count));
+  }
+
   [[nodiscard]] std::pair<const float*, SignalSolveReport> solve_signal_crank_nicolson(
       const float* initial, const float* right_hand_side, const float* diffusion,
       const float4* advection, const float* fixed_values, const float* reaction_source,
@@ -1368,14 +1368,23 @@ class CudaBackend final : public ComputeBackend {
       std::uint32_t level_count, const SignalSolveParameters& parameters) {
     ensure_signal_solve_capacity(level_count);
     const auto half_dt = 0.5F * dt;
-    const auto right_hand_side_rms = signal_rhs_rms(right_hand_side, level_count);
-    const auto threshold =
-        parameters.absolute_tolerance + (parameters.relative_tolerance * right_hand_side_rms);
     SignalSolveReport report;
     report.residual_rms = signal_residual_rms(
         initial, right_hand_side, diffusion, advection, fixed_values, reaction_source,
         reaction_loss, obstacles, x_faces, y_faces, z_faces, has_velocity_field, boundaries,
         shape, spacing, half_dt, signal_count, level_count);
+    // The relative term scales the residual the step starts with, matching the
+    // CPU reference: the field's own magnitude says nothing about how much of
+    // it this step has to change.
+    // A residual cannot fall below what float32 can represent for a field of
+    // this magnitude, and the right-hand side carries both the field and the
+    // operator terms of the step, so it sets that floor. An absolute tolerance
+    // asking for less than the floor is raised to it rather than making the
+    // solve unreachable.
+    const auto floor = std::numeric_limits<float>::epsilon() *
+                       signal_rhs_rms(right_hand_side, level_count);
+    const auto threshold = std::max(parameters.absolute_tolerance, floor) +
+                           (parameters.relative_tolerance * report.residual_rms);
     if (std::isfinite(report.residual_rms) && report.residual_rms <= threshold) {
       return {initial, report};
     }

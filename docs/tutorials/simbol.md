@@ -169,7 +169,7 @@ begins.
 
 Forward Euler evaluates transport, affine field reaction, and cell scatter from the old field and commits them together. Its preflight stability bound includes the largest local loss rate for each signal. This model selects Crank–Nicolson: spatial losses enter the implicit diagonal, fixed sources enter both trapezoidal halves, and cell-scattered AHL exchange remains an old-field explicit source. A converged negative result is still rejected because Crank–Nicolson is not positivity preserving for arbitrarily stiff steps.
 
-Crank–Nicolson tests convergence against `absolute_tolerance + relative_tolerance * ||rhs||`, and the right-hand side carries the background nutrient concentration. A cell's AHL secretion or nutrient uptake is small next to that background, so a relative tolerance can declare a step converged before either reaches the field. This model zeroes the relative tolerance and sets an absolute one above the float32 residual floor of a grid at these concentrations and below one step of cell exchange.
+Crank–Nicolson accepts a step on its residual, and this model's cell exchange — AHL secreted into the field, nutrient drawn out of it — is small next to a nutrient background of ten. Convergence is therefore judged against the residual the step starts with rather than against the field, so the threshold does not grow with the background and a cell's contribution cannot fall under it. The model keeps the engine's default tolerances.
 
 ## Exercises
 

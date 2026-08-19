@@ -839,8 +839,19 @@ SignalSolveResult signal_grid_crank_nicolson_candidate(const SignalGrid& grid, f
     const auto source = source_rates.empty() ? 0.0F : source_rates[index];
     right_hand_side[index] = old[index] + (half_dt * old_rates[index]) + (dt * source);
   }
-  const auto threshold =
-      spec.solver.absolute_tolerance + (spec.solver.relative_tolerance * rms(right_hand_side));
+  // The relative term scales the residual the step starts with, not the field
+  // it starts from. A field's own magnitude says nothing about how much of it
+  // this step has to change, so scaling by the field lets a small source fall
+  // under the threshold and be discarded; scaling by the initial residual asks
+  // for a fixed reduction of whatever this step actually has to resolve.
+  //
+  // A residual cannot fall below what float32 can represent for a field of
+  // this magnitude, and the right-hand side carries both the field and the
+  // operator terms of the step, so it sets that floor. An absolute tolerance
+  // asking for less than the floor is raised to it rather than making the
+  // solve unreachable.
+  auto threshold = std::max(spec.solver.absolute_tolerance,
+                            std::numeric_limits<float>::epsilon() * rms(right_hand_side));
   std::vector<float> current(old.begin(), old.end());
   std::vector<float> residual(old.size());
   auto residual_rms = std::numeric_limits<float>::infinity();
@@ -854,6 +865,9 @@ SignalSolveResult signal_grid_crank_nicolson_candidate(const SignalGrid& grid, f
     residual_rms = rms(residual);
     if (!std::isfinite(residual_rms)) {
       break;
+    }
+    if (iterations == 0) {
+      threshold += spec.solver.relative_tolerance * residual_rms;
     }
     if (residual_rms <= threshold) {
       return {

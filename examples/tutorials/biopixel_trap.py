@@ -87,13 +87,6 @@ def _grid() -> SignalGridSpec:
     grid.diffusion = [40.0]
     grid.advection = [Vec3()]
     grid.integration = SignalIntegrationKind.CRANK_NICOLSON
-    # Cell sources are small next to the background level, so convergence is
-    # judged on the absolute residual: a relative tolerance scaled by the
-    # background would declare a step converged before uptake reaches the
-    # field. The absolute bound sits above the float32 residual floor of a
-    # grid at this concentration and well below one step of cell uptake.
-    grid.solver.absolute_tolerance = 1.0e-6
-    grid.solver.relative_tolerance = 0.0
     DEVICE.apply_to_grid(grid, inlet_values=[NUTRIENT_INLET], outlet_values=[0.0])
     return grid
 

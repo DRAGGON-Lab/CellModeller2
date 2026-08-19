@@ -1103,28 +1103,7 @@ class MetalBackend final : public ComputeBackend {
     return input;
   }
 
-  [[nodiscard]] float signal_rhs_rms(id<MTLBuffer> right_hand_side, std::uint32_t level_count) {
-    @autoreleasepool {
-      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
-      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
-      if (command_buffer == nil || encoder == nil) {
-        throw std::runtime_error("failed to create a Metal signal norm command");
-      }
-      [encoder setComputePipelineState:signals_square_pipeline_];
-      [encoder setBuffer:right_hand_side offset:0 atIndex:0];
-      [encoder setBuffer:signal_cn_terms_ offset:0 atIndex:1];
-      [encoder setBytes:&level_count length:sizeof(level_count) atIndex:2];
-      dispatch_1d(encoder, signals_square_pipeline_, level_count);
-      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      const auto reduction = encode_signal_reduction(encoder, level_count);
-      [encoder endEncoding];
-      wait_for_command(command_buffer, "Metal signal norm failed");
-      const auto sum = *static_cast<const float*>(reduction.contents);
-      return std::sqrt(sum / static_cast<float>(level_count));
-    }
-  }
-
-  id<MTLBuffer> encode_signal_residual(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> current,
+    id<MTLBuffer> encode_signal_residual(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> current,
                                        id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
                                        id<MTLBuffer> advection, id<MTLBuffer> fixed_values,
                                        id<MTLBuffer> reaction_source, id<MTLBuffer> reaction_loss,
@@ -1190,6 +1169,27 @@ class MetalBackend final : public ComputeBackend {
     }
   }
 
+  [[nodiscard]] float signal_rhs_rms(id<MTLBuffer> right_hand_side, std::uint32_t level_count) {
+    @autoreleasepool {
+      id<MTLCommandBuffer> command_buffer = [queue_ commandBuffer];
+      id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+      if (command_buffer == nil || encoder == nil) {
+        throw std::runtime_error("failed to create a Metal signal norm command");
+      }
+      [encoder setComputePipelineState:signals_square_pipeline_];
+      [encoder setBuffer:right_hand_side offset:0 atIndex:0];
+      [encoder setBuffer:signal_cn_terms_ offset:0 atIndex:1];
+      [encoder setBytes:&level_count length:sizeof(level_count) atIndex:2];
+      dispatch_1d(encoder, signals_square_pipeline_, level_count);
+      [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      const auto reduction = encode_signal_reduction(encoder, level_count);
+      [encoder endEncoding];
+      wait_for_command(command_buffer, "Metal signal norm failed");
+      const auto sum = *static_cast<const float*>(reduction.contents);
+      return std::sqrt(sum / static_cast<float>(level_count));
+    }
+  }
+
   [[nodiscard]] std::pair<id<MTLBuffer>, SignalSolveReport> solve_signal_crank_nicolson(
       id<MTLBuffer> initial, id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
       id<MTLBuffer> advection, id<MTLBuffer> fixed_values, id<MTLBuffer> reaction_source,
@@ -1201,14 +1201,23 @@ class MetalBackend final : public ComputeBackend {
       const SignalSolveParameters& parameters) {
     ensure_signal_solve_capacity(level_count);
     const auto half_dt = 0.5F * dt;
-    const auto right_hand_side_rms = signal_rhs_rms(right_hand_side, level_count);
-    const auto threshold =
-        parameters.absolute_tolerance + (parameters.relative_tolerance * right_hand_side_rms);
     SignalSolveReport report;
     report.residual_rms = signal_residual_rms(
         initial, right_hand_side, diffusion, advection, fixed_values, reaction_source,
         reaction_loss, obstacles, x_faces, y_faces, z_faces, has_velocity_field, boundary_kinds,
         shape, spacing, half_dt, signal_count, level_count);
+    // The relative term scales the residual the step starts with, matching the
+    // CPU reference: the field's own magnitude says nothing about how much of
+    // it this step has to change.
+    // A residual cannot fall below what float32 can represent for a field of
+    // this magnitude, and the right-hand side carries both the field and the
+    // operator terms of the step, so it sets that floor. An absolute tolerance
+    // asking for less than the floor is raised to it rather than making the
+    // solve unreachable.
+    const auto floor = std::numeric_limits<float>::epsilon() *
+                       signal_rhs_rms(right_hand_side, level_count);
+    const auto threshold = std::max(parameters.absolute_tolerance, floor) +
+                           (parameters.relative_tolerance * report.residual_rms);
     if (std::isfinite(report.residual_rms) && report.residual_rms <= threshold) {
       return {initial, report};
     }

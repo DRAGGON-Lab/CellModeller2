@@ -282,12 +282,9 @@ dependence as meaningful and absolute timescales as scaled.
   channel speed of 20.
 - Forward Euler enforces its stability bound from the per-site advective outflow; the trap
   models select Crank-Nicolson.
-- Set the grid's solver tolerances for the sources the model cares about. Convergence is
-  tested against `absolute_tolerance + relative_tolerance * ||rhs||`, and the right-hand
-  side carries the background concentration, so a relative tolerance can declare a step
-  converged before a cell's uptake or secretion has reached the field. The trap models
-  zero the relative tolerance and set an absolute one above the float32 residual floor and
-  below one step of uptake.
+- The implicit solve's relative tolerance is the accuracy the step delivers: it asks for
+  that reduction of the residual the step starts with, so a model gets what it asked for
+  regardless of its concentration scale. These models keep the engine defaults.
 - Let the lattice of site centers cover every position a cell can reach, with about a voxel
   of margin past each wall: contact relaxation lets a crowded cell press slightly into a
   wall, and sampling outside the lattice is an error.
