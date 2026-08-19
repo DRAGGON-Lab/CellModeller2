@@ -8,16 +8,6 @@ namespace {
 constexpr float pi = 3.14159265358979323846F;
 constexpr std::uint32_t threads_per_block = 256;
 
-__device__ std::uint32_t site_index(SignalGridShapeGpu shape, std::uint32_t x, std::uint32_t y,
-                                    std::uint32_t z) {
-  return x * shape.y * shape.z + y * shape.z + z;
-}
-
-__device__ float grid_level(const float* levels, SignalGridShapeGpu shape, std::uint32_t signal,
-                            std::uint32_t x, std::uint32_t y, std::uint32_t z) {
-  return levels[signal * shape.sites + site_index(shape, x, y, z)];
-}
-
 __device__ float effective_volume(float length, float radius) {
   return pi * radius * radius * (length + 2.0F * radius);
 }
@@ -275,18 +265,6 @@ __global__ void advance_coupled_cells(
   }
 }
 
-__device__ float exterior_value(std::uint32_t kind, const float* fixed_values, std::uint32_t face,
-                                std::uint32_t signal, std::uint32_t signal_count, float current,
-                                float periodic) {
-  if (kind == 0) {
-    return current;
-  }
-  if (kind == 1) {
-    return periodic;
-  }
-  return fixed_values[face * signal_count + signal];
-}
-
 __global__ void advance_coupled_grid(const float* levels, float* output, const float* diffusion,
                                      const float4* advection, const float* fixed_values,
                                      const float* reaction_source, const float* reaction_loss,
@@ -340,51 +318,12 @@ __global__ void advance_coupled_grid(const float* levels, float* output, const f
                  : grid_level(levels, shape, signal, x, y, z + 1);
 
   const std::uint32_t dimensions[3]{shape.x, shape.y, shape.z};
-  bool closed_lower[3];
-  bool closed_upper[3];
-  closed_lower[0] =
-      x == 0 ? (boundaries.x_lower == 0 ||
-                (boundaries.x_lower == 1 && obstacles[site_index(shape, shape.x - 1, y, z)] != 0))
-             : obstacles[site_index(shape, x - 1, y, z)] != 0;
-  closed_upper[0] =
-      x + 1 == shape.x
-          ? (boundaries.x_upper == 0 ||
-             (boundaries.x_upper == 1 && obstacles[site_index(shape, 0, y, z)] != 0))
-          : obstacles[site_index(shape, x + 1, y, z)] != 0;
-  closed_lower[1] =
-      y == 0 ? (boundaries.y_lower == 0 ||
-                (boundaries.y_lower == 1 && obstacles[site_index(shape, x, shape.y - 1, z)] != 0))
-             : obstacles[site_index(shape, x, y - 1, z)] != 0;
-  closed_upper[1] =
-      y + 1 == shape.y
-          ? (boundaries.y_upper == 0 ||
-             (boundaries.y_upper == 1 && obstacles[site_index(shape, x, 0, z)] != 0))
-          : obstacles[site_index(shape, x, y + 1, z)] != 0;
-  closed_lower[2] =
-      z == 0 ? (boundaries.z_lower == 0 ||
-                (boundaries.z_lower == 1 && obstacles[site_index(shape, x, y, shape.z - 1)] != 0))
-             : obstacles[site_index(shape, x, y, z - 1)] != 0;
-  closed_upper[2] =
-      z + 1 == shape.z
-          ? (boundaries.z_upper == 0 ||
-             (boundaries.z_upper == 1 && obstacles[site_index(shape, x, y, 0)] != 0))
-          : obstacles[site_index(shape, x, y, z + 1)] != 0;
-  float face_lower[3];
-  float face_upper[3];
-  if (has_velocity_field != 0) {
-    face_lower[0] = x_faces[x * shape.y * shape.z + y * shape.z + z];
-    face_upper[0] = x_faces[(x + 1) * shape.y * shape.z + y * shape.z + z];
-    face_lower[1] = y_faces[x * (shape.y + 1) * shape.z + y * shape.z + z];
-    face_upper[1] = y_faces[x * (shape.y + 1) * shape.z + (y + 1) * shape.z + z];
-    face_lower[2] = z_faces[x * shape.y * (shape.z + 1) + y * (shape.z + 1) + z];
-    face_upper[2] = z_faces[x * shape.y * (shape.z + 1) + y * (shape.z + 1) + z + 1];
-  } else {
-    const float velocity[3]{advection[signal].x, advection[signal].y, advection[signal].z};
-    for (std::uint32_t axis = 0; axis < 3; ++axis) {
-      face_lower[axis] = velocity[axis];
-      face_upper[axis] = velocity[axis];
-    }
-  }
+  const auto faces = grid_face_state(shape, boundaries, obstacles, x_faces, y_faces, z_faces,
+                                     has_velocity_field, advection[signal], x, y, z);
+  const bool* closed_lower = faces.closed_lower;
+  const bool* closed_upper = faces.closed_upper;
+  const float* face_lower = faces.lower;
+  const float* face_upper = faces.upper;
   const float grid_spacing[3]{spacing.x, spacing.y, spacing.z};
   float rate = 0.0F;
   for (std::uint32_t axis = 0; axis < 3; ++axis) {
