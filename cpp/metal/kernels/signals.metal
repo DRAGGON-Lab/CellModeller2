@@ -2,31 +2,7 @@
 
 using namespace metal;
 
-struct GridShape {
-  uint x;
-  uint y;
-  uint z;
-  uint sites;
-};
-
-uint site_index(GridShape shape, uint x, uint y, uint z) {
-  return x * shape.y * shape.z + y * shape.z + z;
-}
-
-float grid_level(device const float* levels, GridShape shape, uint signal, uint x, uint y, uint z) {
-  return levels[signal * shape.sites + site_index(shape, x, y, z)];
-}
-
-float exterior_value(uint kind, device const float* fixed_values, uint face, uint signal,
-                     uint signal_count, float current, float periodic) {
-  if (kind == 0u) {
-    return current;
-  }
-  if (kind == 1u) {
-    return periodic;
-  }
-  return fixed_values[face * signal_count + signal];
-}
+;
 
 struct TransportPoint {
   float rate;
@@ -77,51 +53,10 @@ TransportPoint transport_point(device const float* levels, device const float* d
                 : grid_level(levels, shape, signal, x, y, z + 1u);
 
   uint3 dimensions = uint3(shape.x, shape.y, shape.z);
-  bool3 closed_lower;
-  bool3 closed_upper;
-  closed_lower.x =
-      x == 0u ? (boundary_kinds[0] == 0u ||
-                 (boundary_kinds[0] == 1u && obstacles[site_index(shape, shape.x - 1u, y, z)] != 0u))
-              : obstacles[site_index(shape, x - 1u, y, z)] != 0u;
-  closed_upper.x =
-      x + 1u == shape.x
-          ? (boundary_kinds[1] == 0u ||
-             (boundary_kinds[1] == 1u && obstacles[site_index(shape, 0u, y, z)] != 0u))
-          : obstacles[site_index(shape, x + 1u, y, z)] != 0u;
-  closed_lower.y =
-      y == 0u ? (boundary_kinds[2] == 0u ||
-                 (boundary_kinds[2] == 1u && obstacles[site_index(shape, x, shape.y - 1u, z)] != 0u))
-              : obstacles[site_index(shape, x, y - 1u, z)] != 0u;
-  closed_upper.y =
-      y + 1u == shape.y
-          ? (boundary_kinds[3] == 0u ||
-             (boundary_kinds[3] == 1u && obstacles[site_index(shape, x, 0u, z)] != 0u))
-          : obstacles[site_index(shape, x, y + 1u, z)] != 0u;
-  closed_lower.z =
-      z == 0u ? (boundary_kinds[4] == 0u ||
-                 (boundary_kinds[4] == 1u && obstacles[site_index(shape, x, y, shape.z - 1u)] != 0u))
-              : obstacles[site_index(shape, x, y, z - 1u)] != 0u;
-  closed_upper.z =
-      z + 1u == shape.z
-          ? (boundary_kinds[5] == 0u ||
-             (boundary_kinds[5] == 1u && obstacles[site_index(shape, x, y, 0u)] != 0u))
-          : obstacles[site_index(shape, x, y, z + 1u)] != 0u;
-  float face_lower[3];
-  float face_upper[3];
-  if (has_velocity_field != 0u) {
-    face_lower[0] = x_faces[x * shape.y * shape.z + y * shape.z + z];
-    face_upper[0] = x_faces[(x + 1u) * shape.y * shape.z + y * shape.z + z];
-    face_lower[1] = y_faces[x * (shape.y + 1u) * shape.z + y * shape.z + z];
-    face_upper[1] = y_faces[x * (shape.y + 1u) * shape.z + (y + 1u) * shape.z + z];
-    face_lower[2] = z_faces[x * shape.y * (shape.z + 1u) + y * (shape.z + 1u) + z];
-    face_upper[2] = z_faces[x * shape.y * (shape.z + 1u) + y * (shape.z + 1u) + z + 1u];
-  } else {
-    float3 velocity = advection[signal].xyz;
-    for (uint axis = 0; axis < 3u; ++axis) {
-      face_lower[axis] = velocity[axis];
-      face_upper[axis] = velocity[axis];
-    }
-  }
+  GridFaceState faces = grid_face_state(shape, boundary_kinds, obstacles, x_faces, y_faces,
+                                        z_faces, has_velocity_field, advection[signal], x, y, z);
+  bool3 closed_lower = faces.closed_lower;
+  bool3 closed_upper = faces.closed_upper;
   float3 grid_spacing = spacing.xyz;
   float rate = 0.0f;
   float diagonal = 0.0f;
@@ -145,10 +80,10 @@ TransportPoint transport_point(device const float* levels, device const float* d
     if (closed_upper[axis]) {
       diagonal += diffusion_scale;
     }
-    float lower_flux = face_lower[axis] >= 0.0f ? face_lower[axis] * lower[axis]
-                                                : face_lower[axis] * current;
-    float upper_flux = face_upper[axis] >= 0.0f ? face_upper[axis] * current
-                                                : face_upper[axis] * upper[axis];
+    float lower_flux = faces.lower[axis] >= 0.0f ? faces.lower[axis] * lower[axis]
+                                                : faces.lower[axis] * current;
+    float upper_flux = faces.upper[axis] >= 0.0f ? faces.upper[axis] * current
+                                                : faces.upper[axis] * upper[axis];
     if (closed_lower[axis]) {
       lower_flux = 0.0f;
     }
@@ -156,11 +91,11 @@ TransportPoint transport_point(device const float* levels, device const float* d
       upper_flux = 0.0f;
     }
     rate -= (upper_flux - lower_flux) * inverse_spacing;
-    if (!closed_upper[axis] && face_upper[axis] > 0.0f) {
-      diagonal -= face_upper[axis] * inverse_spacing;
+    if (!closed_upper[axis] && faces.upper[axis] > 0.0f) {
+      diagonal -= faces.upper[axis] * inverse_spacing;
     }
-    if (!closed_lower[axis] && face_lower[axis] < 0.0f) {
-      diagonal += face_lower[axis] * inverse_spacing;
+    if (!closed_lower[axis] && faces.lower[axis] < 0.0f) {
+      diagonal += faces.lower[axis] * inverse_spacing;
     }
   }
   rate += reaction_source[index] - reaction_loss[index] * current;
