@@ -13,7 +13,7 @@ from cellmodeller2 import (
     Simulation,
     Vec3,
 )
-from cellmodeller2.flow import FlowError, colony_mobility, solve_flow_field
+from cellmodeller2.flow import FlowError, colony_mobility, gap_mobility, solve_flow_field
 from cellmodeller2.microfluidics import TrapChannelDevice
 
 
@@ -160,8 +160,10 @@ def test_colony_mobility_adds_drag_where_cells_pack() -> None:
     obstacles = [0] * 9
     obstacles[_site(spec, 2, 2, 0)] = 1
     spec.obstacles = obstacles
-    crowd = [_Rod(Vec3(2.0, 2.0, 2.0)) for _ in range(40)]
-    lone = [_Rod(Vec3(6.0, 6.0, 2.0))]
+    # Site centers sit at multiples of the spacing: voxel (0,0,0) is centered
+    # on the origin and voxel (1,1,0) on (4, 4, 0).
+    crowd = [_Rod(Vec3(0.0, 0.0, 0.0)) for _ in range(40)]
+    lone = [_Rod(Vec3(4.0, 4.0, 0.0))]
     outside = [_Rod(Vec3(-10.0, 0.0, 0.0))]
     mobility = colony_mobility(spec, crowd + lone + outside, base=1.0, drag_coefficient=100.0)
     packed = mobility[_site(spec, 0, 0, 0)]
@@ -173,10 +175,35 @@ def test_colony_mobility_adds_drag_where_cells_pack() -> None:
     capped = 1.0 / (1.0 + 100.0 * 0.9**2 / (1.0 - 0.9) ** 3)
     assert math.isclose(packed, capped, rel_tol=1.0e-9)
 
+    # A per-site base composes with the colony drag; zero-drag recovery is exact.
+    layered = colony_mobility(spec, [], base=[0.5] * 9, drag_coefficient=100.0)
+    assert layered[_site(spec, 1, 1, 0)] == 0.5
+    assert layered[_site(spec, 2, 2, 0)] == 0.0
+
     with pytest.raises(FlowError, match="finite and positive"):
         colony_mobility(spec, [], base=0.0)
+    with pytest.raises(FlowError, match="one value per grid site"):
+        colony_mobility(spec, [], base=[1.0])
     with pytest.raises(FlowError, match="strictly between"):
         colony_mobility(spec, [], max_volume_fraction=1.0)
+
+
+def test_gap_mobility_scales_with_the_squared_gap_height() -> None:
+    spec = _duct(nx=2, ny=4, nz=4)
+    obstacles = [0] * (2 * 4 * 4)
+    for y in range(4):
+        for z in range(1, 4):
+            obstacles[_site(spec, 1, y, z)] = 1
+    spec.obstacles = obstacles
+    mobility = gap_mobility(spec)
+    assert mobility[_site(spec, 0, 0, 0)] == 1.0
+    assert math.isclose(mobility[_site(spec, 1, 0, 0)], 0.0625)
+    assert mobility[_site(spec, 1, 0, 2)] == 0.0
+
+    blocked = _duct(nx=1, ny=1, nz=1)
+    blocked.obstacles = [1]
+    with pytest.raises(FlowError, match="no fluid sites"):
+        gap_mobility(blocked)
 
 
 def test_simulation_swaps_the_solved_field_at_runtime() -> None:

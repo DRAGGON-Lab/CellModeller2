@@ -240,32 +240,69 @@ def solve_flow_field(
     return field, report
 
 
+def gap_mobility(spec: SignalGridSpec) -> list[float]:
+    """Build the Hele-Shaw gap-height mobility field of a device grid.
+
+    In the depth-averaged closure a channel's mobility scales with the square
+    of its gap height, so a shallow cavity resists through-flow far more than
+    the tall channel beside it. Each z column's gap is its fluid-voxel count
+    times the z spacing; every fluid voxel in the column gets the relative
+    mobility ``(gap / max_gap)^2`` and solid voxels get zero.
+    """
+
+    dims = (spec.shape.x, spec.shape.y, spec.shape.z)
+    obstacles = spec.obstacles
+    if obstacles:
+        if len(obstacles) != dims[0] * dims[1] * dims[2]:
+            raise FlowError("obstacles must hold one flag per grid site")
+        fluid = (np.asarray(obstacles, dtype=np.uint8).reshape(dims) == 0).astype(np.float64)
+    else:
+        fluid = np.ones(dims, dtype=np.float64)
+    gaps = fluid.sum(axis=2, keepdims=True)
+    max_gap = float(np.max(gaps))
+    if max_gap == 0.0:
+        raise FlowError("the grid contains no fluid sites")
+    mobility = fluid * (gaps / max_gap) ** 2
+    return [float(value) for value in mobility.ravel()]
+
+
 def colony_mobility(
     spec: SignalGridSpec,
     cells: Iterable[_RodLike],
     *,
-    base: float = 1.0,
+    base: float | Sequence[float] = 1.0,
     drag_coefficient: float = 100.0,
     max_volume_fraction: float = 0.9,
 ) -> list[float]:
     """Build the Brinkman mobility field from the current colony.
 
-    Each cell's capsule volume accumulates into the voxel holding its center;
-    the resulting volume fraction ``phi`` adds Kozeny-Carman style drag
+    Each cell's capsule volume accumulates into the voxel holding its center
+    (the grid origin is the center of site zero, so voxel ``i`` spans the
+    half-open interval centered on ``origin + i * spacing``); the resulting
+    volume fraction ``phi`` adds Kozeny-Carman style drag
     ``drag_coefficient * phi^2 / (1 - phi)^3`` to the base resistance, so
-    ``1/m = 1/base + drag``. The drag coefficient is a modeling choice: it
+    ``1/m = 1/base + drag``. ``base`` is a uniform value or a per-site field
+    such as `gap_mobility`. The drag coefficient is a modeling choice: it
     sets how strongly a packed colony resists through-flow relative to the
     open channel. Solid voxels stay at zero mobility.
     """
 
-    if not math.isfinite(base) or base <= 0.0:
-        raise FlowError("base mobility must be finite and positive")
+    dims = (spec.shape.x, spec.shape.y, spec.shape.z)
+    if isinstance(base, (int, float)):
+        if not math.isfinite(base) or base <= 0.0:
+            raise FlowError("base mobility must be finite and positive")
+        base_grid = np.full(dims, float(base), dtype=np.float64)
+    else:
+        if len(base) != dims[0] * dims[1] * dims[2]:
+            raise FlowError("base mobility must hold one value per grid site")
+        base_grid = np.asarray(base, dtype=np.float64).reshape(dims)
+        if not bool(np.all(np.isfinite(base_grid))) or bool(np.any(base_grid < 0.0)):
+            raise FlowError("base mobility values must be finite and non-negative")
     if not math.isfinite(drag_coefficient) or drag_coefficient < 0.0:
         raise FlowError("drag coefficient must be finite and non-negative")
     if not 0.0 < max_volume_fraction < 1.0:
         raise FlowError("maximum volume fraction must lie strictly between zero and one")
 
-    dims = (spec.shape.x, spec.shape.y, spec.shape.z)
     origin = (spec.origin.x, spec.origin.y, spec.origin.z)
     spacing = (spec.spacing.x, spec.spacing.y, spec.spacing.z)
     volume = np.zeros(dims, dtype=np.float64)
@@ -274,7 +311,9 @@ def colony_mobility(
         indices: list[int] = []
         inside = True
         for component in range(3):
-            index = math.floor((position[component] - origin[component]) / spacing[component])
+            index = math.floor(
+                (position[component] - origin[component]) / spacing[component] + 0.5
+            )
             if not 0 <= index < dims[component]:
                 inside = False
                 break
@@ -287,7 +326,8 @@ def colony_mobility(
 
     fraction = np.minimum(volume / spec.voxel_volume, max_volume_fraction)
     drag = drag_coefficient * fraction * fraction / (1.0 - fraction) ** 3
-    mobility = 1.0 / (1.0 / base + drag)
+    # m = b / (1 + b * drag) is 1 / (1/b + drag) extended continuously to b = 0.
+    mobility = base_grid / (1.0 + base_grid * drag)
     obstacles = spec.obstacles
     if obstacles:
         solid = np.asarray(obstacles, dtype=np.uint8).reshape(dims) != 0
