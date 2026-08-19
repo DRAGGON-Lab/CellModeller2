@@ -41,7 +41,7 @@ struct ExternalEvaluation {
 };
 
 Capsule load_capsule(device const ulong* ids, device const float4* centers,
-                      device const float4* axes, device const float4* geometry, uint slot) {
+                     device const float4* axes, device const float4* geometry, uint slot) {
   Capsule result;
   result.id = ids[slot];
   result.slot = slot;
@@ -88,14 +88,12 @@ PointPair closest_points(const Capsule first, const Capsule second, float epsilo
       first_parameter = clamp(-first_projection / first_length_squared, 0.0f, 1.0f);
     } else {
       float cross_projection = dot(first_delta, second_delta);
-      float denominator = first_length_squared * second_length_squared -
-                          cross_projection * cross_projection;
-      float parallel_tolerance =
-          float_epsilon * first_length_squared * second_length_squared;
+      float denominator =
+          first_length_squared * second_length_squared - cross_projection * cross_projection;
+      float parallel_tolerance = float_epsilon * first_length_squared * second_length_squared;
       if (denominator > parallel_tolerance) {
         first_parameter = clamp(
-            (cross_projection * second_projection -
-             first_projection * second_length_squared) /
+            (cross_projection * second_projection - first_projection * second_length_squared) /
                 denominator,
             0.0f, 1.0f);
       }
@@ -251,8 +249,7 @@ ExternalEvaluation evaluate_external_constraint(const Capsule cell,
       float signed_distance;
       float3 outward;
       if (radial_excess > 0.0f && axial_excess > 0.0f) {
-        signed_distance =
-            sqrt(radial_excess * radial_excess + axial_excess * axial_excess);
+        signed_distance = sqrt(radial_excess * radial_excess + axial_excess * axial_excess);
         outward = (radial * radial_excess + axial * axial_excess) / signed_distance;
       } else if (radial_excess > 0.0f) {
         signed_distance = radial_excess;
@@ -281,15 +278,12 @@ ExternalEvaluation evaluate_external_constraint(const Capsule cell,
   return result;
 }
 
-kernel void count_cell_contacts(device const ulong* ids [[buffer(0)]],
-                                device const float4* centers [[buffer(1)]],
-                                device const float4* axes [[buffer(2)]],
-                                device const float4* geometry [[buffer(3)]],
-                                device uint* counts [[buffer(4)]],
-                                constant float4& parameters [[buffer(5)]],
-                                constant uint& candidate_count [[buffer(6)]],
-                                device const uint2* candidates [[buffer(7)]],
-                                uint pair_index [[thread_position_in_grid]]) {
+kernel void count_cell_contacts(
+    device const ulong* ids [[buffer(0)]], device const float4* centers [[buffer(1)]],
+    device const float4* axes [[buffer(2)]], device const float4* geometry [[buffer(3)]],
+    device uint* counts [[buffer(4)]], constant float4& parameters [[buffer(5)]],
+    constant uint& candidate_count [[buffer(6)]], device const uint2* candidates [[buffer(7)]],
+    uint pair_index [[thread_position_in_grid]]) {
   if (pair_index >= candidate_count) {
     return;
   }
@@ -333,8 +327,7 @@ kernel void fill_cell_contacts(
     device uint* ordinals [[buffer(10)]], device float4* points_on_first [[buffer(11)]],
     device float4* normals [[buffer(12)]], device float* separations [[buffer(13)]],
     device float* weights [[buffer(14)]], constant float4& parameters [[buffer(15)]],
-    constant uint& candidate_count [[buffer(16)]],
-    device const uint2* candidates [[buffer(17)]],
+    constant uint& candidate_count [[buffer(16)]], device const uint2* candidates [[buffer(17)]],
     uint pair_index [[thread_position_in_grid]]) {
   if (pair_index >= candidate_count) {
     return;
@@ -364,7 +357,8 @@ kernel void fill_cell_contacts(
     first_slots[output_index] = first.slot;
     second_slots[output_index] = second.slot;
     ordinals[output_index] = ordinal;
-    points_on_first[output_index] = float4(points.values[ordinal].first + normal * first.radius, 0.0f);
+    points_on_first[output_index] =
+        float4(points.values[ordinal].first + normal * first.radius, 0.0f);
     normals[output_index] = float4(normal, 0.0f);
     separations[output_index] = separation;
     weights[output_index] = weight;

@@ -457,8 +457,7 @@ class MetalBackend final : public ComputeBackend {
     }
     ensure_signal_face_capacity(largest_face_count(spec));
     fill_velocity_faces(spec, signal_x_faces_, signal_y_faces_, signal_z_faces_);
-    const auto has_velocity_field =
-        static_cast<std::uint32_t>(spec.velocity_field.has_value());
+    const auto has_velocity_field = static_cast<std::uint32_t>(spec.velocity_field.has_value());
     auto* advection = static_cast<MetalFloat4*>(signal_advection_.contents);
     for (std::size_t signal = 0; signal < signal_count; ++signal) {
       advection[signal] = {
@@ -639,8 +638,7 @@ class MetalBackend final : public ComputeBackend {
     }
     ensure_coupled_face_capacity(largest_face_count(spec));
     fill_velocity_faces(spec, coupled_x_faces_, coupled_y_faces_, coupled_z_faces_);
-    const auto has_velocity_field =
-        static_cast<std::uint32_t>(spec.velocity_field.has_value());
+    const auto has_velocity_field = static_cast<std::uint32_t>(spec.velocity_field.has_value());
     auto* advection = static_cast<MetalFloat4*>(coupled_advection_.contents);
     for (std::size_t signal = 0; signal < signal_count_size; ++signal) {
       advection[signal] = {spec.advection[signal].x, spec.advection[signal].y,
@@ -1032,8 +1030,8 @@ class MetalBackend final : public ComputeBackend {
           allocate_shared_buffer(device_, byte_count, "signal-grid affine sources");
       signal_reaction_loss_ =
           allocate_shared_buffer(device_, byte_count, "signal-grid affine losses");
-      signal_obstacles_ = allocate_shared_buffer(device_, signal_level_capacity_,
-                                                 "signal-grid obstacles");
+      signal_obstacles_ =
+          allocate_shared_buffer(device_, signal_level_capacity_, "signal-grid obstacles");
     }
     if (signal_count > signal_count_capacity_) {
       signal_count_capacity_ = std::bit_ceil(signal_count);
@@ -1103,17 +1101,14 @@ class MetalBackend final : public ComputeBackend {
     return input;
   }
 
-    id<MTLBuffer> encode_signal_residual(id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> current,
-                                       id<MTLBuffer> right_hand_side, id<MTLBuffer> diffusion,
-                                       id<MTLBuffer> advection, id<MTLBuffer> fixed_values,
-                                       id<MTLBuffer> reaction_source, id<MTLBuffer> reaction_loss,
-                                       id<MTLBuffer> obstacles, id<MTLBuffer> x_faces,
-                                       id<MTLBuffer> y_faces, id<MTLBuffer> z_faces,
-                                       std::uint32_t has_velocity_field,
-                                       const std::array<std::uint32_t, 6>& boundary_kinds,
-                                       const MetalUInt4& shape, const MetalFloat4& spacing,
-                                       float half_dt, std::uint32_t signal_count,
-                                       std::uint32_t level_count) {
+  id<MTLBuffer> encode_signal_residual(
+      id<MTLComputeCommandEncoder> encoder, id<MTLBuffer> current, id<MTLBuffer> right_hand_side,
+      id<MTLBuffer> diffusion, id<MTLBuffer> advection, id<MTLBuffer> fixed_values,
+      id<MTLBuffer> reaction_source, id<MTLBuffer> reaction_loss, id<MTLBuffer> obstacles,
+      id<MTLBuffer> x_faces, id<MTLBuffer> y_faces, id<MTLBuffer> z_faces,
+      std::uint32_t has_velocity_field, const std::array<std::uint32_t, 6>& boundary_kinds,
+      const MetalUInt4& shape, const MetalFloat4& spacing, float half_dt,
+      std::uint32_t signal_count, std::uint32_t level_count) {
     [encoder setComputePipelineState:signals_cn_residual_pipeline_];
     [encoder setBuffer:current offset:0 atIndex:0];
     [encoder setBuffer:right_hand_side offset:0 atIndex:1];
@@ -1146,8 +1141,7 @@ class MetalBackend final : public ComputeBackend {
                                           id<MTLBuffer> fixed_values, id<MTLBuffer> reaction_source,
                                           id<MTLBuffer> reaction_loss, id<MTLBuffer> obstacles,
                                           id<MTLBuffer> x_faces, id<MTLBuffer> y_faces,
-                                          id<MTLBuffer> z_faces,
-                                          std::uint32_t has_velocity_field,
+                                          id<MTLBuffer> z_faces, std::uint32_t has_velocity_field,
                                           const std::array<std::uint32_t, 6>& boundary_kinds,
                                           const MetalUInt4& shape, const MetalFloat4& spacing,
                                           float half_dt, std::uint32_t signal_count,
@@ -1195,10 +1189,9 @@ class MetalBackend final : public ComputeBackend {
       id<MTLBuffer> advection, id<MTLBuffer> fixed_values, id<MTLBuffer> reaction_source,
       id<MTLBuffer> reaction_loss, id<MTLBuffer> obstacles, id<MTLBuffer> x_faces,
       id<MTLBuffer> y_faces, id<MTLBuffer> z_faces, std::uint32_t has_velocity_field,
-      id<MTLBuffer> error,
-      const std::array<std::uint32_t, 6>& boundary_kinds, const MetalUInt4& shape,
-      const MetalFloat4& spacing, float dt, std::uint32_t signal_count, std::uint32_t level_count,
-      const SignalSolveParameters& parameters) {
+      id<MTLBuffer> error, const std::array<std::uint32_t, 6>& boundary_kinds,
+      const MetalUInt4& shape, const MetalFloat4& spacing, float dt, std::uint32_t signal_count,
+      std::uint32_t level_count, const SignalSolveParameters& parameters) {
     ensure_signal_solve_capacity(level_count);
     const auto half_dt = 0.5F * dt;
     SignalSolveReport report;
@@ -1214,8 +1207,8 @@ class MetalBackend final : public ComputeBackend {
     // operator terms of the step, so it sets that floor. An absolute tolerance
     // asking for less than the floor is raised to it rather than making the
     // solve unreachable.
-    const auto floor = std::numeric_limits<float>::epsilon() *
-                       signal_rhs_rms(right_hand_side, level_count);
+    const auto floor =
+        std::numeric_limits<float>::epsilon() * signal_rhs_rms(right_hand_side, level_count);
     const auto threshold = std::max(parameters.absolute_tolerance, floor) +
                            (parameters.relative_tolerance * report.residual_rms);
     if (std::isfinite(report.residual_rms) && report.residual_rms <= threshold) {
@@ -1263,8 +1256,8 @@ class MetalBackend final : public ComputeBackend {
         [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
         const auto reduction = encode_signal_residual(
             encoder, output, right_hand_side, diffusion, advection, fixed_values, reaction_source,
-            reaction_loss, obstacles, x_faces, y_faces, z_faces, has_velocity_field,
-            boundary_kinds, shape, spacing, half_dt, signal_count, level_count);
+            reaction_loss, obstacles, x_faces, y_faces, z_faces, has_velocity_field, boundary_kinds,
+            shape, spacing, half_dt, signal_count, level_count);
         [encoder endEncoding];
         wait_for_command(command_buffer, "Metal signal Jacobi iteration failed");
         const auto sum = *static_cast<const float*>(reduction.contents);
@@ -1358,8 +1351,8 @@ class MetalBackend final : public ComputeBackend {
       coupled_reaction_source_ =
           allocate_shared_buffer(device_, byte_count, "coupled affine sources");
       coupled_reaction_loss_ = allocate_shared_buffer(device_, byte_count, "coupled affine losses");
-      coupled_obstacles_ = allocate_shared_buffer(device_, coupled_grid_level_capacity_,
-                                                  "coupled grid obstacles");
+      coupled_obstacles_ =
+          allocate_shared_buffer(device_, coupled_grid_level_capacity_, "coupled grid obstacles");
     }
     if (coupled_error_ == nil) {
       coupled_error_ = allocate_shared_buffer(device_, sizeof(std::uint32_t), "coupled error flag");
@@ -1729,8 +1722,7 @@ class MetalBackend final : public ComputeBackend {
     std::vector<ExternalContact> contacts;
     contacts.reserve(contact_count);
     for (std::uint32_t index = 0; index < contact_count; ++index) {
-      if (constraint_kinds[index] >
-              static_cast<std::uint32_t>(ExternalConstraintKind::cylinder) ||
+      if (constraint_kinds[index] > static_cast<std::uint32_t>(ExternalConstraintKind::cylinder) ||
           endpoints[index] > static_cast<std::uint32_t>(RodEndpoint::positive)) {
         throw std::runtime_error("Metal external-contact kernel produced an invalid tag");
       }
@@ -1794,8 +1786,8 @@ class MetalBackend final : public ComputeBackend {
       mechanics_incidence_offsets_ =
           allocate_shared_buffer(device_, (mechanics_cell_capacity_ + 1) * sizeof(std::uint32_t),
                                  "mechanics incidence offsets");
-      mechanics_fixed_ = allocate_shared_buffer(device_, mechanics_cell_capacity_,
-                                                 "mechanics fixed flags");
+      mechanics_fixed_ =
+          allocate_shared_buffer(device_, mechanics_cell_capacity_, "mechanics fixed flags");
       mechanics_solution_ = allocate_shared_buffer(device_, dof_bytes, "mechanics solution");
       mechanics_rhs_ = allocate_shared_buffer(device_, dof_bytes, "mechanics right-hand side");
       mechanics_residual_ = allocate_shared_buffer(device_, dof_bytes, "mechanics residual");

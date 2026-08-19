@@ -119,8 +119,8 @@ struct SignalGridStencil {
 // is drawn in to the nearest in-lattice point.
 enum class GridSampleBound : std::uint8_t { inside, clamped };
 
-[[nodiscard]] SignalGridStencil signal_grid_stencil(const SignalGridSpec& spec, Vec3 position,
-                                                    GridSampleBound bound = GridSampleBound::inside);
+[[nodiscard]] SignalGridStencil signal_grid_stencil(
+    const SignalGridSpec& spec, Vec3 position, GridSampleBound bound = GridSampleBound::inside);
 
 class SignalGrid {
  public:

@@ -246,10 +246,9 @@ double max_reaction_loss(const SignalGridSpec& spec, std::size_t signal) {
     return 0.0;
   }
   const auto sites = spec.site_count();
-  const auto begin = spec.reaction->loss_rates.begin() +
-                     static_cast<std::ptrdiff_t>(signal * sites);
-  return static_cast<double>(
-      *std::max_element(begin, begin + static_cast<std::ptrdiff_t>(sites)));
+  const auto begin =
+      spec.reaction->loss_rates.begin() + static_cast<std::ptrdiff_t>(signal * sites);
+  return static_cast<double>(*std::max_element(begin, begin + static_cast<std::ptrdiff_t>(sites)));
 }
 
 float rms(std::span<const float> values) {
@@ -446,9 +445,8 @@ void SignalGridSpec::validate() const {
       const auto sites = site_count();
       for (std::size_t signal = 0; signal < signal_count; ++signal) {
         for (std::size_t site = 0; site < sites; ++site) {
-          if (obstacles[site] != 0 &&
-              (reaction->source_rates[(signal * sites) + site] != 0.0F ||
-               reaction->loss_rates[(signal * sites) + site] != 0.0F)) {
+          if (obstacles[site] != 0 && (reaction->source_rates[(signal * sites) + site] != 0.0F ||
+                                       reaction->loss_rates[(signal * sites) + site] != 0.0F)) {
             throw std::invalid_argument(
                 "signal grid affine reaction must be zero at obstacle sites");
           }
@@ -701,10 +699,9 @@ void SignalGrid::validate_step(float dt) const {
       inverse_square_sum += inverse_spacing * inverse_spacing;
       courant_sum += std::abs(static_cast<double>(velocity[axis])) * inverse_spacing;
     }
-    const auto factor =
-        static_cast<double>(dt) *
-        ((2.0 * static_cast<double>(spec_.diffusion[signal]) * inverse_square_sum) + courant_sum +
-         max_reaction_loss(spec_, signal));
+    const auto factor = static_cast<double>(dt) *
+                        ((2.0 * static_cast<double>(spec_.diffusion[signal]) * inverse_square_sum) +
+                         courant_sum + max_reaction_loss(spec_, signal));
     if (!std::isfinite(factor) || factor > 1.0) {
       throw std::invalid_argument("signal grid time step violates the explicit stability bound");
     }

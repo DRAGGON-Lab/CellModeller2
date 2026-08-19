@@ -225,8 +225,8 @@ kernel void advance_coupled_cells(
     constant float4& origin [[buffer(14)]], constant float4& spacing [[buffer(15)]],
     constant float& dt [[buffer(16)]], constant uint& species_count [[buffer(17)]],
     constant uint& signal_count [[buffer(18)]], constant uint& instruction_count [[buffer(19)]],
-    constant uint& cell_count [[buffer(20)]],
-    device const uchar* obstacles [[buffer(21)]], uint cell [[thread_position_in_grid]]) {
+    constant uint& cell_count [[buffer(20)]], device const uchar* obstacles [[buffer(21)]],
+    uint cell [[thread_position_in_grid]]) {
   if (cell >= cell_count) {
     return;
   }
@@ -283,11 +283,10 @@ kernel void advance_coupled_grid(
     constant uint& cell_count [[buffer(14)]], constant uint& level_count [[buffer(15)]],
     constant uint& crank_nicolson [[buffer(16)]],
     device const float* reaction_source [[buffer(17)]],
-    device const float* reaction_loss [[buffer(18)]],
-    device const uchar* obstacles [[buffer(19)]],
+    device const float* reaction_loss [[buffer(18)]], device const uchar* obstacles [[buffer(19)]],
     device const float* x_faces [[buffer(20)]], device const float* y_faces [[buffer(21)]],
-    device const float* z_faces [[buffer(22)]],
-    constant uint& has_velocity_field [[buffer(23)]], uint index [[thread_position_in_grid]]) {
+    device const float* z_faces [[buffer(22)]], constant uint& has_velocity_field [[buffer(23)]],
+    uint index [[thread_position_in_grid]]) {
   if (index >= level_count) {
     return;
   }
@@ -329,8 +328,8 @@ kernel void advance_coupled_grid(
                 : grid_level(levels, shape, signal, x, y, z + 1u);
 
   uint3 dimensions = uint3(shape.x, shape.y, shape.z);
-  GridFaceState faces = grid_face_state(shape, boundary_kinds, obstacles, x_faces, y_faces,
-                                        z_faces, has_velocity_field, advection[signal], x, y, z);
+  GridFaceState faces = grid_face_state(shape, boundary_kinds, obstacles, x_faces, y_faces, z_faces,
+                                        has_velocity_field, advection[signal], x, y, z);
   bool3 closed_lower = faces.closed_lower;
   bool3 closed_upper = faces.closed_upper;
   float3 grid_spacing = spacing.xyz;
@@ -348,10 +347,10 @@ kernel void advance_coupled_grid(
     float inverse_spacing = 1.0f / grid_spacing[axis];
     rate += diffusion[signal] * (lower[axis] - 2.0f * current + upper[axis]) * inverse_spacing *
             inverse_spacing;
-    float lower_flux = faces.lower[axis] >= 0.0f ? faces.lower[axis] * lower[axis]
-                                                : faces.lower[axis] * current;
-    float upper_flux = faces.upper[axis] >= 0.0f ? faces.upper[axis] * current
-                                                : faces.upper[axis] * upper[axis];
+    float lower_flux =
+        faces.lower[axis] >= 0.0f ? faces.lower[axis] * lower[axis] : faces.lower[axis] * current;
+    float upper_flux =
+        faces.upper[axis] >= 0.0f ? faces.upper[axis] * current : faces.upper[axis] * upper[axis];
     if (closed_lower[axis]) {
       lower_flux = 0.0f;
     }

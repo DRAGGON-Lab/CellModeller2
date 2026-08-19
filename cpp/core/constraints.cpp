@@ -45,9 +45,8 @@ void validate_sphere(const SphereConstraint& sphere) {
 }
 
 bool positive_finite_extents(const Vec3& half_extents) {
-  return std::isfinite(half_extents.x) && half_extents.x > 0.0F &&
-         std::isfinite(half_extents.y) && half_extents.y > 0.0F &&
-         std::isfinite(half_extents.z) && half_extents.z > 0.0F;
+  return std::isfinite(half_extents.x) && half_extents.x > 0.0F && std::isfinite(half_extents.y) &&
+         half_extents.y > 0.0F && std::isfinite(half_extents.z) && half_extents.z > 0.0F;
 }
 
 void validate_box(const BoxConstraint& box) {

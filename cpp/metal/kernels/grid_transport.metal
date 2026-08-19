@@ -49,27 +49,30 @@ GridFaceState grid_face_state(GridShape shape, constant uint* boundary_kinds,
                               uint has_velocity_field, float4 advection, uint x, uint y, uint z) {
   GridFaceState faces;
   faces.closed_lower.x =
-      x == 0u ? (boundary_kinds[0] == 0u ||
-                 (boundary_kinds[0] == 1u && obstacles[site_index(shape, shape.x - 1u, y, z)] != 0u))
-              : obstacles[site_index(shape, x - 1u, y, z)] != 0u;
+      x == 0u
+          ? (boundary_kinds[0] == 0u ||
+             (boundary_kinds[0] == 1u && obstacles[site_index(shape, shape.x - 1u, y, z)] != 0u))
+          : obstacles[site_index(shape, x - 1u, y, z)] != 0u;
   faces.closed_upper.x =
       x + 1u == shape.x
           ? (boundary_kinds[1] == 0u ||
              (boundary_kinds[1] == 1u && obstacles[site_index(shape, 0u, y, z)] != 0u))
           : obstacles[site_index(shape, x + 1u, y, z)] != 0u;
   faces.closed_lower.y =
-      y == 0u ? (boundary_kinds[2] == 0u ||
-                 (boundary_kinds[2] == 1u && obstacles[site_index(shape, x, shape.y - 1u, z)] != 0u))
-              : obstacles[site_index(shape, x, y - 1u, z)] != 0u;
+      y == 0u
+          ? (boundary_kinds[2] == 0u ||
+             (boundary_kinds[2] == 1u && obstacles[site_index(shape, x, shape.y - 1u, z)] != 0u))
+          : obstacles[site_index(shape, x, y - 1u, z)] != 0u;
   faces.closed_upper.y =
       y + 1u == shape.y
           ? (boundary_kinds[3] == 0u ||
              (boundary_kinds[3] == 1u && obstacles[site_index(shape, x, 0u, z)] != 0u))
           : obstacles[site_index(shape, x, y + 1u, z)] != 0u;
   faces.closed_lower.z =
-      z == 0u ? (boundary_kinds[4] == 0u ||
-                 (boundary_kinds[4] == 1u && obstacles[site_index(shape, x, y, shape.z - 1u)] != 0u))
-              : obstacles[site_index(shape, x, y, z - 1u)] != 0u;
+      z == 0u
+          ? (boundary_kinds[4] == 0u ||
+             (boundary_kinds[4] == 1u && obstacles[site_index(shape, x, y, shape.z - 1u)] != 0u))
+          : obstacles[site_index(shape, x, y, z - 1u)] != 0u;
   faces.closed_upper.z =
       z + 1u == shape.z
           ? (boundary_kinds[5] == 0u ||

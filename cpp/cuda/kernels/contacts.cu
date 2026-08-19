@@ -264,9 +264,9 @@ evaluate_external_constraint(const Capsule& cell, const ExternalConstraintGpu& c
         signed_distance = outside_distance;
         outward = multiply(outside_vector, 1.0F / outside_distance);
       } else {
-        const auto clearances = make_float3(half_extents.x - fabsf(delta.x),
-                                            half_extents.y - fabsf(delta.y),
-                                            half_extents.z - fabsf(delta.z));
+        const auto clearances =
+            make_float3(half_extents.x - fabsf(delta.x), half_extents.y - fabsf(delta.y),
+                        half_extents.z - fabsf(delta.z));
         if (clearances.x <= clearances.y && clearances.x <= clearances.z) {
           signed_distance = -clearances.x;
           outward = make_float3(delta.x >= 0.0F ? 1.0F : -1.0F, 0.0F, 0.0F);
@@ -299,8 +299,7 @@ evaluate_external_constraint(const Capsule& cell, const ExternalConstraintGpu& c
       float signed_distance{};
       float3 outward{};
       if (radial_excess > 0.0F && axial_excess > 0.0F) {
-        signed_distance =
-            sqrtf((radial_excess * radial_excess) + (axial_excess * axial_excess));
+        signed_distance = sqrtf((radial_excess * radial_excess) + (axial_excess * axial_excess));
         outward = multiply(add(multiply(radial, radial_excess), multiply(axial, axial_excess)),
                            1.0F / signed_distance);
       } else if (radial_excess > 0.0F) {
@@ -369,13 +368,15 @@ __global__ void inclusive_scan_step(const std::uint32_t* input, std::uint32_t* o
   output[index] = value;
 }
 
-__global__ void fill_cell_contacts(
-    const std::uint64_t* ids, const float4* centers, const float4* axes, const float4* geometry,
-    const uint2* candidates, const std::uint32_t* counts,
-    const std::uint32_t* inclusive_counts, std::uint64_t* first_ids,
-    std::uint64_t* second_ids, std::uint32_t* first_slots, std::uint32_t* second_slots,
-    std::uint32_t* ordinals, float4* points_on_first, float4* normals, float* separations,
-    float* weights, ContactParametersGpu parameters, std::uint32_t candidate_count) {
+__global__ void fill_cell_contacts(const std::uint64_t* ids, const float4* centers,
+                                   const float4* axes, const float4* geometry,
+                                   const uint2* candidates, const std::uint32_t* counts,
+                                   const std::uint32_t* inclusive_counts, std::uint64_t* first_ids,
+                                   std::uint64_t* second_ids, std::uint32_t* first_slots,
+                                   std::uint32_t* second_slots, std::uint32_t* ordinals,
+                                   float4* points_on_first, float4* normals, float* separations,
+                                   float* weights, ContactParametersGpu parameters,
+                                   std::uint32_t candidate_count) {
   const auto pair_index = blockIdx.x * blockDim.x + threadIdx.x;
   if (pair_index >= candidate_count) {
     return;
@@ -500,12 +501,11 @@ void launch_inclusive_scan_step(const std::uint32_t* input, std::uint32_t* outpu
 
 void launch_contact_fill(const std::uint64_t* ids, const float4* centers, const float4* axes,
                          const float4* geometry, const uint2* candidates,
-                         const std::uint32_t* counts,
-                         const std::uint32_t* inclusive_counts, std::uint64_t* first_ids,
-                         std::uint64_t* second_ids, std::uint32_t* first_slots,
-                         std::uint32_t* second_slots, std::uint32_t* ordinals,
-                         float4* points_on_first, float4* normals, float* separations,
-                         float* weights, ContactParametersGpu parameters,
+                         const std::uint32_t* counts, const std::uint32_t* inclusive_counts,
+                         std::uint64_t* first_ids, std::uint64_t* second_ids,
+                         std::uint32_t* first_slots, std::uint32_t* second_slots,
+                         std::uint32_t* ordinals, float4* points_on_first, float4* normals,
+                         float* separations, float* weights, ContactParametersGpu parameters,
                          std::uint32_t candidate_count, cudaStream_t stream) {
   constexpr std::uint32_t threads = 256;
   const auto blocks = ((candidate_count - 1) / threads) + 1;

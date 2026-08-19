@@ -12,11 +12,11 @@ struct TransportPoint {
 TransportPoint transport_point(device const float* levels, device const float* diffusion,
                                device const float4* advection, device const float* fixed_values,
                                device const float* reaction_source,
-                               device const float* reaction_loss,
-                               device const uchar* obstacles, device const float* x_faces,
-                               device const float* y_faces, device const float* z_faces,
-                               uint has_velocity_field, constant uint* boundary_kinds,
-                               GridShape shape, float4 spacing, uint signal_count, uint index) {
+                               device const float* reaction_loss, device const uchar* obstacles,
+                               device const float* x_faces, device const float* y_faces,
+                               device const float* z_faces, uint has_velocity_field,
+                               constant uint* boundary_kinds, GridShape shape, float4 spacing,
+                               uint signal_count, uint index) {
   uint signal = index / shape.sites;
   uint site = index - signal * shape.sites;
   uint x = site / (shape.y * shape.z);
@@ -53,8 +53,8 @@ TransportPoint transport_point(device const float* levels, device const float* d
                 : grid_level(levels, shape, signal, x, y, z + 1u);
 
   uint3 dimensions = uint3(shape.x, shape.y, shape.z);
-  GridFaceState faces = grid_face_state(shape, boundary_kinds, obstacles, x_faces, y_faces,
-                                        z_faces, has_velocity_field, advection[signal], x, y, z);
+  GridFaceState faces = grid_face_state(shape, boundary_kinds, obstacles, x_faces, y_faces, z_faces,
+                                        has_velocity_field, advection[signal], x, y, z);
   bool3 closed_lower = faces.closed_lower;
   bool3 closed_upper = faces.closed_upper;
   float3 grid_spacing = spacing.xyz;
@@ -80,10 +80,10 @@ TransportPoint transport_point(device const float* levels, device const float* d
     if (closed_upper[axis]) {
       diagonal += diffusion_scale;
     }
-    float lower_flux = faces.lower[axis] >= 0.0f ? faces.lower[axis] * lower[axis]
-                                                : faces.lower[axis] * current;
-    float upper_flux = faces.upper[axis] >= 0.0f ? faces.upper[axis] * current
-                                                : faces.upper[axis] * upper[axis];
+    float lower_flux =
+        faces.lower[axis] >= 0.0f ? faces.lower[axis] * lower[axis] : faces.lower[axis] * current;
+    float upper_flux =
+        faces.upper[axis] >= 0.0f ? faces.upper[axis] * current : faces.upper[axis] * upper[axis];
     if (closed_lower[axis]) {
       lower_flux = 0.0f;
     }
@@ -112,11 +112,10 @@ kernel void advance_signal_grid(
     constant uint& signal_count [[buffer(10)]], constant uint& level_count [[buffer(11)]],
     constant uint& crank_nicolson [[buffer(12)]],
     device const float* reaction_source [[buffer(13)]],
-    device const float* reaction_loss [[buffer(14)]],
-    device const uchar* obstacles [[buffer(15)]],
+    device const float* reaction_loss [[buffer(14)]], device const uchar* obstacles [[buffer(15)]],
     device const float* x_faces [[buffer(16)]], device const float* y_faces [[buffer(17)]],
-    device const float* z_faces [[buffer(18)]],
-    constant uint& has_velocity_field [[buffer(19)]], uint index [[thread_position_in_grid]]) {
+    device const float* z_faces [[buffer(18)]], constant uint& has_velocity_field [[buffer(19)]],
+    uint index [[thread_position_in_grid]]) {
   if (index >= level_count) {
     return;
   }
@@ -142,11 +141,10 @@ kernel void crank_nicolson_jacobi(
     constant GridShape& shape [[buffer(8)]], constant float4& spacing [[buffer(9)]],
     constant float& half_dt [[buffer(10)]], constant uint& signal_count [[buffer(11)]],
     constant uint& level_count [[buffer(12)]], device const float* reaction_source [[buffer(13)]],
-    device const float* reaction_loss [[buffer(14)]],
-    device const uchar* obstacles [[buffer(15)]],
+    device const float* reaction_loss [[buffer(14)]], device const uchar* obstacles [[buffer(15)]],
     device const float* x_faces [[buffer(16)]], device const float* y_faces [[buffer(17)]],
-    device const float* z_faces [[buffer(18)]],
-    constant uint& has_velocity_field [[buffer(19)]], uint index [[thread_position_in_grid]]) {
+    device const float* z_faces [[buffer(18)]], constant uint& has_velocity_field [[buffer(19)]],
+    uint index [[thread_position_in_grid]]) {
   if (index >= level_count) {
     return;
   }
@@ -171,11 +169,10 @@ kernel void crank_nicolson_residual_terms(
     constant float4& spacing [[buffer(8)]], constant float& half_dt [[buffer(9)]],
     constant uint& signal_count [[buffer(10)]], constant uint& level_count [[buffer(11)]],
     device const float* reaction_source [[buffer(12)]],
-    device const float* reaction_loss [[buffer(13)]],
-    device const uchar* obstacles [[buffer(14)]],
+    device const float* reaction_loss [[buffer(13)]], device const uchar* obstacles [[buffer(14)]],
     device const float* x_faces [[buffer(15)]], device const float* y_faces [[buffer(16)]],
-    device const float* z_faces [[buffer(17)]],
-    constant uint& has_velocity_field [[buffer(18)]], uint index [[thread_position_in_grid]]) {
+    device const float* z_faces [[buffer(17)]], constant uint& has_velocity_field [[buffer(18)]],
+    uint index [[thread_position_in_grid]]) {
   if (index >= level_count) {
     return;
   }

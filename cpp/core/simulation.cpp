@@ -137,21 +137,20 @@ void Simulation::apply_flow_drift(float dt, const MechanicsIntegrationParameters
     // Rod endpoints may poke past the lattice of site centers (the mechanics
     // walls, not the lattice edge, bound cells), so drift samples the nearest
     // in-lattice point instead of erroring.
-    const auto first_velocity = signal_grid_->sample_velocity(center - axis * half_length,
-                                                              GridSampleBound::clamped);
-    const auto second_velocity = signal_grid_->sample_velocity(center + axis * half_length,
-                                                               GridSampleBound::clamped);
+    const auto first_velocity =
+        signal_grid_->sample_velocity(center - axis * half_length, GridSampleBound::clamped);
+    const auto second_velocity =
+        signal_grid_->sample_velocity(center + axis * half_length, GridSampleBound::clamped);
     const auto mean_velocity = (first_velocity + second_velocity) * 0.5F;
     const auto position = center + mean_velocity * dt;
     auto direction = axis;
     if (geometry.lengths[slot] > degeneracy_epsilon) {
-      const auto rotation = cross(axis, (second_velocity - first_velocity) *
-                                            (dt / geometry.lengths[slot]));
+      const auto rotation =
+          cross(axis, (second_velocity - first_velocity) * (dt / geometry.lengths[slot]));
       direction = rotate_axis_angle(axis, rotation, parameters.max_rotation_radians);
     }
     if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z) ||
-        !std::isfinite(direction.x) || !std::isfinite(direction.y) ||
-        !std::isfinite(direction.z)) {
+        !std::isfinite(direction.x) || !std::isfinite(direction.y) || !std::isfinite(direction.z)) {
       throw std::runtime_error("flow drift produced non-finite geometry");
     }
     updates.push_back({static_cast<Slot>(slot), position, direction, geometry.lengths[slot]});

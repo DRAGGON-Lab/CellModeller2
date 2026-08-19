@@ -43,8 +43,7 @@ template <typename Surface>
 void append_surface_contacts(std::vector<ExternalContact>& contacts,
                              const CellGeometryView& geometry, std::size_t slot, ConstraintId id,
                              ExternalConstraintKind kind, float coefficient,
-                             ConstraintRegion region,
-                             const ConstraintContactParameters& parameters,
+                             ConstraintRegion region, const ConstraintContactParameters& parameters,
                              const Surface& surface_at) {
   const auto cell_endpoints = endpoints(geometry, slot);
   std::array<float, 2> separations{};
@@ -134,7 +133,7 @@ SurfacePoint box_surface(const Vec3& point, const BoxConstraint& box, float dege
 }
 
 SurfacePoint cylinder_surface(const Vec3& point, const CylinderConstraint& cylinder,
-                                 float degeneracy_epsilon) {
+                              float degeneracy_epsilon) {
   const Vec3 delta{point.x - cylinder.center.x, point.y - cylinder.center.y, 0.0F};
   const auto radial_distance = norm(delta);
   const auto radial = radial_distance > degeneracy_epsilon ? delta * (1.0F / radial_distance)
@@ -145,7 +144,8 @@ SurfacePoint cylinder_surface(const Vec3& point, const CylinderConstraint& cylin
   const auto radial_excess = radial_distance - cylinder.radius;
   const auto axial_excess = std::abs(z_offset) - cylinder.half_height;
   if (radial_excess > 0.0F && axial_excess > 0.0F) {
-    const auto distance = std::sqrt((radial_excess * radial_excess) + (axial_excess * axial_excess));
+    const auto distance =
+        std::sqrt((radial_excess * radial_excess) + (axial_excess * axial_excess));
     return {distance, (radial * radial_excess + axial * axial_excess) * (1.0F / distance)};
   }
   if (radial_excess > 0.0F) {
@@ -171,17 +171,16 @@ ExternalContactGraph find_external_contacts_cpu(const WorldState& state,
   std::vector<ExternalContact> contacts;
   for (std::size_t slot = 0; slot < geometry.size(); ++slot) {
     for (const auto& plane : constraints.planes()) {
-      append_surface_contacts(
-          contacts, geometry, slot, plane.id, ExternalConstraintKind::plane, plane.coefficient,
-          ConstraintRegion::outside, parameters,
-          [&plane](const Vec3& point) { return plane_surface(point, plane); });
+      append_surface_contacts(contacts, geometry, slot, plane.id, ExternalConstraintKind::plane,
+                              plane.coefficient, ConstraintRegion::outside, parameters,
+                              [&plane](const Vec3& point) { return plane_surface(point, plane); });
     }
     for (const auto& sphere : constraints.spheres()) {
-      append_surface_contacts(
-          contacts, geometry, slot, sphere.id, ExternalConstraintKind::sphere, sphere.coefficient,
-          sphere.allowed_region, parameters, [&sphere, &parameters](const Vec3& point) {
-            return sphere_surface(point, sphere, parameters.degeneracy_epsilon);
-          });
+      append_surface_contacts(contacts, geometry, slot, sphere.id, ExternalConstraintKind::sphere,
+                              sphere.coefficient, sphere.allowed_region, parameters,
+                              [&sphere, &parameters](const Vec3& point) {
+                                return sphere_surface(point, sphere, parameters.degeneracy_epsilon);
+                              });
     }
     for (const auto& box : constraints.boxes()) {
       append_surface_contacts(contacts, geometry, slot, box.id, ExternalConstraintKind::box,

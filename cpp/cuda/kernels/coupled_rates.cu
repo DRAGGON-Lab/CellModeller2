@@ -217,9 +217,8 @@ __global__ void advance_coupled_cells(
     const RateInstructionGpu* instructions, const std::uint32_t* species_outputs,
     const std::uint32_t* signal_outputs, float* workspace, const float* grid_levels,
     float* cell_signal_rates, const std::uint8_t* obstacles, std::uint32_t* error,
-    SignalGridShapeGpu shape, float4 origin, float4 spacing, float dt,
-    std::uint32_t species_count, std::uint32_t signal_count, std::uint32_t instruction_count,
-    std::uint32_t cell_count) {
+    SignalGridShapeGpu shape, float4 origin, float4 spacing, float dt, std::uint32_t species_count,
+    std::uint32_t signal_count, std::uint32_t instruction_count, std::uint32_t cell_count) {
   const auto cell = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (cell >= cell_count) {
     return;
@@ -265,17 +264,14 @@ __global__ void advance_coupled_cells(
   }
 }
 
-__global__ void advance_coupled_grid(const float* levels, float* output, const float* diffusion,
-                                     const float4* advection, const float* fixed_values,
-                                     const float* reaction_source, const float* reaction_loss,
-                                     const float4* centers, const float* cell_signal_rates,
-                                     const std::uint8_t* obstacles, const float* x_faces,
-                                     const float* y_faces, const float* z_faces,
-                                     std::uint32_t has_velocity_field, std::uint32_t* error,
-                                     SignalGridBoundariesGpu boundaries, SignalGridShapeGpu shape,
-                                     float4 origin, float4 spacing, float dt,
-                                     std::uint32_t signal_count, std::uint32_t cell_count,
-                                     std::uint32_t level_count, bool crank_nicolson) {
+__global__ void advance_coupled_grid(
+    const float* levels, float* output, const float* diffusion, const float4* advection,
+    const float* fixed_values, const float* reaction_source, const float* reaction_loss,
+    const float4* centers, const float* cell_signal_rates, const std::uint8_t* obstacles,
+    const float* x_faces, const float* y_faces, const float* z_faces,
+    std::uint32_t has_velocity_field, std::uint32_t* error, SignalGridBoundariesGpu boundaries,
+    SignalGridShapeGpu shape, float4 origin, float4 spacing, float dt, std::uint32_t signal_count,
+    std::uint32_t cell_count, std::uint32_t level_count, bool crank_nicolson) {
   const auto index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index >= level_count) {
     return;
@@ -339,10 +335,10 @@ __global__ void advance_coupled_grid(const float* levels, float* output, const f
     const auto inverse_spacing = 1.0F / grid_spacing[axis];
     rate += diffusion[signal] * (lower[axis] - 2.0F * current + upper[axis]) * inverse_spacing *
             inverse_spacing;
-    auto lower_flux = face_lower[axis] >= 0.0F ? face_lower[axis] * lower[axis]
-                                               : face_lower[axis] * current;
-    auto upper_flux = face_upper[axis] >= 0.0F ? face_upper[axis] * current
-                                               : face_upper[axis] * upper[axis];
+    auto lower_flux =
+        face_lower[axis] >= 0.0F ? face_lower[axis] * lower[axis] : face_lower[axis] * current;
+    auto upper_flux =
+        face_upper[axis] >= 0.0F ? face_upper[axis] * current : face_upper[axis] * upper[axis];
     if (closed_lower[axis]) {
       lower_flux = 0.0F;
     }
@@ -356,7 +352,8 @@ __global__ void advance_coupled_grid(const float* levels, float* output, const f
   float source = 0.0F;
   const auto inverse_voxel_volume = 1.0F / (spacing.x * spacing.y * spacing.z);
   for (std::uint32_t cell = 0; cell < cell_count; ++cell) {
-    const auto weight = cell_scatter_weight(centers[cell], shape, origin, spacing, obstacles, x, y, z);
+    const auto weight =
+        cell_scatter_weight(centers[cell], shape, origin, spacing, obstacles, x, y, z);
     source += weight * cell_signal_rates[cell * signal_count + signal] * inverse_voxel_volume;
   }
   const auto transport_scale = crank_nicolson ? 0.5F * dt : dt;
