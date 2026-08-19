@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
 from cellmodeller2 import (
     CellInit,
     CellSnapshot,
@@ -92,6 +93,10 @@ NUTRIENT_YIELD = 0.5
 # Brinkman feedback: how often the colony's drag re-solves the device flow,
 # and how strongly a packed voxel resists through-flow.
 RESOLVE_INTERVAL = 400
+# How often AiiA is rasterized into the grid's AHL loss. The field follows the
+# clock, so refreshing it a few dozen times a period keeps it current while
+# leaving the per-step cost of building it in the noise.
+REMOVAL_INTERVAL = 10
 DRAG_COEFFICIENT = 100.0
 
 
@@ -158,6 +163,10 @@ def _rate_plan() -> CoupledRatePlan:
     )
 
 
+_FLUID = np.asarray(GRID.obstacles, dtype=np.uint8) == 0
+_NO_SOURCES = [0.0] * (2 * GRID.site_count)
+
+
 def _ahl_removal_field(cells: Sequence[CellSnapshot]) -> SignalGridAffineReaction:
     """Rasterize AiiA into the grid's first-order AHL loss.
 
@@ -168,15 +177,12 @@ def _ahl_removal_field(cells: Sequence[CellSnapshot]) -> SignalGridAffineReactio
     stays a cell source.
     """
 
-    sites = GRID.site_count
-    aiia = colony_species_density(GRID, cells, species=1)
-    loss = [0.0] * (2 * sites)
-    for site, solid in enumerate(GRID.obstacles):
-        if solid == 0:
-            loss[site] = CLOCK_RATE * AHL_REMOVAL * aiia[site]
+    aiia = np.asarray(colony_species_density(GRID, cells, species=1))
+    loss = np.zeros(2 * GRID.site_count, dtype=np.float64)
+    loss[: GRID.site_count] = np.where(_FLUID, CLOCK_RATE * AHL_REMOVAL * aiia, 0.0)
     reaction = SignalGridAffineReaction()
-    reaction.source_rates = [0.0] * (2 * sites)
-    reaction.loss_rates = loss
+    reaction.source_rates = _NO_SOURCES
+    reaction.loss_rates = loss.tolist()
     return reaction
 
 
@@ -186,7 +192,8 @@ def _nutrient_growth(simulation: Simulation, position: Vec3) -> float:
 
 
 def _regulate(step: ControllerStep) -> StepPlan:
-    step.simulation.set_signal_reaction(_ahl_removal_field(step.cells))
+    if step.completed_steps % REMOVAL_INTERVAL == 0:
+        step.simulation.set_signal_reaction(_ahl_removal_field(step.cells))
     if step.completed_steps and step.completed_steps % RESOLVE_INTERVAL == 0:
         mobility = colony_mobility(
             GRID, step.cells, base=GAP_MOBILITY, drag_coefficient=DRAG_COEFFICIENT
