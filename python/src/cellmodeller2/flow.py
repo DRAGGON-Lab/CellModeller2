@@ -33,6 +33,7 @@ from numpy.typing import NDArray
 from ._core import GridBoundaryKind, SignalGridSpec, SignalGridVelocityField, Vec3
 
 _FloatGrid = NDArray[np.float64]
+_BoolGrid = NDArray[np.bool_]
 
 _AXES = {"x": 0, "y": 1, "z": 2}
 
@@ -103,10 +104,19 @@ def _conjugate_gradient(
     diagonal: _FloatGrid,
     tolerance: float,
     max_iterations: int,
+    *,
+    mask: _BoolGrid | None = None,
+    label: str = "flow",
 ) -> tuple[_FloatGrid, int, float]:
+    """Solve a symmetric positive definite system by Jacobi-preconditioned CG.
+
+    ``mask`` restricts the solve to the sites the operator acts on; entries
+    outside it stay at zero.
+    """
+
     solution = np.zeros_like(rhs)
-    residual = rhs.copy()
-    rhs_norm = float(np.sqrt(np.sum(rhs * rhs)))
+    residual = rhs.copy() if mask is None else np.where(mask, rhs, 0.0)
+    rhs_norm = float(np.sqrt(np.sum(residual * residual)))
     if rhs_norm == 0.0:
         return solution, 0, 0.0
     scale = np.where(diagonal > 0.0, diagonal, 1.0)
@@ -129,7 +139,35 @@ def _conjugate_gradient(
         next_rho = float(np.sum(residual * preconditioned))
         direction = preconditioned + (next_rho / rho) * direction
         rho = next_rho
-    raise FlowError(f"flow solve did not converge: relative residual {relative:.3e}")
+    raise FlowError(f"{label} solve did not converge: relative residual {relative:.3e}")
+
+
+def _flow_axis_index(spec: SignalGridSpec, axis: str) -> int:
+    """Validate a flow problem's axis and boundary kinds, and return the axis."""
+
+    if axis not in _AXES:
+        raise FlowError("flow axis must be one of x, y, z")
+    flow_axis = _AXES[axis]
+    boundaries = (
+        (spec.x_lower, spec.x_upper),
+        (spec.y_lower, spec.y_upper),
+        (spec.z_lower, spec.z_upper),
+    )
+    for lower, upper in boundaries:
+        if lower.kind == GridBoundaryKind.PERIODIC or upper.kind == GridBoundaryKind.PERIODIC:
+            raise FlowError("the flow solver does not support periodic boundaries")
+    for boundary in boundaries[flow_axis]:
+        if boundary.kind != GridBoundaryKind.FIXED:
+            raise FlowError("the flow axis boundaries must be FIXED to act as inlet and outlet")
+    return flow_axis
+
+
+def _kozeny_carman_drag(fraction: _FloatGrid, drag_coefficient: float) -> _FloatGrid:
+    """Kozeny-Carman style drag of a packed volume fraction."""
+
+    if not math.isfinite(drag_coefficient) or drag_coefficient < 0.0:
+        raise FlowError("drag coefficient must be finite and non-negative")
+    return drag_coefficient * fraction * fraction / (1.0 - fraction) ** 3
 
 
 def solve_flow_field(
@@ -149,22 +187,9 @@ def solve_flow_field(
     one relative mobility per site (default uniform, the Stokes limit).
     """
 
-    if axis not in _AXES:
-        raise FlowError("flow axis must be one of x, y, z")
     if not math.isfinite(mean_inlet_speed) or mean_inlet_speed == 0.0:
         raise FlowError("mean inlet speed must be finite and nonzero")
-    flow_axis = _AXES[axis]
-    boundaries = (
-        (spec.x_lower, spec.x_upper),
-        (spec.y_lower, spec.y_upper),
-        (spec.z_lower, spec.z_upper),
-    )
-    for lower, upper in boundaries:
-        if lower.kind == GridBoundaryKind.PERIODIC or upper.kind == GridBoundaryKind.PERIODIC:
-            raise FlowError("the flow solver does not support periodic boundaries")
-    for boundary in boundaries[flow_axis]:
-        if boundary.kind != GridBoundaryKind.FIXED:
-            raise FlowError("the flow axis boundaries must be FIXED to act as inlet and outlet")
+    flow_axis = _flow_axis_index(spec, axis)
 
     dims = (spec.shape.x, spec.shape.y, spec.shape.z)
     spacing = (spec.spacing.x, spec.spacing.y, spec.spacing.z)
@@ -221,7 +246,10 @@ def solve_flow_field(
 
     open_inlet = inlet_conductance > 0.0
     solved_mean = float(np.mean(inlet_faces[open_inlet]))
-    if solved_mean <= 1.0e-6 * float(np.max(inlet_conductance)) * step:
+    # The inlet must carry a real share of whatever the solve moved anywhere,
+    # which makes the test independent of mobility, spacing, and grid size.
+    peak = max(float(np.max(np.abs(faces))) for faces in face_grids)
+    if peak == 0.0 or solved_mean <= 1.0e-9 * peak:
         raise FlowError("the device carries no through-flow: the outlet is unreachable")
     factor = mean_inlet_speed / solved_mean
     scaled = [faces * factor for faces in face_grids]
@@ -339,9 +367,7 @@ def colony_mobility(
         if not bool(np.all(np.isfinite(base_grid))) or bool(np.any(base_grid < 0.0)):
             raise FlowError("base mobility values must be finite and non-negative")
     fraction = colony_volume_fraction(spec, cells, max_volume_fraction=max_volume_fraction)
-    if not math.isfinite(drag_coefficient) or drag_coefficient < 0.0:
-        raise FlowError("drag coefficient must be finite and non-negative")
-    drag = drag_coefficient * fraction * fraction / (1.0 - fraction) ** 3
+    drag = _kozeny_carman_drag(fraction, drag_coefficient)
     # m = b / (1 + b * drag) is 1 / (1/b + drag) extended continuously to b = 0.
     mobility = base_grid / (1.0 + base_grid * drag)
     obstacles = spec.obstacles

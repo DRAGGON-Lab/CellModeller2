@@ -36,18 +36,26 @@ per-hundred-steps re-solve inside a running model.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import TypeVar
 
 import numpy as np
-from numpy.typing import NDArray
 
-from ._core import GridBoundaryKind, SignalGridSpec, SignalGridVelocityField
-from .flow import FlowError, _FloatGrid, _RodLike, colony_volume_fraction
+from ._core import SignalGridSpec, SignalGridVelocityField
+from .flow import (
+    FlowError,
+    _BoolGrid,
+    _conjugate_gradient,
+    _FloatGrid,
+    _flow_axis_index,
+    _kozeny_carman_drag,
+    _RodLike,
+    colony_volume_fraction,
+)
 
-_AXES = {"x": 0, "y": 1, "z": 2}
-
-_BoolGrid = NDArray[np.bool_]
+# Either a float field or a mask: shifting and reflecting treat them alike.
+_Grid = TypeVar("_Grid", _FloatGrid, _BoolGrid)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,10 +92,8 @@ def colony_drag(
     stay at zero (they are walls, not porous media).
     """
 
-    if not math.isfinite(drag_coefficient) or drag_coefficient < 0.0:
-        raise FlowError("drag coefficient must be finite and non-negative")
     fraction = colony_volume_fraction(spec, cells, max_volume_fraction=max_volume_fraction)
-    drag = drag_coefficient * fraction * fraction / (1.0 - fraction) ** 3
+    drag = _kozeny_carman_drag(fraction, drag_coefficient)
     obstacles = spec.obstacles
     if obstacles:
         dims = (spec.shape.x, spec.shape.y, spec.shape.z)
@@ -131,7 +137,6 @@ class _StokesOperator:
         self.dims = dims
         self.spacing = spacing
         self.fluid = fluid
-        self.flow_axis = flow_axis
         # Collapsed axes (a single site) are invariant directions, matching
         # the engine's transport semantics: no wall reflection across them.
         self.live_axes = tuple(a for a in range(3) if dims[a] > 1)
@@ -145,10 +150,10 @@ class _StokesOperator:
             active = lower & upper
             exists = lower | upper
             if c == flow_axis:
-                edge_low = self._edge_slice(c, 0)
-                edge_high = self._edge_slice(c, -1)
-                active[edge_low] = fluid[self._cell_slice(c, 0)]
-                active[edge_high] = fluid[self._cell_slice(c, -1)]
+                # The flow-axis boundary faces carry prescribed ghost pressures
+                # rather than a wall, so they stay active beside one fluid cell.
+                active[self._edge_slice(c, 0)] = fluid[self._edge_slice(c, 0)]
+                active[self._edge_slice(c, -1)] = fluid[self._edge_slice(c, -1)]
             self.active.append(active)
             self.exists.append(exists)
             drag_low = self._cell_beside_values(drag, c, -1)
@@ -172,9 +177,6 @@ class _StokesOperator:
         index[axis] = slice(0, 1) if edge == 0 else slice(-1, None)
         return index[0], index[1], index[2]
 
-    def _cell_slice(self, axis: int, edge: int) -> tuple[slice, slice, slice]:
-        return self._edge_slice(axis, edge)
-
     def _cell_beside(self, cells: _BoolGrid, c: int, side: int) -> _BoolGrid:
         """Whether the cell on ``side`` of each c-face exists and is fluid."""
 
@@ -193,8 +195,12 @@ class _StokesOperator:
         result[target[0], target[1], target[2]] = values
         return result
 
-    def _shift(self, field: _FloatGrid, axis: int, offset: int) -> _FloatGrid:
-        """The field sampled at ``index + offset`` along ``axis``, zero beyond."""
+    def _shift(self, field: _Grid, axis: int, offset: int) -> _Grid:
+        """The field sampled at ``index + offset`` along ``axis``, zero beyond.
+
+        Values past the array edge read as zero, and a mask shifted this way
+        reads as false, which is the wall the reflection tests look for.
+        """
 
         result = np.zeros_like(field)
         source: list[slice] = [slice(None)] * 3
@@ -206,19 +212,6 @@ class _StokesOperator:
             source[axis] = slice(0, -1)
             target[axis] = slice(1, None)
         result[target[0], target[1], target[2]] = field[source[0], source[1], source[2]]
-        return result
-
-    def _shift_mask(self, mask: _BoolGrid, axis: int, offset: int) -> _BoolGrid:
-        result = np.zeros_like(mask)
-        source: list[slice] = [slice(None)] * 3
-        target: list[slice] = [slice(None)] * 3
-        if offset > 0:
-            source[axis] = slice(1, None)
-            target[axis] = slice(0, -1)
-        else:
-            source[axis] = slice(0, -1)
-            target[axis] = slice(1, None)
-        result[target[0], target[1], target[2]] = mask[source[0], source[1], source[2]]
         return result
 
     def apply_momentum(self, c: int, u: _FloatGrid) -> _FloatGrid:
@@ -243,7 +236,7 @@ class _StokesOperator:
                     # Across the component axis a neighbor location with no
                     # adjacent fluid cell lies inside a wall whose plane sits
                     # half a spacing away: reflect for no-slip.
-                    reflect = ~self._shift_mask(self.exists[c], a, offset)
+                    reflect = ~self._shift(self.exists[c], a, offset)
                     neighbor = np.where(reflect, -u, neighbor)
                 result -= (neighbor - u) * inv_h2
         result[~active] = 0.0
@@ -279,43 +272,6 @@ class _StokesOperator:
         return fields
 
 
-def _masked_cg(
-    apply_operator: Callable[[_FloatGrid], _FloatGrid],
-    rhs: _FloatGrid,
-    diagonal: _FloatGrid,
-    mask: _BoolGrid,
-    tolerance: float,
-    max_iterations: int,
-    label: str,
-) -> tuple[_FloatGrid, int]:
-    solution = np.zeros_like(rhs)
-    residual = np.where(mask, rhs, 0.0)
-    rhs_norm = float(np.sqrt(np.sum(residual * residual)))
-    if rhs_norm == 0.0:
-        return solution, 0
-    scale = np.where(diagonal > 0.0, diagonal, 1.0)
-    preconditioned = residual / scale
-    direction = preconditioned.copy()
-    rho = float(np.sum(residual * preconditioned))
-    relative = 1.0
-    for iteration in range(1, max_iterations + 1):
-        transformed = apply_operator(direction)
-        curvature = float(np.sum(direction * transformed))
-        if curvature <= 0.0:
-            break
-        alpha = rho / curvature
-        solution += alpha * direction
-        residual -= alpha * transformed
-        relative = float(np.sqrt(np.sum(residual * residual))) / rhs_norm
-        if relative <= tolerance:
-            return solution, iteration
-        preconditioned = residual / scale
-        next_rho = float(np.sum(residual * preconditioned))
-        direction = preconditioned + (next_rho / rho) * direction
-        rho = next_rho
-    raise FlowError(f"{label} solve did not converge: relative residual {relative:.3e}")
-
-
 def solve_stokes_field(
     spec: SignalGridSpec,
     *,
@@ -335,22 +291,9 @@ def solve_stokes_field(
     zero drag is pure Stokes.
     """
 
-    if axis not in _AXES:
-        raise FlowError("flow axis must be one of x, y, z")
     if not math.isfinite(mean_inlet_speed) or mean_inlet_speed == 0.0:
         raise FlowError("mean inlet speed must be finite and nonzero")
-    flow_axis = _AXES[axis]
-    boundaries = (
-        (spec.x_lower, spec.x_upper),
-        (spec.y_lower, spec.y_upper),
-        (spec.z_lower, spec.z_upper),
-    )
-    for lower, upper in boundaries:
-        if lower.kind == GridBoundaryKind.PERIODIC or upper.kind == GridBoundaryKind.PERIODIC:
-            raise FlowError("the flow solver does not support periodic boundaries")
-    for boundary in boundaries[flow_axis]:
-        if boundary.kind != GridBoundaryKind.FIXED:
-            raise FlowError("the flow axis boundaries must be FIXED to act as inlet and outlet")
+    flow_axis = _flow_axis_index(spec, axis)
 
     dims = (spec.shape.x, spec.shape.y, spec.shape.z)
     spacing = (spec.spacing.x, spec.spacing.y, spec.spacing.z)
@@ -401,14 +344,14 @@ def solve_stokes_field(
         nonlocal inner_total
         solution: list[_FloatGrid] = []
         for c in range(3):
-            component, iterations = _masked_cg(
+            component, iterations, _ = _conjugate_gradient(
                 lambda u, c=c: operator.apply_momentum(c, u),
                 rhs[c],
                 diagonals[c],
-                operator.active[c],
                 inner_tolerance,
                 max_inner_iterations,
-                "stokes momentum",
+                mask=operator.active[c],
+                label="stokes momentum",
             )
             inner_total += iterations
             solution.append(component)
@@ -421,14 +364,14 @@ def solve_stokes_field(
         # gradient() is -D^T, so negating the divergence gives S = D A^-1 D^T.
         return -operator.divergence(solve_momentum(operator.gradient(q)))
 
-    pressure, outer_iterations = _masked_cg(
+    pressure, outer_iterations, _ = _conjugate_gradient(
         apply_schur,
         schur_rhs,
         np.ones(dims, dtype=np.float64),
-        fluid,
         tolerance,
         max_outer_iterations,
-        "stokes pressure",
+        mask=fluid,
+        label="stokes pressure",
     )
 
     correction = solve_momentum(operator.gradient(pressure))
@@ -441,8 +384,10 @@ def solve_stokes_field(
     inlet_values = velocity[flow_axis][inlet_slice]
     open_inlet = operator.active[flow_axis][inlet_slice]
     solved_mean = float(np.mean(inlet_values[open_inlet]))
-    reference = float(np.max(np.abs(force[flow_axis]))) * spacing[flow_axis]
-    if solved_mean <= 1.0e-6 * reference:
+    # The inlet must carry a real share of whatever the solve moved anywhere,
+    # which makes the test independent of drag, spacing, and grid size.
+    peak = max(float(np.max(np.abs(component))) for component in velocity)
+    if peak == 0.0 or solved_mean <= 1.0e-9 * peak:
         raise FlowError("the device carries no through-flow: the outlet is unreachable")
     factor = mean_inlet_speed / solved_mean
     scaled = [component * factor for component in velocity]

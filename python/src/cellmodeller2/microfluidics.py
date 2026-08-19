@@ -14,8 +14,6 @@ fluid region therefore reaches up to half a voxel into each wall, which is the
 staircase accuracy of any mask at the grid resolution.
 """
 
-# pyright: reportPrivateUsage=false
-
 from __future__ import annotations
 
 import os
@@ -39,6 +37,9 @@ from .masks import MaskError, extract_rectangles, load_mask_polylines
 # face resolves as solid or fluid according to float rounding.
 _EDGE_TOLERANCE = 1.0e-6
 
+# Wall blocks as (low corner, high corner) pairs in device coordinates.
+_Blocks = tuple[tuple[tuple[float, float, float], tuple[float, float, float]], ...]
+
 
 def _reaches(edge: float, wall: float, half: float) -> bool:
     """Whether a voxel's lower edge has reached a wall lying above it."""
@@ -52,8 +53,85 @@ def _recedes(edge: float, wall: float, half: float) -> bool:
     return edge <= wall + _EDGE_TOLERANCE * half
 
 
+
+class _ChannelDevice:
+    """A trap fed by a straight channel along y, projected onto engine inputs.
+
+    Subclasses describe their geometry with `_solid`, a predicate over a
+    voxel's center and half extents, and inherit the projection of that
+    geometry into a solid mask, a solved flow field, and inlet and outlet
+    boundaries.
+    """
+
+    __slots__ = ()
+
+    mean_flow_speed: float
+
+    def _solid(self, px: float, py: float, pz: float, half: tuple[float, float, float]) -> bool:
+        """Whether a voxel lies entirely inside a wall."""
+
+        raise NotImplementedError
+
+    def _wall_boxes(
+        self, simulation: Simulation, blocks: _Blocks, region: ConstraintRegion
+    ) -> None:
+        for low, high in blocks:
+            box = BoxConstraintInit()
+            box.center = Vec3(
+                *((left + right) * 0.5 for left, right in zip(low, high, strict=True))
+            )
+            box.half_extents = Vec3(
+                *((right - left) * 0.5 for left, right in zip(low, high, strict=True))
+            )
+            box.coefficient = 1.0
+            box.allowed_region = region
+            simulation.add_box_constraint(box)
+
+    def apply_to_grid(
+        self,
+        spec: SignalGridSpec,
+        inlet_values: list[float],
+        outlet_values: list[float],
+    ) -> None:
+        """Materialize the device's solid mask, solved flow field, and y inlet and outlet."""
+
+        shape = spec.shape
+        origin = spec.origin
+        spacing = spec.spacing
+        # A site is solid only when its whole voxel lies inside a wall, so the
+        # mask's solid region is enclosed by the mechanics walls. The voxel
+        # holding any position a cell can reach is then fluid, which guarantees
+        # every sampling stencil has at least one fluid corner.
+        half = (spacing.x * 0.5, spacing.y * 0.5, spacing.z * 0.5)
+        obstacles = [0] * (shape.x * shape.y * shape.z)
+        for x in range(shape.x):
+            px = origin.x + spacing.x * x
+            for y in range(shape.y):
+                py = origin.y + spacing.y * y
+                for z in range(shape.z):
+                    pz = origin.z + spacing.z * z
+                    if self._solid(px, py, pz, half):
+                        obstacles[x * shape.y * shape.z + y * shape.z + z] = 1
+        spec.obstacles = obstacles
+
+        spec.advection = [Vec3() for _ in range(spec.signal_count)]
+        spec.y_lower.kind = GridBoundaryKind.FIXED
+        spec.y_lower.values = list(inlet_values)
+        spec.y_upper.kind = GridBoundaryKind.FIXED
+        spec.y_upper.values = list(outlet_values)
+
+        if self.mean_flow_speed != 0.0:
+            field, _ = solve_flow_field(
+                spec,
+                mean_inlet_speed=self.mean_flow_speed,
+                axis="y",
+                mobility=gap_mobility(spec),
+            )
+            spec.velocity_field = field
+
+
 @dataclass(frozen=True, slots=True)
-class TrapChannelDevice:
+class TrapChannelDevice(_ChannelDevice):
     """An open-sided cell trap fed by a straight flow channel.
 
     The channel runs along the y axis between ``channel_far_x`` and
@@ -107,17 +185,7 @@ class TrapChannelDevice:
                 ),
             ),
         )
-        for low, high in blocks:
-            box = BoxConstraintInit()
-            box.center = Vec3(
-                *((left + right) * 0.5 for left, right in zip(low, high, strict=True))
-            )
-            box.half_extents = Vec3(
-                *((right - left) * 0.5 for left, right in zip(low, high, strict=True))
-            )
-            box.coefficient = 1.0
-            box.allowed_region = ConstraintRegion.OUTSIDE
-            simulation.add_box_constraint(box)
+        self._wall_boxes(simulation, blocks, ConstraintRegion.OUTSIDE)
 
         chamber = BoxConstraintInit()
         chamber.center = Vec3(
@@ -148,19 +216,8 @@ class TrapChannelDevice:
             return True
         return _reaches(px - hx, self.trap_back_x, hx)
 
-    def apply_to_grid(
-        self,
-        spec: SignalGridSpec,
-        inlet_values: list[float],
-        outlet_values: list[float],
-    ) -> None:
-        """Materialize the device's solid mask, solved flow field, and y inlet and outlet."""
-
-        _project_channel_device(self, spec, inlet_values, outlet_values)
-
-
 @dataclass(frozen=True, slots=True)
-class BiopixelTrapDevice:
+class BiopixelTrapDevice(_ChannelDevice):
     """One trap of a biopixel array: a shallow monolayer cavity beside a tall channel.
 
     The cavity spans ``0`` to ``trap_depth`` in x with its open face at ``x = 0``
@@ -268,17 +325,7 @@ class BiopixelTrapDevice:
                 ),
             ),
         )
-        for low, high in boxes:
-            box = BoxConstraintInit()
-            box.center = Vec3(
-                *((left + right) * 0.5 for left, right in zip(low, high, strict=True))
-            )
-            box.half_extents = Vec3(
-                *((right - left) * 0.5 for left, right in zip(low, high, strict=True))
-            )
-            box.coefficient = 1.0
-            box.allowed_region = ConstraintRegion.OUTSIDE
-            simulation.add_box_constraint(box)
+        self._wall_boxes(simulation, boxes, ConstraintRegion.OUTSIDE)
 
         chamber = BoxConstraintInit()
         chamber.center = Vec3(
@@ -308,58 +355,3 @@ class BiopixelTrapDevice:
         if _reaches(px - hx, self.trap_depth, hx):
             return True
         return _reaches(px - hx, 0.0, hx) and _reaches(pz - hz, self.trap_height, hz)
-
-    def apply_to_grid(
-        self,
-        spec: SignalGridSpec,
-        inlet_values: list[float],
-        outlet_values: list[float],
-    ) -> None:
-        """Materialize the device's solid mask, solved flow field, and y inlet and outlet."""
-
-        _project_channel_device(self, spec, inlet_values, outlet_values)
-
-
-def _project_channel_device(
-    device: TrapChannelDevice | BiopixelTrapDevice,
-    spec: SignalGridSpec,
-    inlet_values: list[float],
-    outlet_values: list[float],
-) -> None:
-    shape = spec.shape
-    origin = spec.origin
-    spacing = spec.spacing
-
-    def center(axis_origin: float, axis_spacing: float, index: int) -> float:
-        return axis_origin + axis_spacing * index
-
-    # A site is solid only when its whole voxel lies inside a wall, so the
-    # mask's solid region is enclosed by the mechanics walls. The voxel holding
-    # any position a cell can reach is then fluid, which guarantees every
-    # sampling stencil has at least one fluid corner.
-    half = (spacing.x * 0.5, spacing.y * 0.5, spacing.z * 0.5)
-    obstacles = [0] * (shape.x * shape.y * shape.z)
-    for x in range(shape.x):
-        px = center(origin.x, spacing.x, x)
-        for y in range(shape.y):
-            py = center(origin.y, spacing.y, y)
-            for z in range(shape.z):
-                pz = center(origin.z, spacing.z, z)
-                if device._solid(px, py, pz, half):
-                    obstacles[x * shape.y * shape.z + y * shape.z + z] = 1
-    spec.obstacles = obstacles
-
-    spec.advection = [Vec3() for _ in range(spec.signal_count)]
-    spec.y_lower.kind = GridBoundaryKind.FIXED
-    spec.y_lower.values = list(inlet_values)
-    spec.y_upper.kind = GridBoundaryKind.FIXED
-    spec.y_upper.values = list(outlet_values)
-
-    if device.mean_flow_speed != 0.0:
-        field, _ = solve_flow_field(
-            spec,
-            mean_inlet_speed=device.mean_flow_speed,
-            axis="y",
-            mobility=gap_mobility(spec),
-        )
-        spec.velocity_field = field

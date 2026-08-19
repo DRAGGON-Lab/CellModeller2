@@ -123,7 +123,11 @@ def load_mask_polylines(
         finish()
         pending_block_name = False
         if value == "SECTION":
-            section = lines[index + 1].strip() if index + 1 < len(lines) else ""
+            # A section names itself in the group pair that follows: code 2,
+            # then the name. Anything else leaves the section unnamed rather
+            # than silently reading the next value as its name.
+            named = index + 1 < len(lines) and lines[index].strip() == "2"
+            section = lines[index + 1].strip() if named else ""
             in_entities = section == "ENTITIES"
             in_blocks = section == "BLOCKS"
         elif value == "ENDSEC":
