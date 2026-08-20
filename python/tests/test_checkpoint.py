@@ -11,9 +11,11 @@ from cellmodeller2 import (
     CHECKPOINT_FORMAT,
     CHECKPOINT_VERSION,
     BackendKind,
+    BoxConstraintInit,
     CellInit,
     CheckpointBundle,
     CheckpointError,
+    ConstraintRegion,
     CoupledRatePlan,
     GridShape,
     PlaneConstraintInit,
@@ -109,6 +111,13 @@ def _make_simulation() -> tuple[Simulation, int, int]:
     sphere.allowed_region = SphereRegion.INSIDE
     assert simulation.add_sphere_constraint(sphere) == 2
 
+    box = BoxConstraintInit()
+    box.center = Vec3(50.0, 50.0, 50.0)
+    box.half_extents = Vec3(4.0, 2.0, 1.0)
+    box.coefficient = 0.5
+    box.allowed_region = ConstraintRegion.OUTSIDE
+    assert simulation.add_box_constraint(box) == 3
+
     simulation.step(0.125)
     daughter_a, daughter_b = simulation.divide_equal(first_id)
     simulation.step(0.03125)
@@ -178,6 +187,18 @@ def _remove_affine_reaction(document: dict[str, Any]) -> None:
         del grid["spec"]["reaction"]
 
 
+def _remove_constraint_boxes(document: dict[str, Any]) -> None:
+    del document["simulation"]["constraints"]["boxes"]
+    del document["simulation"]["constraints"]["cylinders"]
+
+
+def _remove_grid_obstacles(document: dict[str, Any]) -> None:
+    grid = document["simulation"].get("signal_grid")
+    if grid is not None:
+        del grid["spec"]["obstacles"]
+        del grid["spec"]["velocity_field"]
+
+
 def test_checkpoint_round_trip_resumes_exactly(tmp_path: Path) -> None:
     original, daughter_a, daughter_b = _make_simulation()
     path = tmp_path / "colony.cm2.json"
@@ -244,6 +265,8 @@ def test_version_one_checkpoint_migrates_to_an_empty_signal_state(tmp_path: Path
     del document["simulation"]["signal_grid"]
     del document["simulation"]["coupled_rate_plan"]
     _remove_fixed_fields(document)
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -265,6 +288,8 @@ def test_version_two_checkpoint_migrates_without_a_coupled_plan(tmp_path: Path) 
     del document["simulation"]["signal_grid"]["spec"]["solver"]
     _remove_affine_reaction(document)
     _remove_fixed_fields(document)
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -285,6 +310,8 @@ def test_version_three_checkpoint_migrates_without_controller_state(tmp_path: Pa
     del document["simulation"]["signal_grid"]["spec"]["solver"]
     _remove_affine_reaction(document)
     _remove_fixed_fields(document)
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
     _rewrite_with_state_digest(path, document)
 
     bundle = load_checkpoint_bundle(path)
@@ -304,6 +331,8 @@ def test_version_four_signal_grid_migrates_to_forward_euler(tmp_path: Path) -> N
     del document["simulation"]["signal_grid"]["spec"]["solver"]
     _remove_affine_reaction(document)
     _remove_fixed_fields(document)
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -320,6 +349,8 @@ def test_version_five_cells_migrate_to_movable(tmp_path: Path) -> None:
     document["version"] = 5
     _remove_affine_reaction(document)
     _remove_fixed_fields(document)
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
@@ -333,12 +364,59 @@ def test_version_six_signal_grid_migrates_without_affine_reactions(tmp_path: Pat
     document = _document(path)
     document["version"] = 6
     _remove_affine_reaction(document)
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
     _rewrite_with_state_digest(path, document)
 
     restored = load_checkpoint(path)
     checkpoint = restored._checkpoint()
     assert checkpoint.signal_grid is not None
     assert checkpoint.signal_grid.spec.reaction is None
+
+
+def test_version_seven_checkpoint_migrates_without_boxes(tmp_path: Path) -> None:
+    simulation, _, _ = _make_simulation()
+    path = tmp_path / "legacy-v7.cm2.json"
+    save_checkpoint(simulation, path)
+    document = _document(path)
+    document["version"] = 7
+    _remove_constraint_boxes(document)
+    _remove_grid_obstacles(document)
+    _rewrite_with_state_digest(path, document)
+
+    restored = load_checkpoint(path)
+    checkpoint = restored._checkpoint()
+    assert checkpoint.constraints.boxes == []
+    assert checkpoint.constraints.cylinders == []
+    assert len(checkpoint.constraints.planes) == 1
+    assert len(checkpoint.constraints.spheres) == 1
+    box = BoxConstraintInit()
+    assert restored.add_box_constraint(box) == 4
+
+
+def test_grid_obstacles_round_trip_exactly(tmp_path: Path) -> None:
+    simulation = Simulation()
+    shape = GridShape()
+    shape.x = 3
+    grid = SignalGridSpec()
+    grid.signal_count = 1
+    grid.shape = shape
+    grid.diffusion = [0.5]
+    grid.advection = [Vec3()]
+    grid.obstacles = [0, 1, 0]
+    simulation.configure_signal_grid(grid, [2.0, 0.0, 0.5])
+    path = tmp_path / "masked.cm2.json"
+    save_checkpoint(simulation, path)
+
+    document = _document(path)
+    assert document["simulation"]["signal_grid"]["spec"]["obstacles"] == [0, 1, 0]
+
+    restored = load_checkpoint(path)
+    checkpoint = restored._checkpoint()
+    assert checkpoint.signal_grid is not None
+    assert list(checkpoint.signal_grid.spec.obstacles) == [0, 1, 0]
+    restored.step(0.25)
+    assert restored.signal_levels == [2.0, 0.0, 0.5]
 
 
 def test_affine_grid_reaction_round_trips_exactly(tmp_path: Path) -> None:
