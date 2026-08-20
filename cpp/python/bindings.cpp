@@ -228,7 +228,7 @@ NB_MODULE(_core, module) {
       .def_prop_ro("instructions",
                    [](const cm::SpeciesRatePlan& plan) {
                      return std::vector<cm::RateInstruction>(plan.instructions().begin(),
-                                                              plan.instructions().end());
+                                                             plan.instructions().end());
                    })
       .def_prop_ro("outputs",
                    [](const cm::SpeciesRatePlan& plan) {
@@ -247,7 +247,7 @@ NB_MODULE(_core, module) {
       .def_prop_ro("instructions",
                    [](const cm::CoupledRatePlan& plan) {
                      return std::vector<cm::RateInstruction>(plan.instructions().begin(),
-                                                              plan.instructions().end());
+                                                             plan.instructions().end());
                    })
       .def_prop_ro("species_outputs",
                    [](const cm::CoupledRatePlan& plan) {
@@ -284,7 +284,7 @@ NB_MODULE(_core, module) {
       .def_prop_ro("contacts",
                    [](const cm::ContactGraph& graph) {
                      return std::vector<cm::CellContact>(graph.contacts().begin(),
-                                                          graph.contacts().end());
+                                                         graph.contacts().end());
                    })
       .def("__len__", &cm::ContactGraph::size)
       .def(
@@ -405,7 +405,7 @@ NB_MODULE(_core, module) {
       .def_prop_ro("contacts",
                    [](const cm::ExternalContactGraph& graph) {
                      return std::vector<cm::ExternalContact>(graph.contacts().begin(),
-                                                              graph.contacts().end());
+                                                             graph.contacts().end());
                    })
       .def("__len__", &cm::ExternalContactGraph::size)
       .def(
@@ -448,8 +448,8 @@ NB_MODULE(_core, module) {
       .def(nb::init<cm::BackendKind, std::size_t, std::size_t, std::uint32_t>(),
            "backend"_a = cm::BackendKind::cpu, "reserved_capacity"_a = 0, "species_count"_a = 0,
            "device_index"_a = 0)
-      .def(nb::init<cm::BackendKind, const cm::SimulationCheckpoint&, std::uint32_t>(),
-           "backend"_a, "checkpoint"_a, "device_index"_a = 0)
+      .def(nb::init<cm::BackendKind, const cm::SimulationCheckpoint&, std::uint32_t>(), "backend"_a,
+           "checkpoint"_a, "device_index"_a = 0)
       .def_prop_ro("backend_info", &cm::Simulation::backend_info)
       .def("supports", &cm::Simulation::supports, "feature"_a)
       .def_prop_ro("time", &cm::Simulation::time)
@@ -461,6 +461,8 @@ NB_MODULE(_core, module) {
       .def_prop_ro("has_coupled_rate_plan", &cm::Simulation::has_coupled_rate_plan)
       .def("add_cell", &cm::Simulation::add_cell, "cell"_a)
       .def("remove_cell", &cm::Simulation::remove_cell, "id"_a)
+      .def("apply_flow_drift", &cm::Simulation::apply_flow_drift, "dt"_a,
+           "integration"_a = cm::MechanicsIntegrationParameters{})
       .def("add_plane_constraint", &cm::Simulation::add_plane_constraint, "plane"_a)
       .def("add_sphere_constraint", &cm::Simulation::add_sphere_constraint, "sphere"_a)
       .def("add_box_constraint", &cm::Simulation::add_box_constraint, "box"_a)
@@ -488,6 +490,7 @@ NB_MODULE(_core, module) {
           },
           "levels"_a)
       .def("set_velocity_field", &cm::Simulation::set_velocity_field, "field"_a.none())
+      .def("set_signal_reaction", &cm::Simulation::set_signal_reaction, "reaction"_a.none())
       .def("divide", &cm::Simulation::divide, "parent_id"_a, "first_fraction"_a)
       .def("divide_equal", &cm::Simulation::divide_equal, "parent_id"_a)
       .def("step", &cm::Simulation::step, "dt"_a)
